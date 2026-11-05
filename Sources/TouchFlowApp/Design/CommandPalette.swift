@@ -143,7 +143,7 @@ struct CommandPalette: View {
 
                 if results.isEmpty {
                     Text("没有匹配的操作")
-                        .font(.system(size: 11.5))
+                        .font(.system(size: 12))
                         .foregroundStyle(TF.textTertiary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 26)

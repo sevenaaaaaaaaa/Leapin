@@ -9,6 +9,7 @@ import TouchFlowRuntime
 struct PrivacyView: View {
     @ObservedObject private var engine = TouchFlowEngine.shared
     @EnvironmentObject private var app: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let trackerDomains: Set<String> = [
         "doubleclick.net", "google-analytics.com", "googletagmanager.com", "googleadservices.com",
@@ -24,14 +25,15 @@ struct PrivacyView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 22) {
                 hero
-                HStack(alignment: .top, spacing: 16) {
+                HStack(alignment: .top, spacing: 22) {
                     checklist
                     findings
                 }
             }
             .pagePadding()
+            .navigationTitle("隐私")
         }
         .task(id: engine.stats.captures) {
             // 600ms 合并窗口：抓包高峰期的连续事件只触发一次审计。
@@ -43,226 +45,314 @@ struct PrivacyView: View {
 
     // MARK: Hero
 
+    /// 没有任何抓包样本时，分数无从谈起：宁可显示「—」，也不给一个凭空的 100。
+    private var hasSample: Bool {
+        engine.stats.captures > 0 || !engine.flows.isEmpty
+    }
+
     private var hero: some View {
         let r = report
-        let tint = scoreColor(r.score)
-        return HStack(spacing: 26) {
-            scoreRing(r.score, tint: tint)
-            VStack(alignment: .leading, spacing: 8) {
-                Text("隐私健康度")
-                    .font(TFFont.overline)
-                    .tracking(1.1)
-                    .foregroundStyle(TF.textTertiary)
-                Text(scoreHeadline(r.score))
-                    .font(TFFont.display(20, weight: .bold))
-                    .foregroundStyle(TF.text)
-                Text("评分基于跟踪器拦截、DNS 加密、HTTPS 解密开关、日志脱敏与凭据存储。")
-                    .font(.system(size: 11))
-                    .foregroundStyle(TF.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 8) {
-                    miniStat("已拦截", "\(r.trackersBlocked)", TF.mint)
-                    miniStat("风险项", "\(r.findings.count)", r.findings.isEmpty ? TF.mint : TF.amber)
-                    miniStat("拦截规则", "\(engine.adblockRuleCount)", TF.accent)
+        let tint = hasSample ? scoreColor(r.score) : TF.textTertiary
+        return VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 30) {
+                VStack(alignment: .leading, spacing: 10) {
+                    TFEyebrow(text: "隐私健康度 / PRIVACY SCORE")
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        if hasSample {
+                            Text("\(r.score)")
+                                .font(TFFont.num(48, weight: .medium))
+                                .foregroundStyle(TF.text)
+                                .contentTransition(.numericText())
+                                .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: r.score)
+                            Text("/100")
+                                .font(TFFont.mono(13))
+                                .foregroundStyle(TF.textTertiary)
+                        } else {
+                            // 读数位保持高度，但不伪造一个数字：34pt 的「无样本」比 48pt 破折号诚实也更好看。
+                            Text("无样本")
+                                .font(TFFont.display(34, weight: .semibold))
+                                .foregroundStyle(TF.textTertiary)
+                                .contentTransition(.opacity)
+                        }
+                    }
+                    scoreRuler(hasSample ? r.score : 0, tint: tint, insufficient: !hasSample)
+                        .opacity(hasSample ? 1 : 0.55)
                 }
-                .padding(.top, 2)
+
+                Rectangle()
+                    .fill(TF.stroke)
+                    .frame(width: 1, height: 84)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 7) {
+                        Circle().fill(tint).frame(width: 6, height: 6)
+                        Text(hasSample ? scoreHeadline(r.score) : "样本不足，先抓一段流量")
+                            .font(TFFont.display(15, weight: .semibold))
+                            .foregroundStyle(TF.text)
+                    }
+                    Text(hasSample
+                         ? "评分基于跟踪器拦截、DNS 加密、HTTPS 解密开关、日志脱敏与凭据存储。"
+                         : "下面三项是本次会话的真实计数；没有流量时显示「—」，评分留空。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(TF.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(hasSample
+                         ? "低于 55 建议先完成基础加固；80 以上视为防护到位。"
+                         : "启动代理并浏览一会儿，样本足够后这里会给出分数。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(TF.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
+            .padding(18)
+
+            TFDivider()
+
+            HStack(spacing: 0) {
+                metric("已拦截 / BLOCKED", hasSample ? "\(r.trackersBlocked)" : "—")
+                Rectangle().fill(TF.stroke).frame(width: 1, height: 44)
+                metric("风险项 / FINDINGS", hasSample ? "\(r.findings.count)" : "—")
+                Rectangle().fill(TF.stroke).frame(width: 1, height: 44)
+                metric("拦截规则 / RULES", "\(engine.adblockRuleCount)")
+            }
+            .padding(.vertical, 2)
         }
-        .padding(22)
-        .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(TF.panel)
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(LinearGradient(colors: [tint.opacity(0.16), .clear],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(TF.strokeStrong, lineWidth: 1)
-            }
-        )
+        .tfPanel(padding: 0)
     }
 
-    private func scoreRing(_ score: Int, tint: Color) -> some View {
-        ZStack {
-            Circle()
-                .stroke(TF.strokeStrong.opacity(0.5), lineWidth: 9)
-            Circle()
-                .trim(from: 0, to: CGFloat(max(0, min(100, score))) / 100)
-                .stroke(
-                    AngularGradient(colors: [tint.opacity(0.55), tint, tint.opacity(0.75)],
-                                    center: .center),
-                    style: StrokeStyle(lineWidth: 9, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-            Circle()
-                .fill(tint.opacity(0.07))
-                .padding(14)
-            VStack(spacing: 0) {
-                Text("\(score)")
-                    .font(TFFont.num(30, weight: .bold))
-                    .foregroundStyle(TF.text)
-                Text("分")
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(TF.textTertiary)
+    /// 2px 刻度尺：55 / 80 两个阈值把分数分成「需加固 / 可加强 / 良好」三段。
+    private func scoreRuler(_ score: Int, tint: Color, insufficient: Bool = false) -> some View {
+        let clamped = CGFloat(min(max(score, 0), 100)) / 100
+        return GeometryReader { geo in
+            let w = geo.size.width
+            ZStack(alignment: .topLeading) {
+                Capsule().fill(TF.strokeStrong.opacity(0.35)).frame(width: w, height: 3)
+                Capsule().fill(tint).frame(width: max(3, w * clamped), height: 3)
+                    .opacity(insufficient ? 0 : 1)
+                ForEach([0.55, 0.80], id: \.self) { threshold in
+                    Rectangle()
+                        .fill(TF.text.opacity(0.45))
+                        .frame(width: 1, height: 8)
+                        .offset(x: w * threshold - 0.5, y: -2.5)
+                }
+                Group {
+                    Text("0").position(x: 5, y: 15)
+                    Text("55").position(x: w * 0.55, y: 15)
+                    Text("80").position(x: w * 0.80, y: 15)
+                    Text("100").position(x: w - 12, y: 15)
+                }
+                .font(TFFont.mono(9))
+                .foregroundStyle(TF.textTertiary)
             }
+            .frame(width: w, height: 24)
         }
-        .frame(width: 106, height: 106)
-        .shadow(color: tint.opacity(0.22), radius: 18)
+        .frame(width: 320, height: 24)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("隐私评分 \(score) 分，满分 100，55 分与 80 分为阈值")
     }
 
-    private func miniStat(_ label: String, _ value: String, _ tint: Color) -> some View {
-        HStack(spacing: 6) {
+    private func metric(_ label: String, _ value: String) -> some View {
+        let placeholder = value == "—"
+        return VStack(alignment: .leading, spacing: 7) {
+            TFEyebrow(text: label)
             Text(value)
-                .font(TFFont.num(12, weight: .bold))
-                .foregroundStyle(tint)
-            Text(label)
-                .font(.system(size: 10))
-                .foregroundStyle(TF.textSecondary)
+                .font(TFFont.num(placeholder ? 20 : 26, weight: .medium))
+                .foregroundStyle(placeholder ? TF.textTertiary : TF.text)
+                .lineLimit(1)
+                .contentTransition(.numericText())
+                .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: value)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(TF.stroke.opacity(0.4), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 14)
     }
 
     // MARK: Checklist
 
     private var checklist: some View {
-        Card(title: "加固清单", subtitle: "逐项核对的隐私设置", icon: "checkmark.shield") {
+        VStack(alignment: .leading, spacing: 0) {
+            SectionHeader(title: "加固清单", subtitle: "逐项核对的隐私设置", icon: "checkmark.shield")
+                .padding(18)
+
+            TFDivider()
+
             VStack(spacing: 0) {
                 check("DNS over HTTPS / TLS", engine.profile.dns.mode != .system,
                       engine.profile.dns.mode == .system ? "当前使用系统 DNS，易被本地劫持" : "已加密 DNS（\(engine.profile.dns.mode.rawValue)）")
-                TFDivider().opacity(0.5).padding(.vertical, 4)
+                TFDivider()
                 check("广告与跟踪器拦截", engine.profile.adblock.enabled && engine.adblockActive,
                       "\(engine.adblockRuleCount) 条规则生效")
-                TFDivider().opacity(0.5).padding(.vertical, 4)
+                TFDivider()
                 check("HTTPS 解密默认关闭", !engine.profile.general.mitmEnabled,
                       engine.profile.general.mitmEnabled ? "已开启 MITM：出站证书由本机 CA 签发" : "未开启，抓包只见明文")
-                TFDivider().opacity(0.5).padding(.vertical, 4)
+                TFDivider()
                 note("抓包与导出脱敏", "详情面板与 HAR 导出前由 Redactor 替换 Authorization / Cookie / token")
-                TFDivider().opacity(0.5).padding(.vertical, 4)
+                TFDivider()
                 note("凭据存储", "SSH / NAS 密码可选仅存 Keychain，可在「钥匙串访问」中核对")
-                TFDivider().opacity(0.5).padding(.vertical, 4)
+                TFDivider()
                 check("系统代理可一键关闭", !engine.systemProxyActive || engine.state == .running,
                       engine.systemProxyActive ? "当前已接管系统代理" : "未接管")
-
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 10))
-                        .foregroundStyle(TF.violet)
-                    Text("搭配 Little Snitch / LuLu 管出站进程，本工具管域名分流与去广告，再把浏览器切到 NextDNS 或 DoH——三层互补。")
-                        .font(.system(size: 10))
-                        .foregroundStyle(TF.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(10)
-                .background(TF.stroke.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                .padding(.top, 10)
             }
+            .padding(.horizontal, 18)
+
+            TFDivider()
+
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 10))
+                    .foregroundStyle(TF.textTertiary)
+                Text("搭配 Little Snitch / LuLu 管出站进程，本工具管域名分流与去广告，再把浏览器切到 NextDNS 或 DoH——三层互补。")
+                    .font(.system(size: 12))
+                    .foregroundStyle(TF.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(18)
         }
+        .tfPanel(padding: 0)
         .frame(maxWidth: .infinity)
     }
 
     // MARK: Findings
 
     private var findings: some View {
-        Card(title: "发现", subtitle: report.findings.isEmpty ? nil : "\(report.findings.count) 项", icon: "exclamationmark.triangle") {
+        VStack(alignment: .leading, spacing: 0) {
+            SectionHeader(title: "发现",
+                          subtitle: report.findings.isEmpty ? nil : "\(report.findings.count) 项",
+                          icon: "exclamationmark.triangle")
+                .padding(18)
+
+            TFDivider()
+
             if report.findings.isEmpty {
-                EmptyHint(icon: "checkmark.seal", text: "暂无跟踪器流量\n启动代理并浏览一段时间后再回来看看")
-                    .frame(height: 200)
+                VStack(spacing: 12) {
+                    Image(systemName: "checkmark.seal")
+                        .font(.system(size: 22, weight: .light))
+                        .foregroundStyle(TF.textTertiary)
+                    Text("暂未发现跟踪器流量")
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(TF.textSecondary)
+                    Text("启动系统代理并浏览一段时间，这里会按域名列出命中的跟踪器。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(TF.textTertiary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 300)
+                    Button("去抓包") { app.go(to: .capture) }
+                        .buttonStyle(TFGhostButtonStyle())
+                        .padding(.top, 2)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 34)
             } else {
                 VStack(spacing: 0) {
                     ForEach(report.findings.prefix(30)) { finding in
-                        HStack(spacing: 9) {
+                        HStack(spacing: 10) {
                             Circle()
                                 .fill(severityColor(finding.severity))
                                 .frame(width: 6, height: 6)
-                                .shadow(color: severityColor(finding.severity).opacity(0.5), radius: 3)
-                            VStack(alignment: .leading, spacing: 1) {
+                            VStack(alignment: .leading, spacing: 3) {
                                 Text(finding.domain)
-                                    .font(TFFont.mono(11))
+                                    .font(TFFont.mono(12, weight: .medium))
                                     .foregroundStyle(TF.text)
                                     .lineLimit(1)
                                 Text("\(finding.app) · \(finding.category)")
-                                    .font(.system(size: 9.5))
+                                    .font(TFFont.mono(10))
                                     .foregroundStyle(TF.textTertiary)
+                                    .lineLimit(1)
                             }
                             Spacer(minLength: 8)
-                            Button("加入拦截") {
-                                let domain = finding.domain
-                                var added = false
-                                engine.updateProfile(restart: true) { profile in
-                                    let exists = profile.rules.contains {
-                                        $0.kind == .domainSuffix && $0.value.caseInsensitiveCompare(domain) == .orderedSame
-                                    }
-                                    if !exists {
-                                        profile.rules.append(Rule(kind: .domainSuffix, value: domain, policy: "REJECT",
-                                                                  raw: "DOMAIN-SUFFIX,\(domain),REJECT"))
-                                        added = true
-                                    }
+                            Button {
+                                block(finding.domain)
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "plus").font(.system(size: 8, weight: .bold))
+                                    Text("加入拦截").font(.system(size: 11, weight: .medium))
                                 }
-                                if added {
-                                    app.showToast("已加入拦截：\(domain)", kind: .success, actionTitle: "撤销") {
-                                        engine.updateProfile(restart: true) { profile in
-                                            profile.rules.removeAll {
-                                                $0.kind == .domainSuffix
-                                                    && $0.value.caseInsensitiveCompare(domain) == .orderedSame
-                                                    && $0.policy.uppercased() == "REJECT"
-                                            }
-                                        }
-                                        app.showToast("已撤销拦截：\(domain)", kind: .info)
-                                    }
-                                } else {
-                                    app.showToast("\(domain) 已在拦截规则中", kind: .warning)
-                                }
+                                .foregroundStyle(TF.textSecondary)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                        .strokeBorder(TF.stroke, lineWidth: 1)
+                                )
+                                .contentShape(Rectangle())
                             }
-                            .buttonStyle(TFGhostButtonStyle())
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("将 \(finding.domain) 加入拦截")
                         }
-                        .padding(.vertical, 5)
-                        TFDivider().opacity(0.5)
+                        .padding(.vertical, 11)
+                        TFDivider()
                     }
                 }
+                .padding(.horizontal, 18)
             }
         }
+        .tfPanel(padding: 0)
         .frame(maxWidth: .infinity)
     }
 
-    private func check(_ title: String, _ ok: Bool, _ detail: String) -> some View {
-        HStack(alignment: .top, spacing: 9) {
-            Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .font(.system(size: 12))
-                .foregroundStyle(ok ? TF.mint : TF.amber)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundStyle(TF.text)
-                Text(detail)
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(TF.textTertiary)
-                    .lineLimit(2)
+    private func block(_ domain: String) {
+        var added = false
+        engine.updateProfile(restart: true) { profile in
+            let exists = profile.rules.contains {
+                $0.kind == .domainSuffix && $0.value.caseInsensitiveCompare(domain) == .orderedSame
             }
-            Spacer(minLength: 0)
+            if !exists {
+                profile.rules.append(Rule(kind: .domainSuffix, value: domain, policy: "REJECT",
+                                          raw: "DOMAIN-SUFFIX,\(domain),REJECT"))
+                added = true
+            }
         }
-        .padding(.vertical, 2)
+        if added {
+            app.showToast("已加入拦截：\(domain)", kind: .success, actionTitle: "撤销") {
+                engine.updateProfile(restart: true) { profile in
+                    profile.rules.removeAll {
+                        $0.kind == .domainSuffix
+                            && $0.value.caseInsensitiveCompare(domain) == .orderedSame
+                            && $0.policy.uppercased() == "REJECT"
+                    }
+                }
+                app.showToast("已撤销拦截：\(domain)", kind: .info)
+            }
+        } else {
+            app.showToast("\(domain) 已在拦截规则中", kind: .warning)
+        }
+    }
+
+    private func check(_ title: String, _ ok: Bool, _ detail: String) -> some View {
+        row(title: title, detail: detail, color: ok ? TF.mint : TF.amber, filled: true)
     }
 
     /// 仅作说明的事实行：不是可勾选的安全项，避免出现「永远通过」的假绿灯。
     private func note(_ title: String, _ detail: String) -> some View {
-        HStack(alignment: .top, spacing: 9) {
-            Image(systemName: "info.circle")
-                .font(.system(size: 12))
-                .foregroundStyle(TF.textTertiary)
-            VStack(alignment: .leading, spacing: 1) {
+        row(title: title, detail: detail, color: TF.textTertiary, filled: false)
+    }
+
+    private func row(title: String, detail: String, color: Color, filled: Bool) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Group {
+                if filled {
+                    Circle().fill(color).frame(width: 6, height: 6)
+                } else {
+                    Circle().strokeBorder(color, lineWidth: 1).frame(width: 6, height: 6)
+                }
+            }
+            .padding(.top, 5)
+
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 11.5, weight: .medium))
+                    .font(.system(size: 12.5, weight: .medium))
                     .foregroundStyle(TF.text)
                 Text(detail)
-                    .font(.system(size: 9.5))
+                    .font(.system(size: 12))
                     .foregroundStyle(TF.textTertiary)
                     .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
     }
 
     /// 文案与配色共用同一阈值表，避免「85 分说良好但显示琥珀色」的错位。

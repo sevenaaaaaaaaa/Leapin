@@ -19,7 +19,16 @@ struct WindowAutosave: NSViewRepresentable {
         DispatchQueue.main.async {
             guard let window = view.window else { return }
             window.setFrameAutosaveName(name)
-            window.minSize = NSSize(width: 1040, height: 700)
+            window.minSize = NSSize(width: 900, height: 640)
+            // 上次的显示器可能已断开：窗口不在任何可见屏幕内时回到主屏中央。
+            if !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(window.frame) }) {
+                window.center()
+                window.saveFrame(usingName: name)
+            }
+            // 标题栏并入纸面：不显示标题文字，底色跟随内容，而不是系统的灰。
+            window.titleVisibility = .hidden
+            window.titlebarAppearsTransparent = true
+            window.backgroundColor = NSColor(TF.bg)
         }
         return view
     }

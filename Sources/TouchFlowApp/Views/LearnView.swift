@@ -20,7 +20,7 @@ struct LearnView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 22) {
                 inputCard
                 if apps.isEmpty && suggestions.isEmpty { howCard }
                 if !apps.isEmpty { appsCard }
@@ -31,185 +31,313 @@ struct LearnView: View {
         .navigationTitle("智能学习")
     }
 
-    private var howCard: some View {
-        Card(title: "工作方式", subtitle: "三步把「哪个 App 走哪条线」变成规则", icon: "wand.and.stars") {
+    // MARK: Input
+
+    private var inputCard: some View {
+        VStack(spacing: 0) {
+            SectionHeader(title: "提交 App 列表或截图",
+                          subtitle: "自动识别应用并生成分流建议",
+                          icon: "brain")
+                .padding(18)
+
+            TFDivider()
+
             HStack(alignment: .top, spacing: 0) {
-                step(1, "识别", "App 名 / Bundle ID / 域名，或直接从截图 OCR 出应用清单")
-                arrow
-                step(2, "建议", "按内置 55 个应用目录与最近连接，给出直连 / 代理 / 拦截建议")
-                arrow
-                step(3, "落地", "勾选建议后写入分流规则，立即生效并可随时删除")
+                // 方式一：文本
+                VStack(alignment: .leading, spacing: 10) {
+                    TFEyebrow(text: "方式一 / 粘贴文本")
+                    Text("应用名、Bundle ID 或域名，每行一个；逗号分隔也可以。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(TF.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    ZStack(alignment: .topLeading) {
+                        TextEditor(text: $rawText)
+                            .font(TFFont.mono(12.5))
+                            .scrollContentBackground(.hidden)
+                            .padding(8)
+                        if rawText.isEmpty {
+                            Text("例如：\nSpotify\ncom.spotify.client\napi.spotify.com")
+                                .font(TFFont.mono(12.5))
+                                .foregroundStyle(TF.textTertiary.opacity(0.75))
+                                .padding(.horizontal, 13)
+                                .padding(.vertical, 16)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .frame(height: 150)
+                    .background(TF.panelSolid)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(TF.stroke, lineWidth: 1)
+                    )
+
+                    HStack(spacing: 8) {
+                        if rawText.isEmpty {
+                            Button("解析列表") { parseText() }
+                                .buttonStyle(TFGhostButtonStyle())
+                                .disabled(true)
+                        } else {
+                            Button("解析列表") { parseText() }
+                                .buttonStyle(TFPrimaryButtonStyle())
+                        }
+                        Button("清空") { rawText = ""; apps = []; suggestions = [] }
+                            .buttonStyle(TFGhostButtonStyle())
+                        Spacer(minLength: 8)
+                        Text("内置目录 \(AppCatalog.builtin.count) 个应用")
+                            .font(.system(size: 12))
+                            .foregroundStyle(TF.textTertiary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(18)
+
+                Rectangle()
+                    .fill(TF.stroke)
+                    .frame(width: 1)
+                    .padding(.vertical, 18)
+
+                // 方式二：截图 OCR
+                VStack(alignment: .leading, spacing: 10) {
+                    TFEyebrow(text: "方式二 / 截图 OCR")
+                    Text("App 列表页、订阅页或分流规则页的截图都可以。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(TF.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .fill(dropped ? TF.stroke.opacity(0.35) : Color.clear)
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(TF.stroke,
+                                          style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+                        VStack(spacing: 7) {
+                            Image(systemName: busy ? "hourglass" : "photo.on.rectangle.angled")
+                                .font(.system(size: 20, weight: .light))
+                                .foregroundStyle(busy ? TF.amber : TF.textTertiary)
+                            Text(busy ? "识别中…" : "拖入截图")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(TF.textSecondary)
+                            Text("PNG / JPEG / HEIC / TIFF")
+                                .font(.system(size: 12))
+                                .foregroundStyle(TF.textTertiary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 150)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                            .strokeBorder(dropped ? TF.accent : Color.clear, lineWidth: 1.5)
+                    )
+                    .dropDestination(for: URL.self) { urls, _ in
+                        guard let url = urls.first else { return false }
+                        dropped = true
+                        runOCR(url: url)
+                        return true
+                    } isTargeted: { inside in
+                        dropped = inside
+                    }
+                    .accessibilityLabel("拖入截图以识别应用列表")
+                    .accessibilityHint("也可以使用下方的选择截图按钮")
+
+                    HStack(spacing: 8) {
+                        Button("选择截图…") { pickImage() }
+                            .buttonStyle(TFGhostButtonStyle())
+                        Spacer(minLength: 8)
+                        if !ocrText.isEmpty {
+                            Text("\(ocrText.count) 字")
+                                .font(TFFont.num(11))
+                                .foregroundStyle(TF.textTertiary)
+                        }
+                    }
+
+                    if !ocrText.isEmpty {
+                        Text(ocrText.prefix(120))
+                            .font(TFFont.mono(10))
+                            .foregroundStyle(TF.textTertiary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(18)
             }
         }
+        .tfPanel(padding: 0)
     }
 
-    private func step(_ n: Int, _ title: String, _ detail: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 7) {
-                Text(String(n))
-                    .font(TFFont.num(10, weight: .bold))
-                    .foregroundStyle(TF.accent)
-                    .frame(width: 18, height: 18)
-                    .background(TF.accent.opacity(0.13), in: Circle())
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(TF.text)
+    // MARK: How it works
+
+    private var howCard: some View {
+        VStack(spacing: 0) {
+            SectionHeader(title: "工作方式",
+                          subtitle: "三步把「哪个 App 走哪条线」变成规则",
+                          icon: "wand.and.stars")
+                .padding(18)
+
+            TFDivider()
+
+            HStack(alignment: .top, spacing: 0) {
+                step("01", "识别", "App 名 / Bundle ID / 域名，或直接从截图 OCR 出应用清单")
+                stepDivider
+                step("02", "建议", "按内置 \(AppCatalog.builtin.count) 个应用目录与最近连接，给出直连 / 代理 / 拦截建议")
+                stepDivider
+                step("03", "落地", "勾选建议后写入分流规则，立即生效并可随时删除")
             }
+            .padding(18)
+        }
+        .tfPanel(padding: 0)
+    }
+
+    private func step(_ index: String, _ title: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(index)
+                .font(TFFont.mono(11, weight: .medium))
+                .foregroundStyle(TF.textTertiary)
+            Text(title)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(TF.text)
             Text(detail)
-                .font(.system(size: 10.5))
+                .font(.system(size: 12))
                 .foregroundStyle(TF.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var arrow: some View {
-        Image(systemName: "arrow.right")
-            .font(.system(size: 9, weight: .semibold))
-            .foregroundStyle(TF.textTertiary.opacity(0.6))
-            .padding(.horizontal, 10)
-            .padding(.top, 5)
+    private var stepDivider: some View {
+        Rectangle()
+            .fill(TF.stroke)
+            .frame(width: 1, height: 48)
+            .padding(.horizontal, 16)
     }
 
-    private var inputCard: some View {
-        Card(title: "提交 App 列表或截图", subtitle: "自动识别应用并生成分流建议", icon: "brain") {
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("方式一：粘贴应用名 / Bundle ID / 域名（每行一个，逗号分隔也可）")
-                        .font(.caption).foregroundStyle(.secondary)
-                    TextEditor(text: $rawText)
-                        .font(TFFont.mono(11))
-                        .frame(height: 132)
-                        .scrollContentBackground(.hidden)
-                        .padding(8)
-                        .background(TF.stroke.opacity(0.4), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    HStack(spacing: 8) {
-                        Button("解析列表") { parseText() }
-                            .buttonStyle(TFPrimaryButtonStyle())
-                            .disabled(rawText.isEmpty)
-                        Button("清空") { rawText = ""; apps = []; suggestions = [] }
-                            .buttonStyle(TFGhostButtonStyle())
-                        Spacer()
-                        Text("内置目录 \(AppCatalog.builtin.count) 个应用")
-                            .font(.system(size: 10))
+    // MARK: Identified apps
+
+    private var appsCard: some View {
+        VStack(spacing: 0) {
+            SectionHeader(title: "已识别应用",
+                          subtitle: "\(apps.count) 个",
+                          icon: "app.badge.checkmark")
+                .padding(18)
+
+            TFDivider()
+
+            VStack(spacing: 0) {
+                ForEach(apps) { learned in
+                    HStack(spacing: 10) {
+                        Image(systemName: "app.fill")
+                            .font(.system(size: 12))
                             .foregroundStyle(TF.textTertiary)
+                            .frame(width: 14)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(learned.name)
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(TF.text)
+                            if let bid = learned.bundleID {
+                                Text(bid)
+                                    .font(TFFont.mono(10))
+                                    .foregroundStyle(TF.textTertiary)
+                                    .lineLimit(1)
+                            }
+                        }
+
+                        Spacer(minLength: 10)
+
+                        Text(learned.domains.prefix(3).joined(separator: ", "))
+                            .font(TFFont.mono(10.5))
+                            .foregroundStyle(TF.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+
+                        Badge(text: learned.source, color: TF.textSecondary)
                     }
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 11)
+                    TFDivider()
                 }
+            }
 
-                Rectangle().fill(TF.stroke).frame(width: 1).padding(.vertical, 2)
+            if suggestions.isEmpty {
+                HStack {
+                    Text("名单没问题就可以生成建议了。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(TF.textTertiary)
+                    Spacer()
+                    Button("生成分流建议") { suggest() }
+                        .buttonStyle(TFGhostButtonStyle())
+                }
+                .padding(18)
+            }
+        }
+        .tfPanel(padding: 0)
+    }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("方式二：拖入截图（App 列表页 / 订阅页 / 分流规则页）")
-                        .font(.caption).foregroundStyle(.secondary)
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(dropped ? TF.accent.opacity(0.08) : TF.stroke.opacity(0.3))
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
-                            .foregroundStyle(dropped ? TF.accent : TF.strokeStrong)
-                        VStack(spacing: 6) {
-                            Image(systemName: busy ? "hourglass" : "photo.on.rectangle.angled")
-                                .font(.system(size: 22, weight: .light))
-                                .foregroundStyle(dropped ? TF.accent : TF.textTertiary)
-                            Text(busy ? "识别中…" : "拖拽图片到此处，或点下方按钮")
-                                .font(.system(size: 10.5))
+    // MARK: Suggestions
+
+    private var suggestionCard: some View {
+        VStack(spacing: 0) {
+            SectionHeader(title: "分流建议",
+                          subtitle: "勾选后写入当前配置",
+                          icon: "checklist")
+                .padding(18)
+
+            TFDivider()
+
+            VStack(spacing: 0) {
+                ForEach(suggestions) { suggestion in
+                    Toggle(isOn: Binding(
+                        get: { selected.contains(suggestion.id) },
+                        set: { on in
+                            if on { selected.insert(suggestion.id) } else { selected.remove(suggestion.id) }
+                        }
+                    )) {
+                        HStack(spacing: 9) {
+                            Text(suggestion.domain)
+                                .font(TFFont.mono(12))
+                                .foregroundStyle(TF.text)
+                            Badge(text: suggestion.appName, color: TF.textSecondary)
+                            Text(suggestion.rule.kind.rawValue)
+                                .font(TFFont.mono(9))
+                                .foregroundStyle(TF.textTertiary)
+                            Text(suggestion.rationale)
+                                .font(.system(size: 12))
+                                .foregroundStyle(TF.textTertiary)
+                                .lineLimit(1)
+                            Spacer(minLength: 10)
+                            Text("\(Int(suggestion.confidence * 100))%")
+                                .font(TFFont.num(11, weight: .medium))
                                 .foregroundStyle(TF.textSecondary)
                         }
                     }
-                    .frame(width: 262, height: 132)
-                    .dropDestination(for: URL.self) { urls, _ in
-                        guard let url = urls.first else { return false }
-                        dropped = true
-                        runOCR(url: url)
-                        return true
-                    }
-                    Button("选择截图…") { pickImage() }
-                        .buttonStyle(TFGhostButtonStyle())
-                    if !ocrText.isEmpty {
-                        Text(ocrText.prefix(120)).font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(2)
-                    }
+                    .toggleStyle(.checkbox)
+                    .tint(TF.textSecondary)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 10)
+                    .accessibilityLabel("\(suggestion.appName) \(suggestion.domain)，\(suggestion.rule.kind.rawValue)，置信度 \(Int(suggestion.confidence * 100))%")
+                    TFDivider()
                 }
-                .frame(width: 280)
             }
-        }
-    }
 
-    private var appsCard: some View {
-        Card(title: "已识别应用", subtitle: "\(apps.count) 个", icon: "app.badge.checkmark") {
-            ForEach(apps) { learned in
-                HStack(spacing: 8) {
-                    Image(systemName: "app.fill")
-                        .font(.system(size: 11))
-                        .foregroundStyle(TF.accent)
-                    Text(learned.name)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(TF.text)
-                    if let bid = learned.bundleID {
-                        Text(bid)
-                            .font(TFFont.mono(9.5))
-                            .foregroundStyle(TF.textTertiary)
-                    }
-                    Spacer(minLength: 8)
-                    Text(learned.domains.prefix(3).joined(separator: ", "))
-                        .font(TFFont.mono(9.5))
-                        .foregroundStyle(TF.textSecondary)
-                        .lineLimit(1)
-                    Badge(text: learned.source, color: TF.accent)
-                }
-                .padding(.vertical, 2)
-            }
-            if suggestions.isEmpty {
-                HStack {
-                    Spacer()
-                    Button("生成分流建议") { suggest() }
-                        .buttonStyle(TFPrimaryButtonStyle())
-                }
-            }
-        }
-    }
-
-    private var suggestionCard: some View {
-        Card(title: "分流建议", subtitle: "勾选后写入当前配置", icon: "checklist") {
-            ForEach(suggestions) { suggestion in
-                Toggle(isOn: Binding(
-                    get: { selected.contains(suggestion.id) },
-                    set: { on in
-                        if on { selected.insert(suggestion.id) } else { selected.remove(suggestion.id) }
-                    }
-                )) {
-                    HStack(spacing: 8) {
-                        Text(suggestion.domain)
-                            .font(TFFont.mono(11))
-                            .foregroundStyle(TF.text)
-                        Badge(text: suggestion.appName, color: TF.violet)
-                        Text(suggestion.rule.kind.rawValue)
-                            .font(TFFont.mono(9))
-                            .foregroundStyle(TF.textTertiary)
-                        Text(suggestion.rationale)
-                            .font(.system(size: 10))
-                            .foregroundStyle(TF.textTertiary)
-                            .lineLimit(1)
-                        Spacer(minLength: 8)
-                        Text("\(Int(suggestion.confidence * 100))%")
-                            .font(TFFont.num(10, weight: .semibold))
-                            .foregroundStyle(TF.mint)
-                    }
-                }
-                .toggleStyle(.checkbox)
-            }
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Text("已选 \(selected.count) 条")
-                    .font(.system(size: 10.5))
+                    .font(TFFont.num(11))
                     .foregroundStyle(TF.textTertiary)
-                Spacer()
+                Spacer(minLength: 8)
                 Button("全选") { selected = Set(suggestions.map(\.id)) }
                     .buttonStyle(TFGhostButtonStyle())
                 Button("应用所选规则") { apply() }
                     .buttonStyle(TFPrimaryButtonStyle())
                     .disabled(selected.isEmpty)
             }
+            .padding(18)
         }
+        .tfPanel(padding: 0)
     }
+
+    // MARK: Actions
 
     private func parseText() {
         apps = AppListParser.parse(text: rawText)

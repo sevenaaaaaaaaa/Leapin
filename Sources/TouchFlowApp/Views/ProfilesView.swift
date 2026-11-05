@@ -16,6 +16,10 @@ struct ProfilesView: View {
     @State private var activating: UUID?
     @FocusState private var searchFocused: Bool
 
+    private var currentMeta: ProfileMeta? {
+        metas.first { $0.id == engine.profile.id }
+    }
+
     private func activate(_ meta: ProfileMeta) {
         activating = meta.id
         Task {
@@ -38,150 +42,10 @@ struct ProfilesView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
-                Card(title: "配置管理", subtitle: "导入 Clash / Surge / JSON；导出还可生成 Hosts、ABP、rule-set", icon: "doc.on.doc") {
-                    HStack(spacing: 8) {
-                        Button { app.showImporter = true } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "square.and.arrow.down").font(.system(size: 9, weight: .bold))
-                                Text("导入配置").font(.system(size: 11, weight: .semibold))
-                            }
-                        }
-                        .buttonStyle(TFPrimaryButtonStyle())
-
-                        Button {
-                            app.importFromClipboardLink()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "link").font(.system(size: 9, weight: .bold))
-                                Text("粘贴订阅链接").font(.system(size: 11, weight: .medium))
-                            }
-                            .foregroundStyle(TF.text)
-                            .padding(.horizontal, 10).padding(.vertical, 6)
-                            .background(TF.stroke.opacity(0.55), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        }
-                        .buttonStyle(.plain)
-                        .help("从剪贴板读取 http(s) 订阅链接并下载导入")
-
-                        Menu {
-                            Button("Clash YAML") { app.exportProfile(format: .clash) }
-                            Button("Surge conf") { app.exportProfile(format: .surge) }
-                            Button("TouchFlow JSON") { app.exportProfile(format: .json) }
-                            Divider()
-                            Button("Hosts 拦截表（REJECT 精确域名）") { app.exportProfile(format: .hosts) }
-                            Button("ABP / uBlock 过滤列表") { app.exportProfile(format: .abp) }
-                            Button("Clash rule-set（classical）") { app.exportProfile(format: .ruleSet) }
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "square.and.arrow.up").font(.system(size: 9, weight: .bold))
-                                Text("导出").font(.system(size: 11, weight: .medium))
-                            }
-                            .foregroundStyle(TF.text)
-                            .padding(.horizontal, 10).padding(.vertical, 6)
-                            .background(TF.stroke.opacity(0.55), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        }
-                        .menuStyle(.borderlessButton)
-                        .menuIndicator(.hidden)
-                        .fixedSize()
-
-                        Button("打开目录") {
-                            NSWorkspace.shared.open(engine.store.root)
-                            app.showToast("已在访达中打开配置目录", kind: .info)
-                        }
-                        .buttonStyle(TFGhostButtonStyle())
-
-                        Spacer()
-                        HStack(spacing: 5) {
-                            Circle().fill(TF.mint).frame(width: 5, height: 5)
-                            Text("当前：\(engine.profile.name)")
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(TF.textSecondary)
-                        }
-                        .padding(.horizontal, 9).padding(.vertical, 5)
-                        .background(TF.stroke.opacity(0.35), in: Capsule())
-                    }
-                    Text("导入会自动识别格式并转换为内部模型；策略组、规则、DNS、去广告列表都会保留。导出支持 round-trip，便于在其他工具中使用。")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                }
-
-                Card(title: "全部配置", subtitle: "\(filtered.count) / \(metas.count) 个", icon: "list.bullet.rectangle") {
-                    if !metas.isEmpty {
-                        TFSearchField(text: $search, placeholder: "搜索配置名", width: 240, focus: $searchFocused)
-                            .padding(.bottom, 4)
-                    }
-                    if metas.isEmpty {
-                        TFEmptyState(icon: "doc.badge.plus",
-                                     title: "还没有配置",
-                                     message: "导入 Clash YAML、Surge conf 或之前导出的 TouchFlow JSON 即可开始。",
-                                     actionTitle: "导入配置",
-                                     action: { app.showImporter = true })
-                            .frame(height: 210)
-                    } else if filtered.isEmpty {
-                        TFEmptyState(icon: "magnifyingglass",
-                                     title: "没有匹配的配置",
-                                     message: "换个关键词试试。",
-                                     actionTitle: "清除搜索",
-                                     action: { search = "" })
-                            .frame(height: 150)
-                    } else {
-                        ForEach(filtered) { meta in
-                            HStack(spacing: 11) {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                        .fill(meta.id == engine.profile.id ? TF.accent.opacity(0.15) : TF.stroke.opacity(0.45))
-                                    Image(systemName: meta.id == engine.profile.id ? "checkmark" : "doc.text")
-                                        .font(.system(size: 10, weight: .bold))
-                                        .foregroundStyle(meta.id == engine.profile.id ? TF.accent : TF.textTertiary)
-                                }
-                                .frame(width: 26, height: 26)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(meta.name)
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(TF.text)
-                                    Text("\(meta.ruleCount) 条规则 · \(Fmt.day(meta.updatedAt))")
-                                        .font(TFFont.mono(9.5))
-                                        .foregroundStyle(TF.textTertiary)
-                                }
-                                Spacer(minLength: 8)
-                                if meta.id != engine.profile.id {
-                                    Button {
-                                        activate(meta)
-                                    } label: {
-                                        if activating == meta.id {
-                                            ProgressView().controlSize(.mini)
-                                        } else {
-                                            Text("启用")
-                                        }
-                                    }
-                                    .buttonStyle(TFGhostButtonStyle())
-                                    .disabled(activating != nil)
-                                } else {
-                                    Badge(text: "使用中", color: TF.mint)
-                                }
-                                Button(role: .destructive) {
-                                    pendingDelete = meta
-                                } label: {
-                                    Image(systemName: "trash")
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(TF.textTertiary)
-                                }
-                                .buttonStyle(.plain)
-                                .help("删除该配置")
-                            }
-                            .padding(.vertical, 6)
-                            .contentShape(Rectangle())
-                            .contextMenu {
-                                Button("启用") { activate(meta) }
-                                Button("在访达中显示") {
-                                    NSWorkspace.shared.activateFileViewerSelecting([engine.store.root])
-                                }
-                                Divider()
-                                Button("删除…", role: .destructive) { pendingDelete = meta }
-                            }
-                            TFDivider().opacity(0.5)
-                        }
-                    }
-                }
+            VStack(spacing: 22) {
+                heroPanel
+                listPanel
+                importSourcesPanel
             }
             .pagePadding()
         }
@@ -201,6 +65,318 @@ struct ProfilesView: View {
             }
             pendingDelete = nil
         }
+    }
+
+    // MARK: Hero
+
+    private var heroPanel: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .center, spacing: 16) {
+                VStack(alignment: .leading, spacing: 7) {
+                    TFEyebrow("当前配置 / ACTIVE PROFILE")
+
+                    Text(engine.profile.name)
+                        .font(TFFont.display(20, weight: .semibold))
+                        .foregroundStyle(TF.text)
+                        .lineLimit(1)
+
+                    HStack(spacing: 7) {
+                        Text("\(engine.ruleCount) 条规则")
+                            .font(TFFont.mono(11))
+                            .foregroundStyle(TF.textSecondary)
+                        Text("·")
+                            .font(TFFont.mono(11))
+                            .foregroundStyle(TF.textTertiary)
+                        Text(currentMeta.map { Fmt.day($0.updatedAt) } ?? "本机配置")
+                            .font(TFFont.mono(11))
+                            .foregroundStyle(TF.textTertiary)
+                        Circle()
+                            .fill(TF.mint)
+                            .frame(width: 5, height: 5)
+                            .padding(.leading, 4)
+                        Text("已启用")
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(TF.textSecondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("\(engine.ruleCount) 条规则，已启用")
+                }
+
+                Spacer(minLength: 12)
+
+                HStack(spacing: 8) {
+                    Button {
+                        app.showImporter = true
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "square.and.arrow.down")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("导入配置")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                    }
+                    .buttonStyle(TFPrimaryButtonStyle())
+                    .accessibilityLabel("导入配置")
+
+                    Button {
+                        app.importFromClipboardLink()
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "link")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("粘贴订阅链接")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                    }
+                    .buttonStyle(TFGhostButtonStyle())
+                    .help("从剪贴板读取 http(s) 订阅链接并下载导入")
+                    .accessibilityLabel("粘贴订阅链接")
+
+                    Menu {
+                        Button("Clash YAML") { app.exportProfile(format: .clash) }
+                        Button("Surge conf") { app.exportProfile(format: .surge) }
+                        Button("TouchFlow JSON") { app.exportProfile(format: .json) }
+                        Divider()
+                        Button("Hosts 拦截表（REJECT 精确域名）") { app.exportProfile(format: .hosts) }
+                        Button("ABP / uBlock 过滤列表") { app.exportProfile(format: .abp) }
+                        Button("Clash rule-set（classical）") { app.exportProfile(format: .ruleSet) }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 9, weight: .bold))
+                            Text("导出")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(TF.text)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(TF.panelSolid, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                .strokeBorder(TF.stroke, lineWidth: 1)
+                        )
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("导出为 Clash / Surge / JSON / Hosts / ABP / rule-set")
+                    .accessibilityLabel("导出配置")
+
+                    Button("打开目录") {
+                        NSWorkspace.shared.open(engine.store.root)
+                        app.showToast("已在访达中打开配置目录", kind: .info)
+                    }
+                    .buttonStyle(TFGhostButtonStyle())
+                }
+            }
+
+            Text("导入会自动识别格式并转换为内部模型；策略组、规则、DNS、去广告列表都会保留。导出支持 round-trip，便于在其他工具中使用。")
+                .font(.system(size: 12))
+                .foregroundStyle(TF.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .tfPanel(padding: 0)
+        .tfAppear(0)
+    }
+
+    // MARK: Profile list
+
+    private var listPanel: some View {
+        VStack(spacing: 0) {
+            SectionHeader(title: "全部配置",
+                          subtitle: "\(filtered.count) / \(metas.count) 个",
+                          icon: "list.bullet.rectangle")
+                .padding(18)
+
+            TFDivider()
+
+            HStack(spacing: 12) {
+                if !metas.isEmpty {
+                    TFSearchField(text: $search, placeholder: "搜索配置名", width: 240, focus: $searchFocused)
+                }
+                Spacer(minLength: 8)
+                Text("本机存储 · 导入即启用")
+                    .font(TFFont.mono(9))
+                    .tracking(0.8)
+                    .foregroundStyle(TF.textTertiary)
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 12)
+
+            TFDivider()
+
+            if metas.isEmpty {
+                emptyState
+            } else if filtered.isEmpty {
+                noResults
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(filtered.enumerated()), id: \.element.id) { index, meta in
+                        profileRow(meta)
+                        if index < filtered.count - 1 {
+                            TFDivider().padding(.leading, 46)
+                        }
+                    }
+                }
+            }
+        }
+        .tfPanel(padding: 0)
+        .tfAppear(0.04)
+    }
+
+    private var emptyState: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("还没有配置")
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(TF.textSecondary)
+            Text("导入 Clash YAML、Surge conf 或之前导出的 TouchFlow JSON 即可开始。")
+                .font(.system(size: 12))
+                .foregroundStyle(TF.textTertiary)
+            Button("导入配置") { app.showImporter = true }
+                .buttonStyle(TFGhostButtonStyle())
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+    }
+
+    private var noResults: some View {
+        HStack(spacing: 10) {
+            Text("没有匹配的配置。")
+                .font(.system(size: 12))
+                .foregroundStyle(TF.textTertiary)
+            Button("清除搜索") { search = "" }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(TF.accent)
+                .accessibilityLabel("清除搜索")
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+    }
+
+    private func profileRow(_ meta: ProfileMeta) -> some View {
+        let active = meta.id == engine.profile.id
+        return HStack(spacing: 12) {
+            Image(systemName: active ? "doc.text.fill" : "doc.text")
+                .font(.system(size: 12))
+                .foregroundStyle(active ? TF.mint : TF.textTertiary)
+                .frame(width: 16)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(meta.name)
+                        .font(.system(size: 12.5, weight: active ? .semibold : .medium))
+                        .foregroundStyle(TF.text)
+                        .lineLimit(1)
+                    if active {
+                        Badge(text: "使用中", color: TF.mint)
+                    }
+                }
+                Text("\(meta.ruleCount) 条规则 · \(Fmt.day(meta.updatedAt))")
+                    .font(TFFont.mono(10))
+                    .foregroundStyle(TF.textTertiary)
+            }
+
+            Spacer(minLength: 8)
+
+            if !active {
+                Button {
+                    activate(meta)
+                } label: {
+                    if activating == meta.id {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Text("启用")
+                    }
+                }
+                .buttonStyle(TFGhostButtonStyle())
+                .disabled(activating != nil)
+                .accessibilityLabel("启用 \(meta.name)")
+            }
+
+            Button(role: .destructive) {
+                pendingDelete = meta
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 10))
+                    .foregroundStyle(TF.textTertiary)
+                    .frame(width: 24, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("删除该配置")
+            .accessibilityLabel("删除 \(meta.name)")
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button("启用") { activate(meta) }
+            Button("在访达中显示") {
+                NSWorkspace.shared.activateFileViewerSelecting([engine.store.root])
+            }
+            Divider()
+            Button("删除…", role: .destructive) { pendingDelete = meta }
+        }
+    }
+
+    // MARK: Import sources
+
+    private var importSourcesPanel: some View {
+        VStack(spacing: 0) {
+            SectionHeader(title: "导入来源",
+                          subtitle: "支持的格式与本机边界",
+                          icon: "square.and.arrow.down.on.square")
+                .padding(18)
+
+            TFDivider()
+
+            sourceRow("Clash YAML",
+                      "proxies · proxy-groups · rules · dns · rule-providers · proxy-providers")
+            TFDivider()
+            sourceRow("Surge conf",
+                      "[General] · [Proxy] · [Proxy Group] · [Rule] · [Host]")
+            TFDivider()
+            sourceRow("TouchFlow JSON",
+                      "本应用导出的 .json，含出站、策略组、规则、DNS 与去广告列表")
+            TFDivider()
+            sourceRow("订阅链接",
+                      "Clash 订阅、base64 节点列表，或 ss / ssr / trojan / vmess / vless / hysteria2 URI")
+
+            TFDivider()
+
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "lock.shield")
+                    .font(.system(size: 10))
+                    .foregroundStyle(TF.textTertiary)
+                    .padding(.top, 1)
+                Text("导入在本机完成，写入 Application Support/TouchFlow/profiles 后立即启用；订阅只访问你粘贴的 URL，内容不会上传到其他服务器。")
+                    .font(.system(size: 12))
+                    .foregroundStyle(TF.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(18)
+        }
+        .tfPanel(padding: 0)
+        .tfAppear(0.08)
+    }
+
+    private func sourceRow(_ name: String, _ detail: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 14) {
+            Text(name)
+                .font(TFFont.mono(11))
+                .foregroundStyle(TF.textSecondary)
+                .frame(width: 130, alignment: .leading)
+            Text(detail)
+                .font(.system(size: 12))
+                .foregroundStyle(TF.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
     }
 
     private func refresh() {

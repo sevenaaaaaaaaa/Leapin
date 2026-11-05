@@ -63,17 +63,16 @@ struct RulesView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbar
-            Divider()
-            HStack(spacing: 16) {
+            HStack(alignment: .top, spacing: 22) {
                 ruleList
                     .background(TF.panel, in: RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: TF.radius, style: .continuous).strokeBorder(TF.stroke, lineWidth: 1))
                     .clipShape(RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
-                sidePanel.frame(width: 286)
+                sidePanel.frame(width: 292)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 14)
-            .padding(.bottom, 18)
+            .padding(.horizontal, 32)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
         }
         .navigationTitle("分流规则")
         .sheet(isPresented: $showAdd) {
@@ -143,7 +142,8 @@ struct RulesView: View {
             }
             .buttonStyle(TFPrimaryButtonStyle())
         }
-        .padding(.horizontal, 20).padding(.vertical, 11)
+        .padding(.horizontal, 32).padding(.vertical, 13)
+        .background(TF.bg)
     }
 
     private var ruleList: some View {
@@ -161,7 +161,22 @@ struct RulesView: View {
                         else { search = ""; filter = .all }
                     })
             } else {
-                ScrollView {
+                VStack(spacing: 0) {
+                    HStack(spacing: 10) {
+                        Text("#").frame(width: 30, alignment: .leading)
+                        Text("类型").frame(width: 66, alignment: .leading)
+                        Text("匹配值")
+                        Spacer(minLength: 8)
+                        Text("策略")
+                    }
+                    .font(TFFont.mono(9, weight: .medium))
+                    .tracking(1.2)
+                    .foregroundStyle(TF.textTertiary)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 10)
+                    .padding(.bottom, 7)
+                    Rectangle().fill(TF.stroke.opacity(0.7)).frame(height: 0.5)
+                    ScrollView {
                     LazyVStack(spacing: 1) {
                         ForEach(Array(filtered.enumerated()), id: \.element.id) { index, rule in
                             TFRow(selected: selection == rule.id,
@@ -185,15 +200,16 @@ struct RulesView: View {
                             }
                         }
                     }
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 4)
-                }
-                .focusable()
-                .focused($listFocused)
-                .onMoveCommand { direction in moveSelection(direction) }
-                .onDeleteCommand {
-                    if let id = selection, let rule = engine.profile.rules.first(where: { $0.id == id }) {
-                        pendingDelete = rule
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 6)
+                    }
+                    .focusable()
+                    .focused($listFocused)
+                    .onMoveCommand { direction in moveSelection(direction) }
+                    .onDeleteCommand {
+                        if let id = selection, let rule = engine.profile.rules.first(where: { $0.id == id }) {
+                            pendingDelete = rule
+                        }
                     }
                 }
             }
@@ -217,58 +233,72 @@ struct RulesView: View {
 
     private var sidePanel: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Card(title: "策略组", icon: "square.stack.3d.up") {
+            VStack(alignment: .leading, spacing: 18) {
+                railSection("策略组 / GROUPS") {
                     if engine.profile.groups.isEmpty {
-                        Text("当前配置没有策略组").font(.caption).foregroundStyle(.secondary)
+                        railNote("当前配置没有策略组")
                     } else {
                         ForEach(engine.profile.groups) { group in
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack {
-                                    Text(group.name).font(.callout)
-                                    Badge(text: group.type.rawValue, color: .blue)
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack(spacing: 7) {
+                                    Text(group.name)
+                                        .font(.system(size: 11.5, weight: .medium))
+                                        .foregroundStyle(TF.text)
                                     Spacer()
+                                    Text(group.type.rawValue.uppercased())
+                                        .font(TFFont.mono(8.5))
+                                        .tracking(0.6)
+                                        .foregroundStyle(TF.textTertiary)
                                 }
-                                Picker("", selection: Binding(
+                                TFSelectField(value: Binding(
                                     get: { group.selected ?? group.proxies.first ?? "DIRECT" },
                                     set: { engine.selectOutbound(group: group.name, outbound: $0) }
-                                )) {
-                                    ForEach(group.proxies, id: \.self) { Text($0).tag($0) }
-                                }
-                                .labelsHidden()
-                                .controlSize(.small)
+                                ), options: group.proxies.map { ($0, $0) })
                             }
-                            .padding(.vertical, 3)
+                            .padding(.vertical, 4)
                         }
                     }
                 }
 
-                Card(title: "出站", icon: "arrow.up.right.circle") {
+                railRule
+
+                railSection("出站 / OUTBOUNDS") {
                     ForEach(engine.profile.outbounds) { outbound in
-                        HStack(spacing: 6) {
-                            Circle().fill(color(for: outbound.type)).frame(width: 7, height: 7)
-                            Text(outbound.name).font(.callout)
+                        HStack(spacing: 8) {
+                            Circle().fill(color(for: outbound.type)).frame(width: 5, height: 5)
+                            Text(outbound.name)
+                                .font(.system(size: 12))
+                                .foregroundStyle(TF.text)
                             Spacer()
-                            Text(outbound.type.rawValue).font(.caption2).foregroundStyle(.secondary)
+                            Text(outbound.type.rawValue)
+                                .font(TFFont.mono(8.5))
+                                .foregroundStyle(TF.textTertiary)
                         }
-                        .padding(.vertical, 2)
+                        .padding(.vertical, 3)
                     }
                 }
 
-                Card(title: "规则集", icon: "shippingbox") {
+                railRule
+
+                railSection("规则集 / RULE-SETS") {
                     let sets = engine.profile.rules.filter { $0.kind == .ruleSet }
                     if sets.isEmpty {
-                        Text("未引用规则集").font(.caption).foregroundStyle(.secondary)
+                        railNote("未引用规则集")
                     } else {
                         ForEach(sets) { rule in
-                            Text(rule.value).font(.caption.monospaced()).lineLimit(1)
+                            Text(rule.value)
+                                .font(TFFont.mono(9.5))
+                                .foregroundStyle(TF.textSecondary)
+                                .lineLimit(1)
                         }
-                        Text("规则集在启动时下载/读取并缓存，失败会降级为空。").font(.caption2).foregroundStyle(.tertiary)
+                        railNote("规则集在启动时下载/读取并缓存，失败会降级为空。")
                     }
                 }
 
-                Card(title: "快捷键", icon: "command") {
-                    VStack(alignment: .leading, spacing: 6) {
+                railRule
+
+                railSection("快捷键 / KEYS") {
+                    VStack(alignment: .leading, spacing: 7) {
                         shortcut("⌘F", "聚焦搜索")
                         shortcut("↑ ↓", "选择规则")
                         shortcut("⌫", "删除选中规则")
@@ -276,9 +306,28 @@ struct RulesView: View {
                     }
                 }
             }
-            .padding(14)
+            .padding(.top, 18)
+            .padding(.trailing, 4)
         }
-        .background(TF.panel.opacity(0.35))
+        .scrollIndicators(.never)
+    }
+
+    private func railSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            TFEyebrow(text: title)
+            content()
+        }
+    }
+
+    private var railRule: some View {
+        Rectangle().fill(TF.stroke.opacity(0.8)).frame(height: 1)
+    }
+
+    private func railNote(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10))
+            .foregroundStyle(TF.textTertiary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func shortcut(_ key: String, _ label: String) -> some View {
@@ -290,11 +339,9 @@ struct RulesView: View {
 
     private func color(for type: OutboundType) -> Color {
         switch type {
-        case .direct: return TF.mint
+        case .direct: return TF.text.opacity(0.35)
         case .reject: return TF.danger
-        case .http, .socks5: return TF.accent
-        case .shadowsocks, .trojan: return TF.violet
-        default: return TF.textSecondary
+        default: return TF.text.opacity(0.65)
         }
     }
 }
@@ -305,21 +352,27 @@ struct RuleRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Text("\(index)")
-                .font(TFFont.mono(9.5))
+                .font(TFFont.mono(10))
                 .foregroundStyle(TF.textTertiary)
-                .frame(width: 34, alignment: .trailing)
-            Badge(text: label, color: color)
+                .frame(width: 30, alignment: .leading)
+            Text(label)
+                .font(TFFont.mono(10, weight: .medium))
+                .tracking(0.8)
+                .foregroundStyle(TF.textTertiary)
+                .lineLimit(1)
+                .frame(width: 66, alignment: .leading)
             Text(rule.value)
-                .font(TFFont.mono(11))
+                .font(TFFont.mono(11.5))
                 .foregroundStyle(TF.text)
                 .lineLimit(1)
             if rule.noResolve { Badge(text: "no-resolve", color: TF.textTertiary) }
             Spacer()
             Text(rule.policy)
-                .font(.system(size: 10.5, weight: .semibold))
+                .font(TFFont.mono(10.5, weight: .semibold))
+                .tracking(0.2)
                 .foregroundStyle(policyColor)
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, 6)
         .padding(.horizontal, 4)
         .contentShape(Rectangle())
     }
@@ -342,20 +395,16 @@ struct RuleRow: View {
         case .match: return "MATCH"
         }
     }
-    private var color: Color {
-        switch rule.kind {
-        case .match: return TF.amber
-        case .ruleSet: return TF.violet
-        case .processName: return TF.mint
-        case .geoIP, .ipCIDR, .ipCIDR6, .srcIPCIDR: return TF.accent
-        default: return TF.accent
-        }
-    }
+    /// 类型一律中性：表格里只有「策略」携带信息，且用墨阶而非彩色。
+    private var color: Color { TF.textSecondary }
+
+    /// 策略墨阶：PROXY = 满墨、DIRECT = secondary、REJECT = 朱红。
+    /// 朱红因此只代表「拦截」，不再和主按钮抢同一个语义；层级靠字重与基准色，不靠低透明度。
     private var policyColor: Color {
         let p = rule.policy.uppercased()
         if p == "REJECT" { return TF.danger }
-        if p == "DIRECT" { return TF.mint }
-        return TF.violet
+        if p == "DIRECT" { return TF.textSecondary }
+        return TF.text
     }
 }
 
@@ -413,51 +462,60 @@ struct AddRuleSheet: View {
     private var canAdd: Bool { !trimmedValue.isEmpty && validationError == nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
-                Image(systemName: "plus.square.on.square")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(TF.accent)
-                Text("添加分流规则")
-                    .font(TFFont.display(15, weight: .bold))
-                    .foregroundStyle(TF.text)
+        VStack(alignment: .leading, spacing: 0) {
+            TFEyebrow(text: "新建规则 / NEW RULE")
+                .padding(.bottom, 7)
+            Text("添加分流规则")
+                .font(TFFont.display(20, weight: .semibold))
+                .tracking(-0.5)
+                .foregroundStyle(TF.text)
+                .padding(.bottom, 18)
+
+            formRow("类型") {
+                TFSelectField(value: $kind,
+                              options: RuleKind.allCases
+                                .filter { $0 != .and && $0 != .or && $0 != .not }
+                                .map { ($0, $0.rawValue.uppercased()) })
             }
-            LabeledField(label: "类型") {
-                Picker("", selection: $kind) {
-                    ForEach(RuleKind.allCases, id: \.self) { k in
-                        if k != .and && k != .or && k != .not {
-                            Text(k.rawValue).tag(k)
-                        }
-                    }
-                }.labelsHidden()
-            }
-            LabeledField(label: "匹配值") {
-                TextField(placeholder, text: $value)
-                    .textFieldStyle(.roundedBorder)
+            formRow("匹配值") {
+                TFLineField(text: $value, placeholder: placeholder)
                     .focused($valueFocused)
             }
-            LabeledField(label: "策略") {
-                Picker("", selection: $policy) {
-                    ForEach(policies, id: \.self) { Text($0).tag($0) }
-                }.labelsHidden()
+            formRow("策略") {
+                TFSelectField(value: $policy, options: policies.map { ($0, $0) })
             }
-            Toggle("不做 DNS 解析（no-resolve）", isOn: $noResolve).font(.callout)
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("不做 DNS 解析")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(TF.text)
+                    Text("no-resolve，IP 规则常用")
+                        .font(.system(size: 12))
+                        .foregroundStyle(TF.textTertiary)
+                }
+                Spacer(minLength: 12)
+                TFSwitch(isOn: $noResolve, width: 32)
+            }
+            .padding(.vertical, 9)
 
             if let validationError {
                 HStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9.5))
-                    Text(validationError).font(.system(size: 10.5))
+                    Text(validationError).font(.system(size: 12))
                 }
                 .foregroundStyle(TF.danger)
+                .padding(.top, 8)
             }
 
-            HStack {
-                if !trimmedValue.isEmpty {
-                    Text("\(kind.rawValue.uppercased()), \(trimmedValue), \(policy)")
-                        .font(TFFont.mono(9.5))
-                        .foregroundStyle(TF.textTertiary)
-                        .lineLimit(1)
-                }
+            if !trimmedValue.isEmpty {
+                Text("\(kind.rawValue.uppercased()), \(trimmedValue), \(policy)" + (noResolve ? ", no-resolve" : ""))
+                    .font(TFFont.mono(10))
+                    .foregroundStyle(TF.textTertiary)
+                    .lineLimit(1)
+                    .padding(.top, 10)
+            }
+
+            HStack(spacing: 10) {
                 Spacer()
                 Button("取消", action: onCancel).keyboardShortcut(.cancelAction)
                     .buttonStyle(TFGhostButtonStyle())
@@ -471,11 +529,28 @@ struct AddRuleSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canAdd)
             }
+            .padding(.top, 20)
         }
-        .padding(22)
-        .frame(width: 470)
+        .padding(24)
+        .frame(width: 500)
         .background(TF.panelSolid)
         .onAppear { DispatchQueue.main.async { valueFocused = true } }
+    }
+
+    private func formRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(spacing: 14) {
+            Text(label)
+                .font(TFFont.mono(10, weight: .medium))
+                .tracking(0.8)
+                .foregroundStyle(TF.textTertiary)
+                .frame(width: 52, alignment: .leading)
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.vertical, 9)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(TF.stroke.opacity(0.55)).frame(height: 0.5)
+        }
     }
 
     private var placeholder: String {

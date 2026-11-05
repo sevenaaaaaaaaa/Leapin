@@ -26,7 +26,7 @@ struct OnboardingView: View {
                 Spacer()
                 Button("跳过") { finish() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(TF.textTertiary)
             }
             .padding(.bottom, 4)
@@ -50,7 +50,7 @@ struct OnboardingView: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(TF.text)
                     Text(steps[step].body)
-                        .font(.system(size: 11.5))
+                        .font(.system(size: 12))
                         .foregroundStyle(TF.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: 380, alignment: .leading)
@@ -105,7 +105,7 @@ struct OnboardingView: View {
                 Button(engine.systemProxyActive ? "关闭系统代理" : "开启系统代理") {
                     engine.toggleSystemProxy(!engine.systemProxyActive)
                 }
-                .buttonStyle(TFPrimaryButtonStyle(tint: engine.systemProxyActive ? TF.danger : nil))
+                .buttonStyle(TFPrimaryButtonStyle(tint: engine.systemProxyActive ? TF.dangerFill : nil))
 
                 Text(engine.systemProxyActive ? "系统代理已接管" : "当前未接管系统网络")
                     .font(.system(size: 10.5))

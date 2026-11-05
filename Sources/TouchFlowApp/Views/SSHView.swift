@@ -26,69 +26,85 @@ struct SSHView: View {
     var body: some View {
         VStack(spacing: 0) {
             form
+                .padding(.horizontal, 32)
+                .padding(.top, 22)
             terminal
+                .padding(.horizontal, 32)
+                .padding(.top, 22)
+                .padding(.bottom, 22)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onDisappear {
             Task { await session.disconnect() }
         }
+        .navigationTitle("SSH")
     }
 
+    // MARK: Form
+
     private var form: some View {
-        Card(title: "连接", subtitle: "支持密码或私钥，密码经 SSH_ASKPASS 传入，不上命令行", icon: "terminal") {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    fieldLabel("主机")
-                    TextField("主机名或 IP", text: $host)
-                        .textFieldStyle(.plain)
-                        .font(TFFont.mono(11.5))
-                        .padding(.horizontal, 9).padding(.vertical, 6)
-                        .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .frame(minWidth: 180)
-                    fieldLabel("端口")
-                    TextField("22", text: $port)
-                        .textFieldStyle(.plain)
-                        .font(TFFont.mono(11.5))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 9).padding(.vertical, 6)
-                        .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .frame(width: 62)
-                    fieldLabel("用户")
-                    TextField("用户名", text: $user)
-                        .textFieldStyle(.plain)
-                        .font(TFFont.mono(11.5))
-                        .padding(.horizontal, 9).padding(.vertical, 6)
-                        .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .frame(width: 130)
+        VStack(spacing: 0) {
+            SectionHeader(title: "连接",
+                          subtitle: "密码经 SSH_ASKPASS 传入，不上命令行",
+                          icon: "terminal",
+                          tint: TF.violet)
+                .padding(18)
+
+            TFDivider()
+
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .bottom, spacing: 12) {
+                    field("主机 / HOST") {
+                        TextField("主机名或 IP", text: $host)
+                            .font(TFFont.mono(13))
+                    }
+                    .frame(minWidth: 200)
+
+                    field("端口 / PORT") {
+                        TextField("22", text: $port)
+                            .font(TFFont.mono(13))
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(width: 92)
+
+                    field("用户 / USER") {
+                        TextField("用户名", text: $user)
+                            .font(TFFont.mono(13))
+                    }
+                    .frame(width: 158)
                 }
 
-                HStack(spacing: 10) {
-                    Picker("", selection: $useKey) {
-                        Text("密码").tag(false)
-                        Text("密钥").tag(true)
+                HStack(alignment: .bottom, spacing: 10) {
+                    HStack(alignment: .bottom, spacing: 16) {
+                        authTab("密码", active: !useKey) { useKey = false }
+                        authTab("密钥", active: useKey) { useKey = true }
                     }
-                    .pickerStyle(.segmented).labelsHidden().frame(width: 120)
+                    .padding(.bottom, 6)
+                    .padding(.trailing, 6)
 
                     if useKey {
-                        TextField("私钥路径", text: $keyPath)
-                            .textFieldStyle(.plain)
-                            .font(TFFont.mono(11))
-                            .padding(.horizontal, 9).padding(.vertical, 6)
-                            .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        field("私钥 / KEY") {
+                            TextField("私钥路径", text: $keyPath)
+                                .font(TFFont.mono(12.5))
+                        }
                         Button("选择…") { pickKey() }
                             .buttonStyle(TFGhostButtonStyle())
                     } else {
-                        SecureField("密码", text: $password)
-                            .textFieldStyle(.plain)
-                            .font(TFFont.mono(11))
-                            .padding(.horizontal, 9).padding(.vertical, 6)
-                            .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                            .frame(width: 180)
-                        Toggle("记住密码", isOn: $remember)
-                            .toggleStyle(.checkbox)
-                            .font(.system(size: 11))
+                        field(nil) {
+                            SecureField("密码", text: $password)
+                                .font(.system(size: 13))
+                        }
+                        .frame(width: 190)
+                        HStack(spacing: 7) {
+                            TFSwitch(isOn: $remember, width: 32)
+                            Text("记住密码（Keychain）")
+                                .font(.system(size: 12))
+                                .foregroundStyle(TF.textSecondary)
+                        }
+                        .padding(.bottom, 7)
                     }
 
-                    Spacer(minLength: 8)
+                    Spacer(minLength: 12)
 
                     if connected {
                         Button {
@@ -104,7 +120,7 @@ struct SSHView: View {
                                 Text("断开").font(.system(size: 11, weight: .semibold))
                             }
                         }
-                        .buttonStyle(TFPrimaryButtonStyle(tint: TF.danger))
+                        .buttonStyle(TFPrimaryButtonStyle(tint: TF.dangerFill))
                     } else {
                         Button {
                             connect()
@@ -120,65 +136,112 @@ struct SSHView: View {
                 }
 
                 if let errorText {
-                    Text(errorText)
-                        .font(.system(size: 10.5))
-                        .foregroundStyle(TF.danger)
-                        .lineLimit(2)
+                    HStack(alignment: .top, spacing: 6) {
+                        Circle().fill(TF.danger).frame(width: 5, height: 5).padding(.top, 5)
+                        Text(errorText)
+                            .font(.system(size: 12))
+                            .foregroundStyle(TF.danger)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
+            .padding(18)
         }
-        .padding(.horizontal, 26)
-        .padding(.top, 16)
+        .tfPanel(padding: 0)
     }
 
-    private func fieldLabel(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 10.5))
-            .foregroundStyle(TF.textTertiary)
+    private func field<Content: View>(_ label: String?, @ViewBuilder _ content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let label {
+                Text(label)
+                    .font(TFFont.mono(9))
+                    .tracking(1.2)
+                    .foregroundStyle(TF.textTertiary)
+            }
+            content()
+                .textFieldStyle(.plain)
+                .padding(.vertical, 6)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(TF.stroke).frame(height: 1)
+                }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
+
+    private func authTab(_ title: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 5) {
+                Text(title)
+                    .font(.system(size: 12, weight: active ? .semibold : .regular))
+                    .foregroundStyle(active ? TF.text : TF.textTertiary)
+                Rectangle()
+                    .fill(active ? TF.accent : Color.clear)
+                    .frame(height: 1.5)
+            }
+            .fixedSize()
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Terminal
 
     private var terminal: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Circle().fill(Color(red: 1, green: 0.37, blue: 0.34)).frame(width: 9, height: 9)
-                Circle().fill(Color(red: 1, green: 0.74, blue: 0.18)).frame(width: 9, height: 9)
-                Circle().fill(Color(red: 0.16, green: 0.79, blue: 0.42)).frame(width: 9, height: 9)
+            HStack(spacing: 9) {
                 Text(connected ? "\(user)@\(host):\(port)" : "ssh — 未连接")
-                    .font(TFFont.mono(10.5, weight: .medium))
-                    .foregroundStyle(Color(red: 0.62, green: 0.68, blue: 0.78))
-                    .padding(.leading, 6)
-                Spacer()
+                    .font(TFFont.mono(11, weight: .medium))
+                    .tracking(0.3)
+                    .foregroundStyle(Color(red: 0.72, green: 0.78, blue: 0.86))
+                    .lineLimit(1)
+
+                Spacer(minLength: 8)
+
                 if !output.isEmpty {
                     Button {
                         TFClipboard.copy(clean(output))
                         app.showToast("已复制终端输出", kind: .info)
                     } label: {
-                        Image(systemName: "doc.on.doc").font(.system(size: 9.5))
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 10))
                             .foregroundStyle(Color(red: 0.62, green: 0.68, blue: 0.78))
                     }
                     .buttonStyle(.plain)
                     .help("复制全部输出")
+                    .accessibilityLabel("复制全部终端输出")
+
                     Button {
                         output = ""
                     } label: {
-                        Image(systemName: "eraser").font(.system(size: 9.5))
+                        Image(systemName: "eraser")
+                            .font(.system(size: 10))
                             .foregroundStyle(Color(red: 0.62, green: 0.68, blue: 0.78))
                     }
                     .buttonStyle(.plain)
                     .help("清空输出")
+                    .accessibilityLabel("清空终端输出")
                 }
+
+                Circle()
+                    .fill(connected ? TF.mint : Color(red: 0.45, green: 0.50, blue: 0.58))
+                    .frame(width: 5, height: 5)
+
                 Text(connected ? "LIVE" : "IDLE")
-                    .font(TFFont.mono(8.5, weight: .bold))
-                    .tracking(1)
-                    .foregroundStyle(connected ? Color(red: 0.22, green: 0.88, blue: 0.62) : Color(red: 0.45, green: 0.50, blue: 0.58))
+                    .font(TFFont.mono(9, weight: .bold))
+                    .tracking(1.2)
+                    .foregroundStyle(connected ? TF.mint : Color(red: 0.45, green: 0.50, blue: 0.58))
             }
-            .padding(.horizontal, 12).padding(.vertical, 9)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
             .background(Color(red: 0.07, green: 0.09, blue: 0.13))
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+            }
 
             ScrollViewReader { proxy in
                 ScrollView {
                     Text(clean(output.isEmpty ? "连接后在此显示终端输出。支持交互式 shell（ssh -tt）。\n" : output))
-                        .font(TFFont.mono(11.5))
+                        .font(TFFont.mono(12))
                         .foregroundStyle(Color(red: 0.78, green: 0.86, blue: 0.95))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -194,25 +257,31 @@ struct SSHView: View {
 
             HStack(spacing: 8) {
                 Text("$")
-                    .font(TFFont.mono(12, weight: .bold))
-                    .foregroundStyle(Color(red: 0.22, green: 0.88, blue: 0.62))
+                    .font(TFFont.mono(12.5, weight: .bold))
+                    .foregroundStyle(TF.mint)
                 TextField("", text: $command, prompt: Text("输入命令，回车发送").foregroundColor(Color(red: 0.42, green: 0.50, blue: 0.60)))
                     .textFieldStyle(.plain)
-                    .font(TFFont.mono(11.5))
+                    .font(TFFont.mono(12.5))
                     .foregroundStyle(Color(red: 0.85, green: 0.90, blue: 0.97))
                     .onSubmit(send)
                     .disabled(!connected)
             }
-            .padding(.horizontal, 14).padding(.vertical, 9)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
             .background(Color(red: 0.06, green: 0.075, blue: 0.11))
+            .overlay(alignment: .top) {
+                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+            }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(TF.strokeStrong, lineWidth: 1))
-        .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
-        .padding(.horizontal, 26)
-        .padding(.top, 14)
-        .padding(.bottom, 20)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(TF.strokeStrong, lineWidth: 1)
+        )
+        .frame(minHeight: 240)
     }
+
+    // MARK: Actions
 
     private func connect() {
         errorText = nil

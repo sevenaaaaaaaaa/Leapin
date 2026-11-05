@@ -44,6 +44,7 @@ struct SettingsView: View {
                 saveBar
             }
             .pagePadding()
+            .navigationTitle("设置")
         }
         .onAppear(perform: load)
         .onChange(of: engine.profile.id) { _, _ in
@@ -89,16 +90,9 @@ struct SettingsView: View {
                           isOn: Binding(get: { app.autostartProxy },
                                         set: { app.setAutostartProxy($0) }))
                 FieldRow(label: "启动时打开", hint: "下次启动生效") {
-                    Picker("", selection: Binding(get: { app.startSectionPref },
-                                                  set: { app.setStartSection($0) })) {
-                        ForEach(AppModel.Section.allCases) { section in
-                            Text(section.title).tag(section)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .controlSize(.small)
-                    .fixedSize()
+                    TFSelectField(value: Binding(get: { app.startSectionPref },
+                                               set: { app.setStartSection($0) }),
+                                options: AppModel.Section.allCases.map { ($0, $0.title) })
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     shortcutLine("⌘⇧Space", "在任意 App 里唤起命令面板")
@@ -120,7 +114,7 @@ struct SettingsView: View {
         HStack(spacing: 8) {
             TFKeyCap(keys: keys)
             Text(label)
-                .font(.system(size: 10))
+                .font(.system(size: 12))
                 .foregroundStyle(TF.textSecondary)
             Spacer(minLength: 0)
         }
@@ -148,16 +142,10 @@ struct SettingsView: View {
         Card(title: "DNS", subtitle: "解析策略与缓存", icon: "globe.asia.australia") {
             VStack(spacing: 8) {
                 FieldRow(label: "模式") {
-                    Picker("", selection: $dnsMode) {
-                        Text("系统 DNS").tag(DNSMode.system)
-                        Text("DoH").tag(DNSMode.doh)
-                        Text("DoT").tag(DNSMode.dot)
-                        Text("Fake-IP").tag(DNSMode.fakeIP)
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .controlSize(.small)
-                    .fixedSize()
+                    TFSelectField(value: $dnsMode, options: [(DNSMode.system, "系统 DNS"),
+                                                           (DNSMode.doh, "DoH"),
+                                                           (DNSMode.dot, "DoT"),
+                                                           (DNSMode.fakeIP, "Fake-IP")])
                 }
                 FieldRow(label: "监听端口") { NumField(text: $dnsPort, placeholder: "5354") }
                 FieldRow(label: "上游", hint: "逗号分隔") {
@@ -183,7 +171,7 @@ struct SettingsView: View {
                             .font(.system(size: 10))
                             .foregroundStyle(TF.amber)
                         Text("根证书位置")
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundStyle(TF.textSecondary)
                         Spacer()
                         Button("打开 CA") { app.installCA() }
@@ -193,11 +181,15 @@ struct SettingsView: View {
                         .font(TFFont.mono(9.5))
                         .foregroundStyle(TF.textTertiary)
                         .lineLimit(1)
-                        .truncationMode(.middle)
+                        .truncationMode(.tail)
                         .textSelection(.enabled)
                 }
-                .padding(10)
-                .background(TF.stroke.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .padding(11)
+                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: TF.radiusSmall, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: TF.radiusSmall, style: .continuous)
+                        .strokeBorder(TF.stroke, lineWidth: 1)
+                )
             }
         }
     }
@@ -206,20 +198,14 @@ struct SettingsView: View {
         Card(title: "高级", subtitle: "日志与系统代理", icon: "slider.horizontal.3") {
             VStack(spacing: 8) {
                 FieldRow(label: "日志级别") {
-                    Picker("", selection: $logLevel) {
-                        ForEach(LogLevel.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .controlSize(.small)
-                    .fixedSize()
+                    TFSelectField(value: $logLevel, options: LogLevel.allCases.map { ($0, $0.rawValue) })
                 }
                 FieldRow(label: "代理绕过", hint: "逗号分隔") {
                     PlainField(text: $bypass, placeholder: "*.local, 169.254/16")
                 }
                 HStack(spacing: 6) {
                     Text("数据目录")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(TF.textSecondary)
                     Spacer()
                     Button("在 Finder 中打开") {
@@ -232,7 +218,7 @@ struct SettingsView: View {
                     .font(TFFont.mono(9.5))
                     .foregroundStyle(TF.textTertiary)
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                    .truncationMode(.tail)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
             }
@@ -242,7 +228,7 @@ struct SettingsView: View {
     private var saveBar: some View {
         HStack(spacing: 12) {
             Image(systemName: validationError == nil ? "info.circle" : "exclamationmark.triangle.fill")
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .foregroundStyle(validationError == nil ? TF.textTertiary : TF.amber)
             Text(validationError ?? "保存后如代理正在运行会自动重启以应用新设置。")
                 .font(.system(size: 10.5))
@@ -362,21 +348,27 @@ private struct FieldRow<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(label)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 12.5))
                     .foregroundStyle(TF.text)
+                    .lineLimit(1)
+                    .frame(width: 88, alignment: .leading)
                 if let hint {
                     Text(hint)
-                        .font(.system(size: 9.5))
+                        .font(.system(size: 12))
                         .foregroundStyle(TF.textTertiary)
+                        .lineLimit(1)
                 }
             }
             Spacer(minLength: 12)
             content()
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 7)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(TF.stroke.opacity(0.55)).frame(height: 0.5)
+        }
     }
 }
 
@@ -386,53 +378,72 @@ private struct ToggleRow: View {
     @Binding var isOn: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 1) {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(label)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 12.5))
                     .foregroundStyle(TF.text)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 9.5))
+                        .font(.system(size: 12))
                         .foregroundStyle(TF.textTertiary)
                         .lineLimit(1)
                 }
             }
             Spacer(minLength: 12)
-            TFSwitch(isOn: $isOn, width: 34)
+            TFSwitch(isOn: $isOn, width: 32)
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 7)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(TF.stroke.opacity(0.55)).frame(height: 0.5)
+        }
     }
 }
 
+/// Underlined numeric field — a ruled form line, not a gray pill.
 private struct NumField: View {
     @Binding var text: String
     var placeholder: String
+    @FocusState private var focused: Bool
 
     var body: some View {
         TextField("", text: $text, prompt: Text(placeholder).foregroundColor(TF.textTertiary))
             .textFieldStyle(.plain)
-            .font(TFFont.mono(11.5, weight: .medium))
+            .focused($focused)
+            .font(TFFont.mono(12.5, weight: .medium))
             .multilineTextAlignment(.trailing)
-            .frame(width: 86)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .frame(width: 92)
+            .padding(.vertical, 3)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(focused ? TF.accent : TF.strokeStrong.opacity(0.8))
+                    .frame(height: focused ? 1.5 : 1)
+                    .animation(.easeOut(duration: 0.14), value: focused)
+            }
     }
 }
 
 private struct PlainField: View {
     @Binding var text: String
     var placeholder: String
+    @FocusState private var focused: Bool
 
     var body: some View {
         TextField("", text: $text, prompt: Text(placeholder).foregroundColor(TF.textTertiary))
             .textFieldStyle(.plain)
-            .font(TFFont.mono(10.5))
+            .focused($focused)
+            .font(TFFont.mono(11.5))
             .multilineTextAlignment(.trailing)
-            .frame(minWidth: 160, maxWidth: 260)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(minWidth: 0, maxWidth: 228, alignment: .trailing)
+            .padding(.vertical, 3)
+            .overlay(alignment: .bottom) {
+                Rectangle()
+                    .fill(focused ? TF.accent : TF.strokeStrong.opacity(0.8))
+                    .frame(height: focused ? 1.5 : 1)
+                    .animation(.easeOut(duration: 0.14), value: focused)
+            }
     }
 }
+

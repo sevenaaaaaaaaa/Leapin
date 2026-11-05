@@ -1,6 +1,18 @@
-# TouchFlow 验收记录（v1.1，macOS 27.3 / arm64）
+# TouchFlow 验收记录（v1.2，macOS 27.3 / arm64）
 
 本文件只记录**真实跑过**的命令与结果，以及明确未验证的部分。所有结论都可用下方命令复现。
+v1.2 只动视觉与交互（App 层 + 少量共享控件），网络/策略/Runtime 行为未变；第 0 节记录本轮视觉验证。
+
+## 0. 视觉重构验证（v1.2）
+
+- 构建：`swift build --scratch-path .build-app` 与 `./scripts/build-app.sh debug` 均成功，零 error / warning。
+- 测试：`swift test --scratch-path .build-app` 全部 suite passed（Core 1 / Policy 41 / Net 69 / Integrations 11）。
+- 端到端：`./scripts/smoke.sh` → **pass=7 fail=0**。
+- 截图核对（1040×752 与 900×700 两档，浅色 + 深色）：总览 / 分流规则 / 抓包 / 去广告 / SSH / NAS / 智能学习 / 隐私 / 配置 / 设置十页逐页目视；
+  取证目录 `/tmp/tfv4/`（本轮）与 `/tmp/tffinal/`（暗色）。
+- 本轮修掉的可见缺陷：搜索框整框红描边 → 底部下划线；深色幽灵按钮白药丸（NSColor dynamic provider 在 ButtonStyle 内解析成浅色 → 改 `Color.primary` 语义色）；
+  策略色滥用（绿/紫/红同时出现）→ 墨阶；隐私页 0/0/0 给 100 分 → 无样本态；抓包 900 宽 1:1 分栏 → 内容宽 <740 只留列表；总览首屏全 0 → 1 主 4 从 + 最近连接上移 + 地震仪。
+- 未验证：真机 120Hz 下动画逐帧（只能目视）、VoiceOver 逐页完整走查（只验证了控件标签与 reduce-motion）。
 
 ## 1. 构建
 

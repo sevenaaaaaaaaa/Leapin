@@ -43,6 +43,8 @@ struct CaptureView: View {
         }
     }
 
+    @State private var freshID: UUID?
+
     private var source: [CapturedRequest] { paused ? frozen : engine.captures }
 
     private var filtered: [CapturedRequest] {
@@ -63,23 +65,32 @@ struct CaptureView: View {
             toolbar
             filterRow
             Rectangle().fill(TF.stroke).frame(height: 1)
-            HSplitView {
-                list
-                    .frame(minWidth: 380)
-                    .background(TF.panel, in: RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: TF.radius, style: .continuous).strokeBorder(TF.stroke, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
-                    .padding(7)
-                detail
-                    .frame(minWidth: 380)
-                    .background(TF.panel, in: RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: TF.radius, style: .continuous).strokeBorder(TF.stroke, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
-                    .padding(7)
+            // 窄窗口或无选中项时只留列表：空详情栏占掉半屏，是首屏最贵的空白。
+            GeometryReader { geo in
+                Group {
+                    if geo.size.width < 820 || current == nil {
+                        list
+                            .background(TF.panel)
+                    } else {
+                        HSplitView {
+                            list
+                                .frame(minWidth: 336)
+                                .background(TF.panel)
+                            detail
+                                .frame(minWidth: 336)
+                                .background(TF.bg)
+                        }
+                    }
+                }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 14)
-            .padding(.bottom, 18)
+            .clipShape(RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: TF.radius, style: .continuous)
+                    .strokeBorder(TF.stroke, lineWidth: 1)
+            )
+            .padding(.horizontal, 32)
+            .padding(.top, 16)
+            .padding(.bottom, 24)
         }
         .navigationTitle("抓包")
         .alert("HTTPS 解密需要信任证书", isPresented: $showMITMWarning) {
@@ -104,6 +115,14 @@ struct CaptureView: View {
         .onChange(of: filtered.count) { _, _ in
             if let selected, !source.contains(where: { $0.id == selected }) { self.selected = nil }
         }
+        .onChange(of: filtered.first?.id) { _, id in
+            guard !paused, let id else { return }
+            freshID = id
+            Task {
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                if freshID == id { withAnimation(.easeOut(duration: 0.3)) { freshID = nil } }
+            }
+        }
     }
 
     private var toolbar: some View {
@@ -111,11 +130,6 @@ struct CaptureView: View {
             TFSearchField(text: $search, placeholder: "过滤 URL / 主机", width: 210, focus: $searchFocused)
 
             Spacer()
-
-            Text(paused ? "已暂停 · \(source.count) 条" : "\(engine.captures.count) 条")
-                .font(TFFont.num(10.5, weight: .medium))
-                .foregroundStyle(paused ? TF.amber : TF.textTertiary)
-                .fixedSize()
 
             Button {
                 if paused {
@@ -135,17 +149,22 @@ struct CaptureView: View {
             .help(paused ? "恢复实时刷新" : "冻结当前列表，便于阅读")
             .disabled(engine.captures.isEmpty && !paused)
 
-            Toggle(isOn: Binding(
-                get: { engine.profile.general.mitmEnabled },
-                set: { enabled in
-                    if enabled { showMITMWarning = true }
-                    engine.setMITMEnabled(enabled)
-                }
-            )) {
-                Text("HTTPS 解密").font(.system(size: 11))
+            Rectangle().fill(TF.strokeStrong.opacity(0.6)).frame(width: 1, height: 16)
+
+            HStack(spacing: 7) {
+                Text("HTTPS 解密")
+                    .font(.system(size: 12))
+                    .foregroundStyle(TF.textSecondary)
+                TFSwitch(isOn: Binding(
+                    get: { engine.profile.general.mitmEnabled },
+                    set: { enabled in
+                        if enabled { showMITMWarning = true }
+                        engine.setMITMEnabled(enabled)
+                    }
+                ), width: 30)
             }
-            .toggleStyle(.switch)
-            .controlSize(.mini)
+
+            Rectangle().fill(TF.strokeStrong.opacity(0.6)).frame(width: 1, height: 16)
 
             Button { exportHAR() } label: {
                 HStack(spacing: 4) {
@@ -165,7 +184,7 @@ struct CaptureView: View {
             .buttonStyle(TFGhostButtonStyle())
             .disabled(engine.captures.isEmpty && engine.flows.isEmpty)
         }
-        .padding(.horizontal, 20).padding(.vertical, 11)
+        .padding(.horizontal, 32).padding(.vertical, 13)
     }
 
     private var filterRow: some View {
@@ -176,10 +195,15 @@ struct CaptureView: View {
                 }
             }
             Spacer()
+            Text(paused
+                 ? "已暂停 · \(filtered.count) / \(source.count) 条"
+                 : (search.isEmpty && statusFilter == .all
+                    ? "\(filtered.count) 条"
+                    : "\(filtered.count) / \(source.count)"))
+                .font(TFFont.num(10, weight: .medium))
+                .foregroundStyle(paused ? TF.amber : TF.textTertiary)
+                .fixedSize()
             if !search.isEmpty || statusFilter != .all {
-                Text("\(filtered.count) / \(source.count)")
-                    .font(TFFont.num(10, weight: .medium))
-                    .foregroundStyle(TF.textTertiary)
                 Button("清除筛选") {
                     search = ""
                     statusFilter = .all
@@ -189,24 +213,107 @@ struct CaptureView: View {
                 .foregroundStyle(TF.accent)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 9)
+        .padding(.horizontal, 32)
+        .padding(.bottom, 11)
+    }
+
+    /// 空态不是一块居中留白，而是一张「还没填的账」：列头在，行位在，动作在底部。
+    private var emptyList: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 9) {
+                Text("方法").frame(width: 46, alignment: .leading)
+                Text("主机 / 路径")
+                Spacer(minLength: 8)
+                Text("状态").frame(width: 34, alignment: .trailing)
+                Text("耗时").frame(width: 52, alignment: .trailing)
+            }
+            .font(TFFont.mono(9, weight: .medium))
+            .tracking(1.2)
+            .foregroundStyle(TF.textTertiary)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 9)
+
+            TFDivider()
+
+            VStack(spacing: 0) {
+                ForEach(0..<7, id: \.self) { i in
+                    HStack(spacing: 9) {
+                        skeleton(width: 26).frame(width: 46, alignment: .leading)
+                        skeleton(width: 150 + CGFloat((i * 37) % 110))
+                        Spacer(minLength: 8)
+                        skeleton(width: 22).frame(width: 34, alignment: .trailing)
+                        skeleton(width: 30).frame(width: 52, alignment: .trailing)
+                    }
+                    .padding(.horizontal, 18)
+                    .frame(height: 35)
+                    if i < 6 { TFDivider().opacity(0.5).padding(.leading, 18) }
+                }
+            }
+            .opacity(0.55)
+            .accessibilityHidden(true)
+
+            Spacer(minLength: 0)
+
+            HStack(alignment: .center, spacing: 14) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(engine.profile.general.captureEnabled ? "暂无 HTTP 请求" : "抓包已在设置中关闭")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(TF.text)
+                    Text(engine.profile.general.captureEnabled
+                         ? "把应用流量指向 127.0.0.1:\(engine.profile.general.mixedPort)，明文请求会逐条落在这里；HTTPS 需开启解密。"
+                         : "到设置页打开「抓包」后再回来。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(TF.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Button(engine.profile.general.captureEnabled
+                       ? (app.isRunning ? "复制代理地址" : "启动代理并抓包")
+                       : "打开设置") {
+                    if !engine.profile.general.captureEnabled {
+                        app.go(to: .settings)
+                    } else if app.isRunning {
+                        TFClipboard.copy("http://127.0.0.1:\(engine.profile.general.mixedPort)")
+                        app.showToast("已复制代理地址", kind: .info)
+                    } else {
+                        app.toggle()
+                    }
+                }
+                .buttonStyle(TFPrimaryButtonStyle())
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 15)
+            .background(TF.panel)
+            .overlay(alignment: .top) { TFDivider() }
+        }
+    }
+
+    private func skeleton(width: CGFloat) -> some View {
+        Capsule().fill(TF.text.opacity(0.08)).frame(width: width, height: 7)
     }
 
     private var list: some View {
         Group {
             if filtered.isEmpty {
-                TFEmptyState(
-                    icon: "waveform.path.ecg",
-                    title: engine.profile.general.captureEnabled ? "暂无 HTTP 请求" : "抓包已在设置中关闭",
-                    message: engine.profile.general.captureEnabled
-                        ? "启动代理并把应用流量指向 127.0.0.1:\(engine.profile.general.mixedPort) 后即可看到明文请求；HTTPS 需开启解密。"
-                        : "到设置页打开“抓包”后再回来。",
-                    actionTitle: engine.profile.general.captureEnabled ? nil : "打开设置",
-                    action: engine.profile.general.captureEnabled ? nil : { app.go(to: .settings) })
+                emptyList
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 2) {
+                VStack(spacing: 0) {
+                    HStack(spacing: 9) {
+                        Text("方法").frame(width: 46, alignment: .leading)
+                        Text("主机 / 路径")
+                        Spacer(minLength: 8)
+                        Text("状态").frame(width: 34, alignment: .trailing)
+                        Text("耗时").frame(width: 52, alignment: .trailing)
+                    }
+                    .font(TFFont.mono(9, weight: .medium))
+                    .tracking(1.2)
+                    .foregroundStyle(TF.textTertiary)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 10)
+                    .padding(.bottom, 7)
+                    Rectangle().fill(TF.stroke.opacity(0.7)).frame(height: 0.5)
+                    ScrollView {
+                    LazyVStack(spacing: 1) {
                         ForEach(filtered) { request in
                             TFRow(selected: selected == request.id,
                                   accessibilityText: "\(request.method) \(request.host)\(path(request.url))") {
@@ -228,22 +335,27 @@ struct CaptureView: View {
                         }
                     }
                     .padding(8)
+                    }
+                    .scrollIndicators(.visible)
+                    .focusable()
+                    .focused($listFocused)
+                    .onMoveCommand { direction in moveSelection(direction) }
                 }
-                .scrollIndicators(.visible)
-                .focusable()
-                .focused($listFocused)
-                .onMoveCommand { direction in moveSelection(direction) }
             }
         }
     }
 
     private func captureRow(_ request: CapturedRequest) -> some View {
         HStack(spacing: 9) {
+            Rectangle()
+                .fill(request.id == freshID ? TF.accent : Color.clear)
+                .frame(width: 2, height: 15)
+                .animation(.easeOut(duration: 0.25), value: freshID)
             Text(request.method)
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                 .frame(width: 32)
                 .padding(.vertical, 3)
-                .background(methodColor(request.method).opacity(0.14), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .background(methodColor(request.method).opacity(0.10), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                 .foregroundStyle(methodColor(request.method))
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
@@ -253,26 +365,29 @@ struct CaptureView: View {
                             .foregroundStyle(TF.danger)
                     }
                     Text(request.host)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12.5, weight: .medium))
                         .foregroundStyle(TF.text)
                         .lineLimit(1)
                 }
                 Text(path(request.url))
-                    .font(TFFont.mono(9.5))
+                    .font(TFFont.mono(10))
                     .foregroundStyle(TF.textTertiary)
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
             if let code = request.statusCode {
                 Text(String(code))
-                    .font(TFFont.num(10, weight: .semibold))
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background((code < 400 ? TF.success : TF.danger).opacity(0.13),
-                                in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    .font(TFFont.num(10.5, weight: .semibold))
                     .foregroundStyle(code < 400 ? TF.success : TF.danger)
+                    .frame(width: 34, alignment: .trailing)
+            } else {
+                Text("—")
+                    .font(TFFont.num(10.5))
+                    .foregroundStyle(TF.textTertiary)
+                    .frame(width: 34, alignment: .trailing)
             }
             Text(Fmt.duration(request.durationMs))
-                .font(TFFont.num(9.5))
+                .font(TFFont.num(10))
                 .foregroundStyle(TF.textTertiary)
                 .frame(width: 52, alignment: .trailing)
         }
@@ -298,7 +413,7 @@ struct CaptureView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(alignment: .top) {
                             Badge(text: req.method, color: methodColor(req.method))
-                            Text(req.url).font(.callout.monospaced()).textSelection(.enabled).lineLimit(2)
+                            Text(req.url).font(TFFont.mono(11.5)).textSelection(.enabled).lineLimit(2)
                             Spacer(minLength: 6)
                             Menu {
                                 Button("复制 URL") {

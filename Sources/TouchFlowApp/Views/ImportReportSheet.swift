@@ -12,6 +12,7 @@ struct ImportReportSheet: View {
     @State private var copied = false
 
     private var blocking: Bool { report.issues.contains { $0.kind.isBlocking } }
+    private var statusColor: Color { blocking ? TF.danger : report.isClean ? TF.mint : TF.amber }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -28,88 +29,86 @@ struct ImportReportSheet: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 11) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill((blocking ? TF.danger : report.isClean ? TF.mint : TF.amber).opacity(0.16))
-                Image(systemName: blocking ? "exclamationmark.triangle.fill" : report.isClean ? "checkmark.seal.fill" : "exclamationmark.circle.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(blocking ? TF.danger : report.isClean ? TF.mint : TF.amber)
-            }
-            .frame(width: 30, height: 30)
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: blocking ? "exclamationmark.triangle" : report.isClean ? "checkmark.seal" : "exclamationmark.circle")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(statusColor)
+                .frame(width: 22, height: 22)
+
+            VStack(alignment: .leading, spacing: 5) {
+                TFEyebrow(blocking ? "IMPORT REPORT · BLOCKED" : "IMPORT REPORT", tint: TF.textTertiary)
                 Text(blocking ? "导入未完成" : report.isClean ? "导入成功" : "导入完成，有需要留意的地方")
-                    .font(TFFont.display(15, weight: .bold))
+                    .font(TFFont.display(15, weight: .semibold))
                     .foregroundStyle(TF.text)
                 Text(report.summary)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12.5))
                     .foregroundStyle(TF.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 20).padding(.vertical, 16)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
     }
 
     private var counters: some View {
-        HStack(spacing: 22) {
+        HStack(alignment: .top, spacing: 0) {
             counter("格式", report.format)
+            counterDivider
             counter("出站", "\(report.outboundCount)")
+            counterDivider
             counter("策略组", "\(report.groupCount)")
+            counterDivider
             counter("规则", "\(report.ruleCount)")
             if report.skippedOutbounds > 0 {
+                counterDivider
                 counter("跳过", "\(report.skippedOutbounds)", tint: TF.amber)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 20).padding(.vertical, 11)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
     }
 
     private func counter(_ label: String, _ value: String, tint: Color = TF.text) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(value).font(TFFont.num(12, weight: .semibold)).foregroundStyle(tint)
-            Text(label).font(.system(size: 9)).foregroundStyle(TF.textTertiary)
+        VStack(alignment: .leading, spacing: 5) {
+            TFEyebrow(label, tint: TF.textTertiary)
+            Text(value)
+                .font(TFFont.num(14, weight: .medium))
+                .foregroundStyle(tint)
         }
+        .frame(minWidth: 54, alignment: .leading)
+    }
+
+    private var counterDivider: some View {
+        Rectangle()
+            .fill(TF.stroke)
+            .frame(width: 1, height: 28)
+            .padding(.horizontal, 14)
     }
 
     private var issueList: some View {
         Group {
             if report.issues.isEmpty {
-                HStack(spacing: 7) {
-                    Image(systemName: "checkmark.circle").font(.system(size: 11)).foregroundStyle(TF.mint)
+                HStack(spacing: 8) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(TF.mint)
                     Text("所有字段都已识别，没有跳过任何内容。")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12.5))
                         .foregroundStyle(TF.textSecondary)
                     Spacer()
                 }
-                .padding(.horizontal, 20).padding(.vertical, 16)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(report.issues) { issue in
-                            HStack(alignment: .top, spacing: 9) {
-                                Text(kindLabel(issue.kind))
-                                    .font(.system(size: 8.5, weight: .semibold))
-                                    .foregroundStyle(kindColor(issue.kind))
-                                    .padding(.horizontal, 5).padding(.vertical, 2)
-                                    .background(kindColor(issue.kind).opacity(0.14), in: Capsule())
-                                    .fixedSize()
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(issue.display)
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(TF.text)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    if !issue.item.isEmpty, issue.item != issue.message {
-                                        Text("› \(issue.item)")
-                                            .font(TFFont.mono(9.5))
-                                            .foregroundStyle(TF.textTertiary)
-                                            .lineLimit(1)
-                                    }
-                                }
-                                Spacer(minLength: 0)
+                    VStack(spacing: 0) {
+                        ForEach(Array(report.issues.enumerated()), id: \.element.id) { index, issue in
+                            issueRow(index: index, issue: issue)
+                            if index < report.issues.count - 1 {
+                                TFDivider()
                             }
-                            .padding(.vertical, 6)
-                            TFDivider().opacity(0.5)
                         }
                     }
                     .padding(.horizontal, 20)
@@ -119,6 +118,36 @@ struct ImportReportSheet: View {
         }
     }
 
+    private func issueRow(index: Int, issue: ImportIssue) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(String(format: "%02d", index + 1))
+                .font(TFFont.mono(10))
+                .foregroundStyle(TF.textTertiary)
+                .frame(width: 20, alignment: .trailing)
+                .padding(.top, 1)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Badge(text: kindLabel(issue.kind), color: kindColor(issue.kind))
+                Text(issue.display)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(TF.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !issue.item.isEmpty, issue.item != issue.message {
+                    Text(issue.item)
+                        .font(TFFont.mono(10.5))
+                        .foregroundStyle(TF.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(kindLabel(issue.kind))：\(issue.display)")
+    }
+
     private var footer: some View {
         HStack(spacing: 9) {
             Button {
@@ -126,17 +155,21 @@ struct ImportReportSheet: View {
                 copied = true
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: copied ? "checkmark" : "doc.on.doc").font(.system(size: 9, weight: .bold))
-                    Text(copied ? "已复制" : "复制报告").font(.system(size: 11, weight: .medium))
+                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 9, weight: .bold))
+                    Text(copied ? "已复制" : "复制报告")
+                        .font(.system(size: 11, weight: .medium))
                 }
             }
             .buttonStyle(TFGhostButtonStyle())
+            .accessibilityLabel(copied ? "报告已复制" : "复制报告文本")
             Spacer()
             Button("完成") { onClose() }
                 .buttonStyle(TFPrimaryButtonStyle())
                 .keyboardShortcut(.defaultAction)
         }
-        .padding(.horizontal, 20).padding(.vertical, 13)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 13)
     }
 
     private func kindLabel(_ kind: ImportIssue.Kind) -> String {

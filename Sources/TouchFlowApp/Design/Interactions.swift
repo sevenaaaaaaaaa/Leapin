@@ -54,7 +54,7 @@ struct TFSearchField: View {
                 .foregroundStyle(focus.wrappedValue ? TF.accent : TF.textTertiary)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 11.5))
+                .font(.system(size: 12))
                 .focused(focus)
                 .onExitCommand { text = "" }
             if !text.isEmpty {
@@ -72,10 +72,14 @@ struct TFSearchField: View {
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
         .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(focus.wrappedValue ? TF.accent.opacity(0.45) : Color.clear, lineWidth: 1)
-        )
+        .overlay(alignment: .bottom) {
+            // 焦点用下划线而不是描边：与设置页输入框、解释器输入统一。
+            Rectangle()
+                .fill(focus.wrappedValue ? TF.accent : Color.clear)
+                .frame(height: 1.5)
+                .padding(.horizontal, 8)
+                .animation(.easeOut(duration: 0.14), value: focus.wrappedValue)
+        }
         .frame(maxWidth: width)
         .accessibilityLabel(placeholder)
     }
@@ -180,7 +184,7 @@ struct TFEmptyState: View {
                 .foregroundStyle(TF.textSecondary)
             if let message {
                 Text(message)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12))
                     .foregroundStyle(TF.textTertiary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)

@@ -16,7 +16,7 @@ struct TouchFlowApp: App {
         Window("TouchFlow", id: "main") {
             RootView()
                 .environmentObject(app)
-                .frame(minWidth: 1040, minHeight: 700)
+                .frame(minWidth: 900, minHeight: 660)
         }
         .defaultSize(width: 1240, height: 820)
         .windowToolbarStyle(.unified)
@@ -372,16 +372,24 @@ struct RootView: View {
     @ObservedObject private var engine = TouchFlowEngine.shared
 
     var body: some View {
-        ZStack {
-            TFBackground()
-            HStack(spacing: 0) {
-                SidebarView()
-                Rectangle().fill(TF.stroke).frame(width: 1)
-                VStack(spacing: 0) {
-                    PageHeaderBar()
-                    Rectangle().fill(TF.stroke).frame(height: 1)
-                    sectionContent
+        GeometryReader { geo in
+            let compact = geo.size.width < 960
+            ZStack {
+                TFBackground()
+                HStack(spacing: 0) {
+                    SidebarView(compact: compact)
+                    Rectangle().fill(TF.stroke).frame(width: 1)
+                    VStack(spacing: 0) {
+                        PageHeaderBar(compact: compact)
+                        Rectangle().fill(TF.stroke).frame(height: 1)
+                        ZStack {
+                            sectionContent
+                                .id(app.section ?? .dashboard)
+                                .transition(.opacity.combined(with: .offset(y: 6)))
+                        }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .animation(.easeOut(duration: 0.18), value: app.section)
+                    }
                 }
             }
         }
@@ -476,62 +484,79 @@ struct RootView: View {
 private struct SidebarView: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var engine = TouchFlowEngine.shared
+    var compact: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            brand.padding(.horizontal, 16).padding(.top, 22).padding(.bottom, 14)
+            brand
+                .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
+                .padding(.horizontal, compact ? 0 : 18)
+                .padding(.top, 22)
+                .padding(.bottom, 20)
 
             paletteEntry
-                .padding(.horizontal, 12)
-                .padding(.bottom, 16)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 20)
 
-            Text("工作区")
-                .font(TFFont.overline)
-                .tracking(1.1)
-                .foregroundStyle(TF.textTertiary)
-                .padding(.horizontal, 20)
-                .padding(.bottom, 6)
+            if !compact {
+                Text("工作区")
+                    .font(TFFont.mono(8.5, weight: .medium))
+                    .tracking(1.7)
+                    .foregroundStyle(TF.textTertiary)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+            }
 
             VStack(spacing: 2) {
                 ForEach(Array(AppModel.Section.allCases.enumerated()), id: \.element) { index, section in
                     SidebarRow(section: section,
                                selected: app.section == section,
-                               hint: index < 9 ? "\(index + 1)" : "0") {
+                               hint: index < 9 ? "\(index + 1)" : "0",
+                               compact: compact) {
                         app.go(to: section)
                     }
                 }
             }
-            .padding(.horizontal, 8)
+            .padding(.horizontal, compact ? 10 : 10)
 
             Spacer(minLength: 8)
-            StatusCard().padding(10)
+            StatusCard(compact: compact).padding(compact ? 8 : 10)
         }
-        .frame(width: 212)
-        .background(.ultraThinMaterial.opacity(0.55))
+        .frame(width: compact ? 68 : 216)
+        .background(TF.bg.opacity(0.55))
     }
 
     private var paletteEntry: some View {
         Button {
             app.showPalette = true
         } label: {
-            HStack(spacing: 7) {
+            if compact {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(TF.textTertiary)
-                Text("搜索或跳转")
-                    .font(.system(size: 11))
-                    .foregroundStyle(TF.textTertiary)
-                Spacer(minLength: 4)
-                TFKeyCap(keys: "⌘K")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(TF.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 30)
+                    .background(TF.panel, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(TF.stroke))
+            } else {
+                HStack(spacing: 7) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(TF.textTertiary)
+                    Text("搜索或跳转")
+                        .font(.system(size: 12))
+                        .foregroundStyle(TF.textTertiary)
+                    Spacer(minLength: 4)
+                    TFKeyCap(keys: "⌘K")
+                }
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(TF.panel, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(TF.stroke, lineWidth: 1)
+                )
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 6)
-            .background(TF.stroke.opacity(0.4), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(TF.stroke, lineWidth: 1)
-            )
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help("打开命令面板（⌘K）")
@@ -540,23 +565,33 @@ private struct SidebarView: View {
 
     private var brand: some View {
         HStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous).fill(TF.brand)
-                Image(systemName: "shield.lefthalf.filled")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.white)
+            ZStack(alignment: .bottomTrailing) {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(TF.text)
+                Text("T")
+                    .font(TFFont.serif(18, weight: .semibold))
+                    .italic()
+                    .foregroundStyle(TF.bg)
+                    .offset(y: -1)
+                Circle()
+                    .fill(TF.accent)
+                    .frame(width: 5, height: 5)
+                    .offset(x: 2, y: 2)
+                    .overlay(Circle().strokeBorder(TF.bg, lineWidth: 1.5).offset(x: 2, y: 2))
             }
-            .frame(width: 30, height: 30)
-            .shadow(color: TF.accent.opacity(0.35), radius: 8, y: 3)
+            .frame(width: 31, height: 31)
 
-            VStack(alignment: .leading, spacing: 0) {
-                Text("TouchFlow")
-                    .font(TFFont.display(14.5, weight: .bold))
-                    .foregroundStyle(TF.text)
-                Text("NETWORK CONTROL")
-                    .font(TFFont.mono(7.5, weight: .medium))
-                    .tracking(1.0)
-                    .foregroundStyle(TF.textTertiary)
+            if !compact {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("TouchFlow")
+                        .font(TFFont.display(14.5, weight: .semibold))
+                        .tracking(-0.2)
+                        .foregroundStyle(TF.text)
+                    Text("NETWORK CONTROL")
+                        .font(TFFont.mono(7, weight: .medium))
+                        .tracking(1.5)
+                        .foregroundStyle(TF.textTertiary)
+                }
             }
         }
     }
@@ -567,6 +602,7 @@ private struct SidebarRow: View {
     let section: AppModel.Section
     let selected: Bool
     var hint: String? = nil
+    var compact: Bool = false
     let action: () -> Void
     @State private var hover = false
 
@@ -577,29 +613,43 @@ private struct SidebarRow: View {
                     .font(.system(size: 12, weight: .medium))
                     .frame(width: 18)
                     .foregroundStyle(selected ? TF.accent : TF.textSecondary)
-                Text(section.title)
-                    .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
-                    .foregroundStyle(selected ? TF.text : TF.textSecondary)
-                Spacer(minLength: 0)
-                if hover, let hint, !selected {
-                    Text("⌘\(hint)")
-                        .font(TFFont.mono(8.5))
-                        .foregroundStyle(TF.textTertiary)
-                } else if selected {
-                    Circle().fill(TF.accent).frame(width: 4, height: 4)
+                if !compact {
+                    Text(section.title)
+                        .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
+                        .foregroundStyle(selected ? TF.text : TF.textSecondary)
+                    Spacer(minLength: 0)
+                    if hover, let hint, !selected {
+                        Text("⌘\(hint)")
+                            .font(TFFont.mono(8.5))
+                            .foregroundStyle(TF.textTertiary)
+                    }
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
+            .padding(.horizontal, compact ? 0 : 10)
+            .padding(.vertical, compact ? 9 : 7)
+            .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
             .background(
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(selected ? TF.accentSoft : (hover ? TF.stroke.opacity(0.6) : Color.clear))
+                    .fill(selected ? TF.panel : (hover ? TF.stroke.opacity(0.45) : Color.clear))
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .strokeBorder(selected ? TF.stroke : Color.clear, lineWidth: 1)
+            )
+            .overlay(alignment: .leading) {
+                if selected {
+                    Capsule()
+                        .fill(TF.accent)
+                        .frame(width: 2, height: 14)
+                        .offset(x: 1)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
         .help("\(section.title)（⌘\(hint ?? "")）")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -607,45 +657,80 @@ private struct SidebarRow: View {
 private struct StatusCard: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var engine = TouchFlowEngine.shared
+    var compact: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 7) {
+        if compact {
+            VStack(spacing: 10) {
                 StatusDot(color: stateColor, pulsing: engine.state == .running)
-                Text(engine.state.label)
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundStyle(TF.text)
-                Spacer(minLength: 0)
-            }
-
-            VStack(spacing: 4) {
-                portRow("混合", engine.profile.general.mixedPort)
-                portRow("DNS", engine.profile.dns.listenPort)
-            }
-
-            Button {
-                app.toggle()
-            } label: {
-                HStack(spacing: 5) {
+                Button {
+                    app.toggle()
+                } label: {
                     Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
-                        .font(.system(size: 8, weight: .bold))
-                    Text(engine.state == .running ? "停止代理" : "启动代理")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(engine.state == .running ? TF.danger : .white)
+                        .frame(width: 26, height: 24)
+                        .background(
+                            engine.state == .running ? TF.panelSolid : TF.accent,
+                            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .strokeBorder(TF.stroke)
+                        )
                 }
-                .frame(maxWidth: .infinity)
+                .buttonStyle(.plain)
+                .help(engine.state == .running ? "停止代理" : "启动代理")
             }
-            .buttonStyle(TFPrimaryButtonStyle(tint: engine.state == .running ? TF.danger : nil))
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 11)
+            .background(TF.panel, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(TF.stroke))
+        } else {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 7) {
+                    StatusDot(color: stateColor, pulsing: engine.state == .running)
+                    Text(engine.state.label)
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(TF.text)
+                    Spacer(minLength: 0)
+                }
+
+                VStack(spacing: 3) {
+                    portRow("混合", engine.profile.general.mixedPort)
+                    portRow("DNS", engine.profile.dns.listenPort)
+                }
+
+                Rectangle().fill(TF.stroke.opacity(0.7)).frame(height: 0.5)
+
+                Button {
+                    app.toggle()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
+                            .font(.system(size: 8, weight: .bold))
+                        Text(engine.state == .running ? "停止代理" : "启动代理")
+                            .font(.system(size: 11, weight: .semibold))
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(engine.state == .running ? TF.danger : TF.accent)
+                    .padding(.vertical, 3)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(engine.state == .running ? "停止代理" : "启动代理")
+            }
+            .padding(12)
+            .background(TF.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(TF.stroke))
         }
-        .padding(12)
-        .background(TF.panel, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(TF.stroke))
     }
 
     private func portRow(_ label: String, _ port: UInt16) -> some View {
         HStack {
             Text(label).font(.system(size: 10)).foregroundStyle(TF.textTertiary)
             Spacer()
-            Text(":" + String(port)).font(TFFont.mono(10, weight: .medium)).foregroundStyle(TF.textSecondary)
+            Text(":" + String(port)).font(TFFont.mono(9.5, weight: .medium)).foregroundStyle(TF.textSecondary)
         }
     }
 
@@ -665,12 +750,13 @@ private struct StatusCard: View {
 private struct PageHeaderBar: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var engine = TouchFlowEngine.shared
+    var compact: Bool = false
 
     private var section: AppModel.Section { app.section ?? .dashboard }
 
     var body: some View {
         PageHeader(title: section.title, subtitle: section.subtitle, icon: section.icon) {
-            HStack(spacing: 10) {
+            HStack(spacing: 0) {
                 Button {
                     app.showPalette = true
                 } label: {
@@ -679,36 +765,46 @@ private struct PageHeaderBar: View {
                         Text("⌘K").font(TFFont.mono(10, weight: .medium))
                     }
                     .foregroundStyle(TF.textSecondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
+                    .padding(.horizontal, 10)
+                    .frame(height: 22)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .background(TF.panel, in: Capsule())
-                .overlay(Capsule().strokeBorder(TF.stroke))
                 .help("命令面板（⌘K）")
 
-                HStack(spacing: 7) {
+                toolbarDivider
+
+                HStack(spacing: 8) {
                     Text("系统代理")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                         .foregroundStyle(TF.textSecondary)
                     TFSwitch(isOn: Binding(
                         get: { engine.systemProxyActive },
                         set: { engine.toggleSystemProxy($0) }
-                    ), width: 32)
+                    ), width: 30)
                 }
                 .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(TF.panel, in: Capsule())
-                .overlay(Capsule().strokeBorder(TF.stroke))
+                .frame(height: 22)
 
-                StatusChip(state: engine.state)
+                toolbarDivider
+
+                StatusChip(state: engine.state, plain: true)
+                    .padding(.horizontal, 10)
             }
+            .frame(height: 30)
+            .background(TF.panelSolid, in: Capsule())
+            .overlay(Capsule().strokeBorder(TF.stroke))
         }
+    }
+
+    private var toolbarDivider: some View {
+        Rectangle().fill(TF.stroke).frame(width: 1, height: 14)
     }
 }
 
 struct StatusChip: View {
     let state: EngineState
+    var plain: Bool = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -717,10 +813,14 @@ struct StatusChip: View {
                 .font(.system(size: 10.5, weight: .semibold))
                 .foregroundStyle(TF.textSecondary)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(TF.panel, in: Capsule())
-        .overlay(Capsule().strokeBorder(TF.stroke))
+        .padding(.horizontal, plain ? 0 : 10)
+        .padding(.vertical, plain ? 0 : 6)
+        .background {
+            if !plain { Capsule().fill(TF.panel) }
+        }
+        .overlay {
+            if !plain { Capsule().strokeBorder(TF.stroke) }
+        }
     }
 
     private var color: Color {
@@ -757,7 +857,7 @@ struct MenuBarPanel: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 9) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(TF.brand)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(TF.accentFill)
                     Image(systemName: "shield.lefthalf.filled")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(.white)
@@ -783,10 +883,10 @@ struct MenuBarPanel: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(TFPrimaryButtonStyle(tint: engine.state == .running ? TF.danger : nil))
+            .buttonStyle(TFPrimaryButtonStyle(tint: engine.state == .running ? TF.dangerFill : nil))
 
             HStack(spacing: 8) {
-                Text("系统代理").font(.system(size: 11))
+                Text("系统代理").font(.system(size: 12))
                 Spacer()
                 TFSwitch(isOn: Binding(
                     get: { engine.systemProxyActive },
@@ -828,7 +928,7 @@ struct MenuBarPanel: View {
                     } label: {
                         HStack(spacing: 7) {
                             Image(systemName: section.icon).font(.system(size: 9.5)).frame(width: 14)
-                            Text(section.title).font(.system(size: 11))
+                            Text(section.title).font(.system(size: 12))
                             Spacer()
                         }
                         .foregroundStyle(TF.textSecondary)
@@ -847,7 +947,7 @@ struct MenuBarPanel: View {
                 NSApp.activate(ignoringOtherApps: true)
             } label: {
                 HStack(spacing: 5) {
-                    Text("命令面板").font(.system(size: 11))
+                    Text("命令面板").font(.system(size: 12))
                     Spacer()
                     TFKeyCap(keys: "⌘K")
                 }
@@ -860,11 +960,11 @@ struct MenuBarPanel: View {
                 NSApp.activate(ignoringOtherApps: true)
             }
             .buttonStyle(.plain)
-            .font(.system(size: 11))
+            .font(.system(size: 12))
 
             Button("退出 TouchFlow") { NSApp.terminate(nil) }
                 .buttonStyle(.plain)
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .foregroundStyle(TF.textSecondary)
         }
         .padding(14)
