@@ -223,6 +223,11 @@ public enum ProfileImporter {
         }
         if let socks = root["socks-port"]?.int { profile.general.socksPort = UInt16(clamping: socks) }
         if let lan = root["allow-lan"]?.bool { profile.general.allowLAN = lan }
+        // TouchFlow extension: local control plane. Unknown to Clash proper.
+        if let controlPort = root["control-port"]?.int, (0...65535).contains(controlPort) {
+            profile.general.controlPort = UInt16(controlPort)
+        }
+        if let controlLAN = root["control-allow-lan"]?.bool { profile.general.controlAllowLAN = controlLAN }
         if let level = root["log-level"]?.string, let l = LogLevel(rawValue: level) { profile.general.logLevel = l }
         if let mode = root["mode"]?.string, mode.lowercased() != "rule" {
             report.add(ImportIssue(kind: .unsupportedField, item: "mode",
@@ -541,6 +546,16 @@ public enum ProfileImporter {
                 if let port = UInt16(value.split(separator: ":").last ?? "") { profile.general.socksPort = port }
             case "allow-lan", "allow-hotspot-access":
                 profile.general.allowLAN = (value.lowercased() == "true")
+            case "control-port":
+                if let port = UInt16(value.split(separator: ":").last ?? "") {
+                    profile.general.controlPort = port
+                }
+            case "control-listen":
+                if let port = UInt16(value.split(separator: ":").last ?? "") {
+                    profile.general.controlPort = port
+                }
+            case "control-allow-lan":
+                profile.general.controlAllowLAN = (value.lowercased() == "true")
             case "dns-server":
                 let servers = value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
                     .filter { !$0.isEmpty }
@@ -989,6 +1004,8 @@ public enum ProfileExporter {
         out.append("port: \(profile.general.httpPort)")
         out.append("socks-port: \(profile.general.socksPort)")
         out.append("allow-lan: \(profile.general.allowLAN)")
+        out.append("control-port: \(profile.general.controlPort)")
+        out.append("control-allow-lan: \(profile.general.controlAllowLAN)")
         out.append("mode: rule")
         out.append("log-level: \(profile.general.logLevel.rawValue)")
         out.append(contentsOf: clashDNSBlock(profile.dns))
@@ -1178,6 +1195,8 @@ public enum ProfileExporter {
         lines.append("http-listen = 0.0.0.0:\(profile.general.httpPort)")
         lines.append("socks5-listen = 0.0.0.0:\(profile.general.socksPort)")
         lines.append("allow-lan = \(profile.general.allowLAN)")
+        lines.append("control-port = \(profile.general.controlPort)")
+        lines.append("control-allow-lan = \(profile.general.controlAllowLAN)")
         if !profile.dns.upstreams.isEmpty {
             lines.append("dns-server = \(profile.dns.upstreams.joined(separator: ", "))")
         }

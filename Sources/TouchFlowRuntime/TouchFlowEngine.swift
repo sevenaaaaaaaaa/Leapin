@@ -4,6 +4,7 @@ import TouchFlowCore
 import TouchFlowPolicy
 import TouchFlowNet
 import TouchFlowIntegrations
+import TouchFlowControl
 
 public enum EngineState: Equatable, Sendable {
     case stopped
@@ -61,6 +62,18 @@ public final class TouchFlowEngine: ObservableObject {
     private let sink = EngineSink()
     private var logObserverInstalled = false
 
+    // MARK: - Control plane (P1)
+
+    private var controlServer: ControlServer?
+    private var controlStartedAt: Date?
+    private var controlEventSeq = 0
+    /// Set while a control-triggered restart runs so the HTTP response is not cut
+    /// by tearing down the listener that is serving it.
+    private var keepControlServerOnTeardown = false
+    private var routerBox: RouterBox?
+    private var resolverBox: ResolverBox?
+    private var blockerBox: BlockerBox?
+
     public init(store: ProfileStore = .shared) {
         self.store = store
         self.profile = store.activeProfile()
@@ -88,9 +101,12 @@ public final class TouchFlowEngine: ObservableObject {
         state = .starting
         lastError = nil
         do {
-            let ruleSets = await RuleSetLoader.load(sources: ruleSetSources(), cacheDirectory: store.cacheDirectory)
+            let ruleSets = await RuleSetLoader.load(sources: ruleSetSources(for: profile),
+                                                    cacheDirectory: store.cacheDirectory)
             let engine = RuleEngine(profile: profile, ruleSets: ruleSets)
             ruleEngine = engine
+            let routerBox = RouterBox(engine)
+            self.routerBox = routerBox
 
             let listDir = store.ensureBundledLists()
             var listPaths = profile.adblock.blockLists
@@ -101,12 +117,16 @@ public final class TouchFlowEngine: ObservableObject {
                 : nil
             adblock = blocker
             adblockActive = (blocker?.ruleCount ?? 0) > 0
+            let blockerBox = BlockerBox(blocker)
+            self.blockerBox = blockerBox
 
             let dnsResolver = DNSResolver(config: profile.dns, blocker: blocker)
             resolver = dnsResolver
+            let resolverBox = ResolverBox(dnsResolver)
+            self.resolverBox = resolverBox
             if profile.general.dnsHijack {
                 let server = DNSServer(port: profile.dns.listenPort, resolver: dnsResolver,
-                                       blocker: blocker,
+                                       blocker: blockerBox,
                                        fakeIP: profile.dns.mode == .fakeIP ? FakeIPPool(range: profile.dns.fakeIPRange) : nil)
                 do {
                     try server.start()
@@ -138,8 +158,8 @@ public final class TouchFlowEngine: ObservableObject {
                                                   enableSOCKS5: socks, enableHTTP: http,
                                                   mitm: general.mitmEnabled,
                                                   mitmHosts: general.mitmHosts)
-                return ProxyServer(options: options, router: engine, resolver: dnsResolver,
-                                   blocker: blocker, flows: sink, capture: sinkCapture, ca: ca)
+                return ProxyServer(options: options, router: routerBox, resolver: resolverBox,
+                                   blocker: blockerBox, flows: sink, capture: sinkCapture, ca: ca)
             }
 
             // Mixed port is required; the dedicated HTTP/SOCKS ports are best-effort so a
@@ -157,6 +177,7 @@ public final class TouchFlowEngine: ObservableObject {
                 do { try socks.start(); proxies.append(socks) }
                 catch { TFLog.shared.warn("engine", "SOCKS 端口 \(general.socksPort) 未启动：\(error.localizedDescription)") }
             }
+            startControlPlane()
             let probes = Self.probeTargets(for: profile)
             if !probes.isEmpty {
                 let prober = HealthProber(dialer: OutboundDialer(resolver: dnsResolver), probes: probes)
@@ -257,15 +278,33 @@ public final class TouchFlowEngine: ObservableObject {
         ca = nil
         adblockActive = false
         mitmActive = false
+        routerBox = nil
+        resolverBox = nil
+        blockerBox = nil
+        if !keepControlServerOnTeardown {
+            controlServer?.stop()
+            controlServer = nil
+            controlStartedAt = nil
+        }
     }
 
     // MARK: - Profile
 
+    /// Applies the active profile. While running this goes through the same local
+    /// reload path as POST /v1/reload, so a rules-only edit keeps listeners and
+    /// established connections alive instead of dropping every socket.
     public func reloadProfile() async {
-        let wasRunning = state == .running
-        if wasRunning { stop() }
-        profile = store.activeProfile()
-        if wasRunning { await start() }
+        let loaded = store.activeProfile()
+        guard state == .running else {
+            profile = loaded
+            return
+        }
+        do {
+            _ = try await applyReload(loaded)
+        } catch {
+            lastError = error.localizedDescription
+            TFLog.shared.warn("engine", "配置重载失败：\(error.localizedDescription)")
+        }
     }
 
     @discardableResult
@@ -337,7 +376,7 @@ public final class TouchFlowEngine: ObservableObject {
         adblock?.verdict(for: domain, path: path, thirdParty: false) ?? .allow
     }
 
-    private func ruleSetSources() -> [String] {
+    private func ruleSetSources(for profile: Profile) -> [String] {
         // RuleSetLoader accepts local paths and URLs; names resolve against the profile directory.
         profile.rules.filter { $0.kind == .ruleSet }.map { $0.value }
     }
@@ -409,6 +448,12 @@ public final class TouchFlowEngine: ObservableObject {
             if event.phase == .opened { stats.connections += 1 }
         }
         flows.append(contentsOf: events)
+        if let server = controlServer {
+            for event in events {
+                controlEventSeq += 1
+                server.publish(Self.controlEvent(from: event, seq: controlEventSeq))
+            }
+        }
         Self.trim(&flows, to: Self.flowLimit)
     }
 
@@ -581,5 +626,337 @@ public extension TouchFlowEngine {
 
     func setSystemProxyBypass(_ hosts: [String]) {
         updateProfile(restart: false) { $0.general.bypass = hosts }
+    }
+}
+
+// MARK: - Control-plane backend (P1)
+
+extension TouchFlowEngine: ControlBackend {
+    /// Rule diagnostics shown by `/v1/explain`. Uses the indexed engine while it runs,
+    /// otherwise the cheap profile scanner in ControlWiring.swift.
+    public func ruleDiagnostics() -> [RuleDiagnostic] {
+        if let engine = ruleEngine { return engine.diagnostics() }
+        return RuleDiagnosticsScanner.scan(profile: profile)
+    }
+
+    public func controlStatus() async -> ControlStatus {
+        let stateText: String
+        switch state {
+        case .stopped: stateText = "stopped"
+        case .starting: stateText = "starting"
+        case .running: stateText = "running"
+        case .failed: stateText = "failed"
+        }
+        return ControlStatus(
+            engineState: stateText,
+            mixedPort: Int(proxy?.listeningPort ?? profile.general.mixedPort),
+            httpPort: Int(profile.general.httpPort),
+            socksPort: Int(profile.general.socksPort),
+            controlPort: controlServer?.listeningPort ?? 0,
+            ruleCount: ruleEngine?.ruleCount ?? 0,
+            adblockRuleCount: adblock?.ruleCount ?? 0,
+            activeConnections: flows.count,
+            systemProxyActive: systemProxyActive,
+            uptimeSeconds: stats.startedAt.map { Date().timeIntervalSince($0) } ?? 0)
+    }
+
+    public func controlConnections(limit: Int) async -> [ControlConnection] {
+        let wanted = max(1, min(limit, 500))
+        return flows.suffix(wanted).reversed().map(Self.controlConnection(from:))
+    }
+
+    public func controlPolicies() async -> [ControlPolicyGroup] {
+        let resolver = ruleEngine?.policies
+        return profile.groups.map { group in
+            let selected = resolver?.selections[group.name.lowercased()] ?? group.selected ?? ""
+            return ControlPolicyGroup(
+                name: group.name,
+                type: group.type.rawValue,
+                selected: selected,
+                effective: resolver?.effectiveMember(group: group.name) ?? selected,
+                members: group.proxies)
+        }
+    }
+
+    public func controlSelect(group: String, outbound: String) async throws -> ControlSelectionResult {
+        guard let index = profile.groups.firstIndex(where: {
+            $0.name.caseInsensitiveCompare(group) == .orderedSame
+        }) else {
+            throw ControlError.notFound("policy group \(group)")
+        }
+        let canonicalGroup = profile.groups[index].name
+        guard let member = profile.groups[index].proxies.first(where: {
+            $0.caseInsensitiveCompare(outbound) == .orderedSame
+        }) else {
+            throw ControlError.badRequest("outbound \(outbound) is not a member of \(canonicalGroup)")
+        }
+
+        // Swap the resolver selection in place: existing tunnels keep their sockets,
+        // only connections opened afterwards see the new member.
+        ruleEngine?.policies.setSelection(group: canonicalGroup, outbound: member)
+        profile.groups[index].selected = member
+        let persisted = saveProfile()
+        let effective = ruleEngine?.policies.effectiveMember(group: canonicalGroup) ?? member
+        TFLog.shared.info("control", "策略 \(canonicalGroup) → \(effective)（persisted=\(persisted)）")
+        return ControlSelectionResult(group: canonicalGroup, outbound: member,
+                                      effective: effective, persisted: persisted)
+    }
+
+    public func controlReload() async throws -> ControlReloadResult {
+        let loaded = store.activeProfile()
+        return try await applyReload(loaded)
+    }
+
+    public func controlExplain(host: String, port: Int) async throws -> ControlExplainResult {
+        let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ControlError.badRequest("host is empty") }
+        guard let portValue = UInt16(exactly: port) else {
+            throw ControlError.badRequest("port must be 1...65535")
+        }
+        guard let engine = ruleEngine else {
+            throw ControlError.unavailable("engine is not running")
+        }
+        let meta = ConnectionMeta(host: trimmed, port: portValue)
+        let explanation = engine.explain(meta)
+        let decision = engine.decide(meta)
+        let matchedRule = explanation.matchedRule.map(Self.ruleLabel) ?? decision.matchedRule ?? ""
+        return ControlExplainResult(
+            host: trimmed,
+            port: port,
+            policy: decision.policy,
+            matchedRule: matchedRule,
+            trace: explanation.trace,
+            chainSummary: decision.chain?.summary ?? "",
+            chainSteps: decision.chain?.steps.map { step in
+                step.detail.map { "\(step.label) — \($0)" } ?? step.label
+            } ?? [],
+            outbound: decision.outbound.name,
+            isBlocked: decision.isBlocked,
+            diagnostics: ruleDiagnostics())
+    }
+
+    public func controlDNSTrace(host: String) async throws -> DNSTrace {
+        let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw ControlError.badRequest("host is empty") }
+        guard let resolver else { throw ControlError.unavailable("DNS resolver is not running") }
+        return await resolver.trace(trimmed)
+    }
+
+    public func controlHTTPProbe(url: String, timeoutMs: Int) async throws -> HTTPProbeResult {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parsed = URLComponents(string: trimmed), let scheme = parsed.scheme?.lowercased(),
+              scheme == "http" || scheme == "https", parsed.host?.isEmpty == false else {
+            throw ControlError.badRequest("url must be an absolute http(s) URL")
+        }
+        let timeout = timeoutMs > 0 ? min(timeoutMs, 60_000) : 8_000
+        return await HTTPProbe.probe(trimmed, timeoutMs: timeout)
+    }
+
+    // MARK: Reload (hot path)
+
+    /// Applies a profile without touching listeners unless a listening port changed.
+    func applyReload(_ loaded: Profile) async throws -> ControlReloadResult {
+        let started = Date()
+        var applied: [String] = []
+        var skipped: [String] = []
+        let previous = profile
+        let oldGeneral = previous.general
+        let newGeneral = loaded.general
+
+        guard state == .running else {
+            profile = loaded
+            return ControlReloadResult(restarted: false, applied: ["profile"],
+                                       skipped: ["engine-not-running"],
+                                       ruleCount: ruleEngine?.ruleCount ?? 0,
+                                       elapsedMs: Date().timeIntervalSince(started) * 1000)
+        }
+
+        let portsChanged = oldGeneral.mixedPort != newGeneral.mixedPort
+            || oldGeneral.httpPort != newGeneral.httpPort
+            || oldGeneral.socksPort != newGeneral.socksPort
+            || oldGeneral.allowLAN != newGeneral.allowLAN
+
+        if portsChanged {
+            // Nothing can move a listening socket in place, so this is the one path
+            // that restarts. The control listener survives so the HTTP response lands.
+            keepControlServerOnTeardown = true
+            stop()
+            keepControlServerOnTeardown = false
+            profile = loaded
+            await start()
+            guard state == .running else {
+                throw ControlError.unavailable("restart failed: \(lastError ?? "unknown")")
+            }
+            applied.append("restart")
+            return ControlReloadResult(restarted: true, applied: applied, skipped: skipped,
+                                       ruleCount: ruleEngine?.ruleCount ?? 0,
+                                       elapsedMs: Date().timeIntervalSince(started) * 1000)
+        }
+
+        let ruleSets = await RuleSetLoader.load(sources: ruleSetSources(for: loaded),
+                                                cacheDirectory: store.cacheDirectory)
+        let newEngine = RuleEngine(profile: loaded, ruleSets: ruleSets)
+        ruleEngine = newEngine
+        if let routerBox {
+            routerBox.swap(newEngine)
+        } else {
+            routerBox = RouterBox(newEngine)
+        }
+        applied.append("rules")
+
+        let adblockChanged = previous.adblock != loaded.adblock
+        if adblockChanged {
+            let listDir = store.ensureBundledLists()
+            var listPaths = loaded.adblock.blockLists
+            let bundled = listDir.appendingPathComponent("touchflow-ads.txt").path
+            if loaded.adblock.enabled, !listPaths.contains(bundled) { listPaths.append(bundled) }
+            let newBlocker: AdBlockEngine? = loaded.adblock.enabled
+                ? (try? AdBlockEngine.load(listPaths: listPaths, allowList: loaded.adblock.allowList))
+                : nil
+            adblock = newBlocker
+            adblockActive = (newBlocker?.ruleCount ?? 0) > 0
+            if let blockerBox {
+                blockerBox.swap(newBlocker)
+            } else {
+                blockerBox = BlockerBox(newBlocker)
+            }
+            applied.append("adblock")
+        } else {
+            skipped.append("adblock")
+        }
+
+        let dnsChanged = previous.dns != loaded.dns || adblockChanged
+        let hijackToggled = oldGeneral.dnsHijack != newGeneral.dnsHijack
+        if dnsChanged {
+            let newResolver = DNSResolver(config: loaded.dns, blocker: adblock)
+            resolver = newResolver
+            if let resolverBox {
+                resolverBox.swap(newResolver)
+            } else {
+                resolverBox = ResolverBox(newResolver)
+            }
+            applied.append("dns")
+        } else {
+            skipped.append("dns")
+        }
+
+        if dnsChanged || hijackToggled {
+            restartDNSServer(loaded)
+            refreshHealthProber(loaded)
+            if hijackToggled { applied.append("dns-hijack") }
+        }
+
+        if oldGeneral.mitmEnabled != newGeneral.mitmEnabled {
+            skipped.append("mitm-requires-restart")
+        }
+        if oldGeneral.captureEnabled != newGeneral.captureEnabled {
+            skipped.append("capture-requires-restart")
+        }
+        if oldGeneral.bypass != newGeneral.bypass {
+            skipped.append("bypass-requires-restart")
+        }
+        profile = loaded
+        applied.append("profile")
+        return ControlReloadResult(restarted: false, applied: applied, skipped: skipped,
+                                   ruleCount: newEngine.ruleCount,
+                                   elapsedMs: Date().timeIntervalSince(started) * 1000)
+    }
+
+    // MARK: Control-plane lifecycle
+
+    func startControlPlane() {
+        if let server = controlServer, server.isRunning { return }
+        guard profile.general.controlEnabled else {
+            if let server = controlServer { server.stop(); controlServer = nil }
+            controlStartedAt = nil
+            return
+        }
+        let root = store.root
+        let configuration = ControlServer.Configuration(
+            port: profile.general.controlPort,
+            allowLAN: profile.general.controlAllowLAN,
+            tokenFile: root.appendingPathComponent("control-token"),
+            auditFile: root.appendingPathComponent("control-audit.jsonl"))
+        do {
+            let server = try ControlServer(configuration: configuration, backend: self)
+            try server.start()
+            controlServer = server
+            controlStartedAt = Date()
+            TFLog.shared.info("engine", "控制面已启动 127.0.0.1:\(server.listeningPort ?? 0)")
+        } catch {
+            // Remote control is a convenience: never fail the proxy because of it.
+            TFLog.shared.warn("engine", "控制面未启动：\(error.localizedDescription)")
+        }
+    }
+
+    // MARK: Reload helpers
+
+    private func restartDNSServer(_ loaded: Profile) {
+        if let server = dnsServer {
+            server.stop()
+            dnsServer = nil
+        }
+        guard loaded.general.dnsHijack, let resolver else { return }
+        let server = DNSServer(port: loaded.dns.listenPort, resolver: resolver,
+                               blocker: blockerBox,
+                               fakeIP: loaded.dns.mode == .fakeIP ? FakeIPPool(range: loaded.dns.fakeIPRange) : nil)
+        do {
+            try server.start()
+            dnsServer = server
+        } catch {
+            TFLog.shared.warn("engine", "DNS 端口 \(loaded.dns.listenPort) 重启失败：\(error.localizedDescription)")
+        }
+    }
+
+    private func refreshHealthProber(_ loaded: Profile) {
+        healthProber?.stop()
+        healthProber = nil
+        let probes = Self.probeTargets(for: loaded)
+        guard !probes.isEmpty, let resolver else { return }
+        let prober = HealthProber(dialer: OutboundDialer(resolver: resolver), probes: probes)
+        prober.start()
+        healthProber = prober
+    }
+
+    // MARK: FlowEvent → wire
+
+    static func controlEvent(from event: FlowEvent, seq: Int) -> ControlEvent {
+        ControlEvent(
+            seq: seq,
+            timestampMs: event.timestamp.timeIntervalSince1970 * 1000,
+            phase: event.phase.rawValue,
+            host: event.host,
+            port: Int(event.port),
+            policy: event.policy,
+            matchedRule: event.matchedRule ?? "",
+            outbound: event.outbound,
+            sourceApp: event.sourceApp ?? "",
+            bytesIn: Int64(event.bytesIn),
+            bytesOut: Int64(event.bytesOut),
+            durationMs: Double(event.durationMs),
+            blockedBy: event.blockedBy ?? "")
+    }
+
+    static func controlConnection(from event: FlowEvent) -> ControlConnection {
+        ControlConnection(
+            id: event.id.uuidString,
+            timestampMs: event.timestamp.timeIntervalSince1970 * 1000,
+            phase: event.phase.rawValue,
+            host: event.host,
+            port: Int(event.port),
+            network: event.network,
+            policy: event.policy,
+            matchedRule: event.matchedRule ?? "",
+            outbound: event.outbound,
+            sourceApp: event.sourceApp ?? "",
+            sourcePID: event.sourcePID ?? 0,
+            bytesIn: Int64(event.bytesIn),
+            bytesOut: Int64(event.bytesOut),
+            durationMs: Double(event.durationMs),
+            chainSummary: event.chain?.summary ?? "")
+    }
+
+    private static func ruleLabel(_ rule: Rule) -> String {
+        rule.raw.isEmpty ? "FINAL,\(rule.value),\(rule.policy)" : rule.raw
     }
 }

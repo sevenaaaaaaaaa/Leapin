@@ -14,6 +14,8 @@ struct RulesView: View {
     @State private var selection: String?
     @State private var pendingDelete: Rule?
     @State private var filter: PolicyFilter = .all
+    /// Dead rules keyed by their position in the profile (positions survive filtering).
+    @State private var diagnostics: [Int: RuleDiagnostic] = [:]
     /// Bumped by the probe refresh timer so measured latency re-renders even though
     /// TFHealth itself is not observable.
     @State private var healthTick = 0
@@ -41,14 +43,17 @@ struct RulesView: View {
         }
     }
 
-    private var filtered: [Rule] {
+    /// Keeps the profile position for every visible rule so diagnostics and row
+    /// numbers stay stable while the list is filtered or searched.
+    private var filtered: [(index: Int, rule: Rule)] {
         let q = search.trimmingCharacters(in: .whitespaces).lowercased()
-        return engine.profile.rules.filter { rule in
-            guard filter.matches(rule) else { return false }
-            guard !q.isEmpty else { return true }
-            return rule.raw.lowercased().contains(q)
+        return engine.profile.rules.enumerated().compactMap { offset, rule in
+            guard filter.matches(rule) else { return nil }
+            guard !q.isEmpty else { return (offset, rule) }
+            let hit = rule.raw.lowercased().contains(q)
                 || rule.value.lowercased().contains(q)
                 || rule.policy.lowercased().contains(q)
+            return hit ? (offset, rule) : nil
         }
     }
 
@@ -82,6 +87,7 @@ struct RulesView: View {
         .sheet(isPresented: $showAdd) {
             AddRuleSheet { rule in
                 engine.addRules([rule])
+                refreshDiagnostics()
                 showAdd = false
                 app.showToast("已添加规则 \(rule.value)")
             } onCancel: { showAdd = false }
@@ -96,6 +102,7 @@ struct RulesView: View {
             guard let rule = pendingDelete else { return }
             engine.removeRule(id: rule.id)
             if selection == rule.id { selection = nil }
+            refreshDiagnostics()
             pendingDelete = nil
             app.showToast("已删除 \(rule.value)", kind: .info)
         }
@@ -107,10 +114,18 @@ struct RulesView: View {
             searchFocused = true
         }
         .onChange(of: search) { _, _ in
-            if let selected = selection, !filtered.contains(where: { $0.id == selected }) {
+            if let selected = selection, !filtered.contains(where: { $0.rule.id == selected }) {
                 selection = nil
             }
         }
+        .task { refreshDiagnostics() }
+        .onChange(of: engine.profile.rules.count) { _, _ in refreshDiagnostics() }
+    }
+
+    /// Recomputes dead-rule diagnostics. Only called when the rule set changes
+    /// (open / add / delete / reload) — never from `body`, which must stay cheap.
+    private func refreshDiagnostics() {
+        diagnostics = RuleDiagnosticsScan.scan(engine.profile.rules)
     }
 
     private var toolbar: some View {
@@ -130,7 +145,10 @@ struct RulesView: View {
                 .foregroundStyle(TF.textTertiary)
             Spacer()
             Button {
-                Task { await engine.reloadProfile() }
+                Task {
+                    await engine.reloadProfile()
+                    refreshDiagnostics()
+                }
                 app.showToast("配置已重新载入", kind: .info)
             } label: {
                 HStack(spacing: 4) {
@@ -185,16 +203,18 @@ struct RulesView: View {
                     Rectangle().fill(TF.stroke).frame(height: 1)
                     ScrollView {
                     LazyVStack(spacing: 1) {
-                        ForEach(Array(filtered.enumerated()), id: \.element.id) { index, rule in
+                        ForEach(filtered, id: \.index) { item in
+                            let rule = item.rule
                             TFRow(selected: selection == rule.id,
                                   accessibilityText: "\(rule.kind.rawValue) \(rule.value) \(rule.policy)") {
                                 selection = rule.id
                                 listFocused = true
                             } content: {
-                                RuleRow(index: index + 1, rule: rule)
+                                RuleRow(index: item.index + 1, rule: rule,
+                                        diagnostic: diagnostics[item.index])
                             }
                             .overlay(alignment: .bottom) {
-                                if rule.id != filtered.last?.id {
+                                if item.index != filtered.last?.index {
                                     Rectangle().fill(TF.stroke).frame(height: 1)
                                 }
                             }
@@ -232,7 +252,7 @@ struct RulesView: View {
 
     /// 账页的合计行：把「还剩多少、都判给谁」写在表尾，空面板就不再是无解释的白。
     private var tableFooter: some View {
-        let direct = filtered.filter { $0.policy.uppercased() == "DIRECT" }.count
+        let direct = filtered.filter { $0.rule.policy.uppercased() == "DIRECT" }.count
         return HStack(spacing: 10) {
             Text("共 \(filtered.count) 条")
             if direct > 0 { Text("·").foregroundStyle(TF.strokeStrong) }
@@ -253,7 +273,7 @@ struct RulesView: View {
 
     private func moveSelection(_ direction: MoveCommandDirection) {
         guard !filtered.isEmpty else { return }
-        let current = filtered.firstIndex(where: { $0.id == selection })
+        let current = filtered.firstIndex(where: { $0.rule.id == selection })
         let next: Int
         switch direction {
         case .up:
@@ -263,7 +283,7 @@ struct RulesView: View {
         default:
             return
         }
-        selection = filtered[next].id
+        selection = filtered[next].rule.id
     }
 
     private var sidePanel: some View {
@@ -352,6 +372,12 @@ struct RulesView: View {
 
                 railRule
 
+                railSection("诊断 / DIAGNOSTICS") {
+                    diagnosticsSection
+                }
+
+                railRule
+
                 railSection("快捷键 / KEYS") {
                     VStack(alignment: .leading, spacing: 7) {
                         shortcut("⌘F", "聚焦搜索")
@@ -380,6 +406,70 @@ struct RulesView: View {
             Text("尚未测速")
                 .font(TFFont.mono(9))
                 .foregroundStyle(TF.textTertiary)
+        }
+    }
+
+    /// 「永不命中」总览：先给结论（多少条），再给可点击的例子，点一下跳到该行。
+    @ViewBuilder
+    private var diagnosticsSection: some View {
+        let dead = deadRules
+        if dead.isEmpty {
+            railNote("当前 \(engine.profile.rules.count) 条规则都可命中")
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("\(dead.count) 条永不命中")
+                    .font(TFFont.mono(10, weight: .semibold))
+                    .foregroundStyle(TF.danger)
+                ForEach(dead.prefix(4), id: \.diagnostic.index) { item in
+                    Button { jump(to: item.diagnostic.index) } label: {
+                        HStack(spacing: 6) {
+                            Text("#\(item.diagnostic.index + 1)")
+                                .font(TFFont.mono(9))
+                                .foregroundStyle(TF.textTertiary)
+                            Text(item.rule.value)
+                                .font(TFFont.mono(10))
+                                .foregroundStyle(TF.textSecondary)
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            Text(diagnosticLabel(item.diagnostic.kind))
+                                .font(TFFont.mono(9))
+                                .foregroundStyle(TF.danger)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(item.diagnostic.reason)
+                }
+                if dead.count > 4 {
+                    railNote("其余 \(dead.count - 4) 条在列表中以「永不命中」标出。")
+                }
+            }
+        }
+    }
+
+    private var deadRules: [(rule: Rule, diagnostic: RuleDiagnostic)] {
+        diagnostics.sorted { $0.key < $1.key }.compactMap { index, diagnostic in
+            guard engine.profile.rules.indices.contains(index) else { return nil }
+            return (engine.profile.rules[index], diagnostic)
+        }
+    }
+
+    private func jump(to index: Int) {
+        guard engine.profile.rules.indices.contains(index) else { return }
+        let rule = engine.profile.rules[index]
+        search = ""
+        filter = .all
+        selection = rule.id
+        listFocused = true
+    }
+
+    private func diagnosticLabel(_ kind: RuleDiagnostic.Kind) -> String {
+        switch kind {
+        case .shadowed: return "被遮蔽"
+        case .duplicate: return "重复"
+        case .unreachable: return "不可达"
+        case .ruleSetMissing: return "规则集缺失"
+        case .neverMatch: return "永不命中"
         }
     }
 
@@ -420,6 +510,9 @@ struct RulesView: View {
 struct RuleRow: View {
     var index: Int
     var rule: Rule
+    /// Non-nil when the editor knows this rule can never win — a dead rule must
+    /// not look as healthy as a live one.
+    var diagnostic: RuleDiagnostic? = nil
     var body: some View {
         HStack(spacing: 10) {
             Text("\(index)")
@@ -437,6 +530,10 @@ struct RuleRow: View {
                 .foregroundStyle(TF.text)
                 .lineLimit(1)
             if rule.noResolve { Badge(text: "no-resolve", color: TF.textTertiary) }
+            if let diagnostic {
+                Badge(text: "永不命中", color: TF.danger)
+                    .help(diagnostic.reason)
+            }
             Spacer()
             Text(rule.policy)
                 .font(TFFont.mono(10, weight: .semibold))
@@ -532,6 +629,18 @@ struct AddRuleSheet: View {
 
     private var canAdd: Bool { !trimmedValue.isEmpty && validationError == nil }
 
+    /// Would this rule be dead on arrival? Same conservative scan as the list,
+    /// so the sheet warns before the rule is added instead of after.
+    private var draftWarning: String? {
+        guard validationError == nil else { return nil }
+        let raw = "\(kind.rawValue.uppercased()),\(trimmedValue),\(policy)" + (noResolve ? ",no-resolve" : "")
+        let draft = Rule(kind: kind, value: trimmedValue, policy: policy,
+                         modifiers: noResolve ? ["no-resolve"] : [], raw: raw)
+        let scan = RuleDiagnosticsScan.scan(engine.profile.rules + [draft])
+        guard let diagnostic = scan[engine.profile.rules.count] else { return nil }
+        return "添加后永不命中：\(diagnostic.reason)"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             TFEyebrow(text: "新建规则 / NEW RULE")
@@ -575,6 +684,17 @@ struct AddRuleSheet: View {
                     Text(validationError).font(.system(size: 12))
                 }
                 .foregroundStyle(TF.danger)
+                .padding(.top, 8)
+            }
+
+            if let draftWarning {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "eye.slash.fill").font(.system(size: 9))
+                    Text(draftWarning)
+                        .font(.system(size: 12))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .foregroundStyle(TF.textSecondary)
                 .padding(.top, 8)
             }
 

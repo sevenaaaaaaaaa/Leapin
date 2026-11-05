@@ -26,8 +26,8 @@
 
 | 层 | 负责 | 现状 |
 | --- | --- | --- |
-| Engine（数据面） | listeners、dialer、DNS、MITM、规则匹配、重写、TUN（未来） | 已有：HTTP/SOCKS5、4 协议、DNS+FakeIP、MITM、HAR、规则引擎。缺：UDP relay、索引化匹配、TUN |
-| Control（控制面） | 状态机、动作 API、事件流、审计、设备身份 | **几乎空白**：只有进程内 ObservableObject |
+| Engine（数据面） | listeners、dialer、DNS、MITM、规则匹配、重写、TUN（未来） | 已有：HTTP/SOCKS5、4 协议、DNS+FakeIP、MITM、HAR、规则引擎、索引化匹配（P3）。缺：UDP relay、TUN |
+| Control（控制面） | 状态机、动作 API、事件流、审计、设备身份 | 已有：P1 action API + SSE + token 鉴权 + 审计 + diff reload。缺：设备身份、同步 |
 | Surface（呈现） | macOS App / 远端面板 / iOS（未来） | macOS 已有；其余为 0 |
 
 **硬规则**：Surface 不得直接改 Engine 状态，只能发 Control 的 action。
@@ -66,9 +66,9 @@
 | 期 | 内容 | 工期 | 验收（可测） |
 | --- | --- | --- | --- |
 | **P0** | 诚实性：AUTO 真测速或改名；PROCESS/SRC-IP 接上或隐藏；导入报告单列「不可拨协议」；ruleChain 数据结构 | 1 周 | 导入一个含 7 种协议的订阅，报告明确写「4 个可用 / 3 个不可拨」；任意连接可读出命中链 |
-| **P1** | 控制面：动作 API + SSE + token + 审计；CLI 扩 rule explain / dns trace / http probe；局部 reload（diff apply） | 2 周 | 改一条规则不断开现有连接；远端 curl 能列连接、能切策略、能重载 |
+| **P1** ✅ | 控制面：动作 API + SSE + token + 审计；CLI 扩 rule explain / dns trace / http probe；局部 reload（diff apply） | 2 周 | 改一条规则不断开现有连接；远端 curl 能列连接、能切策略、能重载 |
 | **P2** | 设备身份 + 同步 + 只读远端面板 | 3 周 | 两台设备 5s 内收敛同一 profile 版本；离线改动不丢；iPhone 切节点不影响 Mac |
-| **P3** | 规则超越 + 脚本沙箱 + 编辑器诊断 | 3 周 | 10 万规则 p95 < 2ms；编辑器能报「这条规则永不命中」；脚本超时 50ms 强制中断 |
+| **P3**（索引/诊断 ✅，脚本沙箱未做） | 规则超越 + 脚本沙箱 + 编辑器诊断 | 3 周 | 10 万规则 p95 < 2ms；编辑器能报「这条规则永不命中」；脚本超时 50ms 强制中断 |
 | **P4** | TUN/VIF 全流量接管 → 网关 + DHCP | 4–6 周 | 不遵守系统代理的进程也被接管；断网回滚原子完成 |
 | **P5** | Tailscale 策略 | 4 周 | tailnet 内域名/IP 走规则系统 |
 | **P6** | Ponte / MTProto / 授权商业化 | 依赖基础设施 | 另行立项 |
@@ -110,3 +110,23 @@
 
 测试：132 全绿（Core 1 / Policy 51 / Net 69 / Integrations 11）；smoke 7/7。
 未做：真实 ss/vmess 节点测速（本机无服务器）、MITM 隧道内按 URL 重算链（当前为主机级）、UDP 连接的进程归属。
+
+## 10. P1 / P3 交付（2026-11-05，索引与诊断完成；脚本沙箱未做）
+
+| 项 | 交付 | 证据 |
+| --- | --- | --- |
+| 控制面 API | `ControlServer`（Network.framework，127.0.0.1:7900）：GET status/connections/policies/audit/events(SSE)，POST policies/select、reload、explain、dns/trace、http/probe | `scripts/control-e2e.sh` 22/22；curl status/connections/select/reload/events 全部通过 |
+| token 鉴权 + 审计 | `$TF_PROFILE_ROOT/control-token`（0700 目录 / 0600 文件 / 64 hex / 原子写）；`control-audit.jsonl` >5MB 轮转，记录 method/remote/allowed/action/status/path | e2e：无 token 401、错 token 401、权限 600、被拒请求与 reload 均落审计 |
+| 局部 diff reload | `POST /v1/reload` 按 diff 应用，监听器不变；慢速下载贯穿 reload 不断流 | e2e：120000B 传输中 reload，`restarted=false`，连接保留；新规则立即生效 |
+| CLI 三件套 | `tfctl rules`（explain / --diagnose / --measure）、`dns --trace`、`http-probe`（3 跳重定向、逐跳地址、不走系统代理） | smoke 10/10；dns trace 输出 source/upstream/elapsedMs/cacheTTL；HTTPProbeTests 6 条本地测试 |
+| 配置局部 diff | Clash / Surge 双向导入导出 `control-port` / `control-allow-lan`；GeneralConfig 宽容解码 | 导入导出测试与 e2e 实测 |
+| 规则索引 | 后缀反向标签 Trie + 精确域名字典 + AC 关键字 + IPv4/IPv6 前缀树 + PROCESS 字典；alwaysCheck 兜底 negate/AND/OR/NOT/GEOIP/REGEX | `RuleIndexDifferentialTests`：320 组随机规则集 × 12 meta（3840+ 次）与线性参考全字段一致 |
+| 10 万规则性能 | release 下 decide 走索引，首命中即停 | rules=100001、load=99.6ms、**p95=0.006ms**、p99=0.009ms（阈值 2ms / 300ms）；tfctl release 复核 p95=0.001ms |
+| 永不命中诊断 | `RuleEngine.diagnostics()` 五类（duplicate/shadowed/unreachable/never-match/rule-set-missing）；RulesView 侧栏 + 行徽标 + AddRuleSheet 预检 | `RuleDiagnosticsTests` 15 条；`tfctl rules --diagnose` 输出 #2 与被 #1 遮蔽 |
+
+测试：178 条（Core 1 / Policy 75 / Net 75 / Integrations 11 / Control 16），0 failures；control-e2e 22/22；smoke 10/10。
+未做 / 未验证：JavaScript 脚本沙箱（P3 第三项）未开始；编辑器诊断未做真实窗口目视取证；`diagnostics()` 不递归 RULE-SET 成员；
+遮蔽只判定可证明场景；control 热重载不含监听器级变更（MITM/capture/bypass 需重启）。
+
+下一期：P2 设备身份 + 同步（Ed25519 + content-addressed profile + 版本只增不改），P4 之后需 NE 签名，只做设计。
+

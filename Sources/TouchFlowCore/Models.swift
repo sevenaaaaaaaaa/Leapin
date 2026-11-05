@@ -120,7 +120,7 @@ public enum RuleKind: String, Codable, Sendable, CaseIterable {
 
     /// Parses Surge/Clash style rule type tokens (case-insensitive, `_` == `-`).
     public static func parse(_ token: String) -> RuleKind? {
-        var t = token.lowercased().replacingOccurrences(of: "_", with: "-")
+        let t = token.lowercased().replacingOccurrences(of: "_", with: "-")
         if t == "domain-suffix" || t == "domainsuffix" { return .domainSuffix }
         if t == "domain-keyword" || t == "domainkeyword" { return .domainKeyword }
         if t == "domain-regex" || t == "domainregex" { return .domainRegex }
@@ -366,15 +366,65 @@ public struct GeneralConfig: Codable, Sendable, Hashable {
     public var mitmHosts: [String]
     public var bypass: [String]
     public var dnsHijack: Bool
+    /// Local control plane (P1). Defaults keep existing profiles working.
+    public var controlEnabled: Bool
+    public var controlPort: UInt16
+    public var controlAllowLAN: Bool
 
     public init(mixedPort: UInt16 = 7890, httpPort: UInt16 = 7891, socksPort: UInt16 = 7892,
                 allowLAN: Bool = false, logLevel: LogLevel = .info, captureEnabled: Bool = true,
                 mitmEnabled: Bool = false, mitmHosts: [String] = ["*"], bypass: [String] = ["127.0.0.1", "localhost", "*.local"],
-                dnsHijack: Bool = true) {
+                dnsHijack: Bool = true, controlEnabled: Bool = true, controlPort: UInt16 = 7900,
+                controlAllowLAN: Bool = false) {
         self.mixedPort = mixedPort; self.httpPort = httpPort; self.socksPort = socksPort
         self.allowLAN = allowLAN; self.logLevel = logLevel; self.captureEnabled = captureEnabled
         self.mitmEnabled = mitmEnabled; self.mitmHosts = mitmHosts; self.bypass = bypass
         self.dnsHijack = dnsHijack
+        self.controlEnabled = controlEnabled; self.controlPort = controlPort
+        self.controlAllowLAN = controlAllowLAN
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case mixedPort, httpPort, socksPort, allowLAN, logLevel, captureEnabled
+        case mitmEnabled, mitmHosts, bypass, dnsHijack
+        case controlEnabled, controlPort, controlAllowLAN
+    }
+
+    /// Tolerant decode: profile JSON written before the control fields existed
+    /// must keep decoding (missing keys fall back to defaults).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        mixedPort = try c.decodeIfPresent(UInt16.self, forKey: .mixedPort) ?? 7890
+        httpPort = try c.decodeIfPresent(UInt16.self, forKey: .httpPort) ?? 7891
+        socksPort = try c.decodeIfPresent(UInt16.self, forKey: .socksPort) ?? 7892
+        allowLAN = try c.decodeIfPresent(Bool.self, forKey: .allowLAN) ?? false
+        logLevel = try c.decodeIfPresent(LogLevel.self, forKey: .logLevel) ?? .info
+        captureEnabled = try c.decodeIfPresent(Bool.self, forKey: .captureEnabled) ?? true
+        mitmEnabled = try c.decodeIfPresent(Bool.self, forKey: .mitmEnabled) ?? false
+        mitmHosts = try c.decodeIfPresent([String].self, forKey: .mitmHosts) ?? ["*"]
+        bypass = try c.decodeIfPresent([String].self, forKey: .bypass)
+            ?? ["127.0.0.1", "localhost", "*.local"]
+        dnsHijack = try c.decodeIfPresent(Bool.self, forKey: .dnsHijack) ?? true
+        controlEnabled = try c.decodeIfPresent(Bool.self, forKey: .controlEnabled) ?? true
+        controlPort = try c.decodeIfPresent(UInt16.self, forKey: .controlPort) ?? 7900
+        controlAllowLAN = try c.decodeIfPresent(Bool.self, forKey: .controlAllowLAN) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(mixedPort, forKey: .mixedPort)
+        try c.encode(httpPort, forKey: .httpPort)
+        try c.encode(socksPort, forKey: .socksPort)
+        try c.encode(allowLAN, forKey: .allowLAN)
+        try c.encode(logLevel, forKey: .logLevel)
+        try c.encode(captureEnabled, forKey: .captureEnabled)
+        try c.encode(mitmEnabled, forKey: .mitmEnabled)
+        try c.encode(mitmHosts, forKey: .mitmHosts)
+        try c.encode(bypass, forKey: .bypass)
+        try c.encode(dnsHijack, forKey: .dnsHijack)
+        try c.encode(controlEnabled, forKey: .controlEnabled)
+        try c.encode(controlPort, forKey: .controlPort)
+        try c.encode(controlAllowLAN, forKey: .controlAllowLAN)
     }
 }
 

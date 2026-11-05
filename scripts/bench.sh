@@ -95,6 +95,13 @@ for n in $RULES_SIZES; do
   printf '%-10s %10s %12s %14s\n' "$n" "$ms" "$base" "$per"
 done
 
+# ---------- 2b. 规则 decide 延迟（10 万规则，2000 次，预热 100） ----------
+note "10 万规则 p50/p95"
+BIG_PROFILE="$OUT/profiles/rules-100000.surge"
+[ -f "$BIG_PROFILE" ] || gen_profile 100000 "$BIG_PROFILE"
+measure_line=$("$TFCTL" rules example.com --profile "$BIG_PROFILE" --measure 2000 | tail -1)
+printf '%-24s %s\n' "10 万规则 p50/p95" "$measure_line"
+
 # ---------- 3. AdBlock ----------
 note "AdBlock：内置拦截列表（加载 + 单次判定）"
 ms=$(min_ms "$TFCTL" adblock doubleclick.net)

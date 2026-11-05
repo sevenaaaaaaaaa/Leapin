@@ -196,6 +196,123 @@ public final class DNSResolver: NameResolving, @unchecked Sendable {
         await state.count()
     }
 
+    // MARK: Trace (P1 control plane)
+
+    /// Resolves `host` exactly like `resolve` but reports which stage answered and
+    /// how long each stage took. Read-only: it never inserts cache entries and never
+    /// throws — failures are reported in `error`.
+    public func trace(_ host: String) async -> DNSTrace {
+        let started = Date()
+        var steps: [DNSTraceStep] = []
+        func step(_ stage: String, _ detail: String, since: Date) {
+            steps.append(DNSTraceStep(stage: stage, detail: detail,
+                                      elapsedMs: Date().timeIntervalSince(since) * 1000))
+        }
+        func elapsed() -> Double { Date().timeIntervalSince(started) * 1000 }
+
+        let name = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
+            return DNSTrace(host: host, source: .failed, elapsedMs: elapsed(),
+                            steps: steps, error: "empty host name")
+        }
+
+        var stageStart = Date()
+        if NetAddress.isIPLiteral(name) {
+            step("literal", "ip literal \(name)", since: stageStart)
+            return DNSTrace(host: name, source: .literal, resolved: [name],
+                            elapsedMs: elapsed(), steps: steps)
+        }
+
+        stageStart = Date()
+        if let literal = hosts[name.lowercased()] {
+            step("hosts", "hosts entry -> \(literal.joined(separator: ", "))", since: stageStart)
+            return DNSTrace(host: name, source: .hosts, resolved: literal,
+                            elapsedMs: elapsed(), steps: steps)
+        }
+        step("hosts", "no hosts entry", since: stageStart)
+
+        stageStart = Date()
+        if let verdict = blocker?.verdict(for: name, thirdParty: false), verdict.blocked {
+            let reason = verdict.reason ?? "blocked"
+            step("blocker", "blocked: \(reason)", since: stageStart)
+            if config.blockResponse.lowercased() == "0.0.0.0" {
+                return DNSTrace(host: name, source: .blocker, resolved: ["0.0.0.0"],
+                                elapsedMs: elapsed(), steps: steps, error: "blocked: \(reason)")
+            }
+            return DNSTrace(host: name, source: .blocker, elapsedMs: elapsed(),
+                            steps: steps, error: "blocked: \(reason)")
+        }
+        step("blocker", "not blocked", since: stageStart)
+
+        let key = name.lowercased()
+        stageStart = Date()
+        if config.cacheTTL > 0, let entry = await state.cached(key) {
+            let remaining = max(0, Int(entry.expiresAt.timeIntervalSinceNow.rounded(.up)))
+            if entry.negative {
+                step("cache", "negative cache hit", since: stageStart)
+                return DNSTrace(host: name, source: .negativeCache,
+                                elapsedMs: elapsed(), cacheTTL: remaining,
+                                steps: steps, error: "negative cache for \(name)")
+            }
+            step("cache", "cache hit -> \(entry.addresses.joined(separator: ", "))", since: stageStart)
+            return DNSTrace(host: name, source: .cache, resolved: entry.addresses,
+                            elapsedMs: elapsed(), cacheTTL: remaining, steps: steps)
+        }
+        step("cache", "cache miss", since: stageStart)
+
+        let chain = upstreams + fallbacks
+
+        if config.mode == .system || chain.isEmpty {
+            stageStart = Date()
+            do {
+                let addresses = try await systemLookup(name)
+                step("system", "getaddrinfo -> \(addresses.joined(separator: ", "))", since: stageStart)
+                return DNSTrace(host: name, source: .upstream, resolved: addresses,
+                                upstream: "system", elapsedMs: elapsed(), steps: steps)
+            } catch {
+                step("system", "getaddrinfo failed: \(error.localizedDescription)", since: stageStart)
+                return DNSTrace(host: name, source: .failed, elapsedMs: elapsed(),
+                                steps: steps, error: error.localizedDescription)
+            }
+        }
+
+        step("upstream", "trying \(chain.count) upstream(s)", since: Date())
+        var lastError = "no upstream responded for \(name)"
+        for type in [DNSRecordType.a, DNSRecordType.aaaa] {
+            for upstream in chain {
+                let attempt = Date()
+                do {
+                    let query = DNSMessage.query(name, type: type, id: UInt16.random(in: 1...65534))
+                    let response = try await exchange(query.encode(), via: upstream)
+                    let message = try DNSMessage.decode(response)
+                    step("upstream", "\(upstream.description) \(type.name)", since: attempt)
+                    let addresses = type == .a ? message.aRecords : message.aaaaRecords
+                    if !addresses.isEmpty {
+                        return DNSTrace(host: name, source: .upstream, resolved: addresses,
+                                        upstream: upstream.description, elapsedMs: elapsed(),
+                                        cacheTTL: Int(message.minimumTTL), steps: steps)
+                    }
+                    if message.isSuccess {
+                        lastError = "no \(type.name) record for \(name) from \(upstream.description)"
+                    } else {
+                        lastError = "upstream \(upstream.description) returned rcode \(message.rcode) for \(name)"
+                    }
+                    // A decodable response ends the search for this record type,
+                    // mirroring firstSuccess() in the resolve path.
+                    break
+                } catch {
+                    step("upstream", "\(upstream.description) \(type.name) failed: \(error.localizedDescription)",
+                         since: attempt)
+                    lastError = error.localizedDescription
+                    continue
+                }
+            }
+        }
+
+        return DNSTrace(host: name, source: .failed, elapsedMs: elapsed(),
+                        steps: steps, error: lastError)
+    }
+
     // MARK: Lookup pipeline
 
     private func lookupAll(_ name: String) async throws -> [String] {

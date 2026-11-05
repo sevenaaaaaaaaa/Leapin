@@ -21,7 +21,12 @@ public final class ProfileStore: @unchecked Sendable {
     private let fm = FileManager.default
 
     public init(root: URL? = nil) {
-        let base = root ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        // TF_PROFILE_ROOT isolates integration tests (and lets a user run a
+        // throwaway instance) without touching the real Application Support
+        // directory that the app, its control token and its audit log live in.
+        let override = ProcessInfo.processInfo.environment["TF_PROFILE_ROOT"]
+            .flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0, isDirectory: true) }
+        let base = root ?? override ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("TouchFlow", isDirectory: true)
         self.root = base
         self.profilesDirectory = base.appendingPathComponent("profiles", isDirectory: true)

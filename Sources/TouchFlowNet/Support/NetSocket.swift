@@ -32,6 +32,16 @@ public final class NetSocket: ByteStream, WriteHalfClosable, @unchecked Sendable
     public var bytesRead: Int { lock.withLock { readCount } }
     public var bytesWritten: Int { lock.withLock { writeCount } }
 
+    /// The resolved peer as `ip:port` once the connection is ready, if Network
+    /// exposes it. Used by probes to report where traffic actually landed.
+    public var peerAddress: String? {
+        guard let endpoint = connection.currentPath?.remoteEndpoint else { return nil }
+        if case let .hostPort(host, port) = endpoint {
+            return "\(host):\(port)"
+        }
+        return "\(endpoint)"
+    }
+
     /// Starts the connection and waits until it is ready (or fails).
     public func start(timeout: TimeInterval = 12) async throws {
         let connection = self.connection

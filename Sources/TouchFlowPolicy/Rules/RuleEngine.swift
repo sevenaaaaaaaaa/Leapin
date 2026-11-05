@@ -20,16 +20,6 @@ public struct RuleMatch: Sendable {
 
 /// Ordered first-match rule engine with Surge/Clash semantics.
 public final class RuleEngine: RouteDeciding {
-    private struct RegexBox: @unchecked Sendable { let regex: NSRegularExpression }
-
-    private struct Prepared: Sendable {
-        let rule: Rule
-        let value: String
-        let cidr: CIDR?
-        let regex: RegexBox?
-        let operands: [Prepared]
-    }
-
     private struct Evaluation {
         var matched: Bool
         var note: String
@@ -38,8 +28,12 @@ public final class RuleEngine: RouteDeciding {
         var memberChain: [String] = []
     }
 
-    private let rules: [Prepared]
-    private let ruleSets: [String: [Prepared]]
+    private let rules: [RulePrepared]
+    private let ruleSets: [String: [RulePrepared]]
+    /// Matcher index over profile rules (and one nested index per loaded rule-set).
+    private let index: RuleIndex
+    /// Tests flip this off to get the original linear scan as a reference oracle.
+    private let indexed: Bool
     private let geoIP: GeoIPDatabase?
     /// The resolver this engine decides with, exposed so the UI can show which
     /// member an automatic group actually picked instead of guessing.
@@ -49,15 +43,32 @@ public final class RuleEngine: RouteDeciding {
     private let totalRuleCount: Int
     private let maxTraceLines: Int
 
-    public init(profile: Profile, ruleSets: [String: [Rule]] = [:], geoIP: GeoIPDatabase? = nil) {
+    public convenience init(profile: Profile, ruleSets: [String: [Rule]] = [:],
+                            geoIP: GeoIPDatabase? = nil) {
+        self.init(profile: profile, ruleSets: ruleSets, geoIP: geoIP, useIndex: true)
+    }
+
+    internal init(profile: Profile, ruleSets: [String: [Rule]] = [:],
+                  geoIP: GeoIPDatabase? = nil, useIndex: Bool) {
         self.resolver = PolicyResolver(profile: profile)
         self.geoIP = geoIP ?? GeoIPDatabase()
-        self.rules = profile.rules.map(RuleEngine.prepare)
-        var preparedSets: [String: [Prepared]] = [:]
-        for (name, rules) in ruleSets {
-            preparedSets[name.lowercased()] = rules.map(RuleEngine.prepare)
+        let prepared = profile.rules.enumerated().map {
+            RulePrepared.make($0.element, index: $0.offset)
+        }
+        self.rules = prepared
+        var preparedSets: [String: [RulePrepared]] = [:]
+        for (name, members) in ruleSets {
+            preparedSets[name.lowercased()] = members.enumerated().map {
+                RulePrepared.make($0.element, index: $0.offset)
+            }
         }
         self.ruleSets = preparedSets
+        var members: [String: RuleIndex] = [:]
+        for (key, list) in preparedSets {
+            members[key] = RuleIndex(prepared: list)
+        }
+        self.index = RuleIndex(prepared: prepared, ruleSetMembers: members)
+        self.indexed = useIndex
         self.totalRuleCount = profile.rules.count + ruleSets.values.reduce(0) { $0 + $1.count }
         self.maxTraceLines = 200
     }
@@ -92,7 +103,10 @@ public final class RuleEngine: RouteDeciding {
         // returning, so the set is empty again after every rule. Hoisting it avoids a
         // fresh allocation per rule in the linear scan.
         var visitedSets: Set<String> = []
-        for (index, prepared) in rules.enumerated() {
+        let positions = indexed ? index.candidates(for: meta, host: host) : Array(rules.indices)
+        for position in positions {
+            guard position >= 0 && position < rules.count else { continue }
+            let prepared = rules[position]
             let result = evaluate(prepared, meta: meta, host: host, depth: 0, visitedSets: &visitedSets)
             if result.matched {
                 let policy = result.policyOverride ?? prepared.rule.policy
@@ -100,7 +114,7 @@ public final class RuleEngine: RouteDeciding {
                 return RuleMatch(matchedRule: prepared.rule,
                                  policy: resolved,
                                  trace: [],
-                                 chain: makeChain(rule: prepared.rule, index: index + 1,
+                                 chain: makeChain(rule: prepared.rule, index: position + 1,
                                                   result: result, policy: resolved))
             }
         }
@@ -152,7 +166,7 @@ public final class RuleEngine: RouteDeciding {
 
     // MARK: - Evaluation
 
-    private func evaluate(_ prepared: Prepared, meta: ConnectionMeta, host: String,
+    private func evaluate(_ prepared: RulePrepared, meta: ConnectionMeta, host: String,
                           depth: Int, visitedSets: inout Set<String>) -> Evaluation {
         guard depth < 16 else { return Evaluation(matched: false, note: "expression too deep", policyOverride: nil) }
         let rule = prepared.rule
@@ -253,7 +267,7 @@ public final class RuleEngine: RouteDeciding {
         return result
     }
 
-    private func evaluateRuleSet(_ prepared: Prepared, meta: ConnectionMeta, host: String,
+    private func evaluateRuleSet(_ prepared: RulePrepared, meta: ConnectionMeta, host: String,
                                  depth: Int, visitedSets: inout Set<String>) -> Evaluation {
         let key = prepared.value.lowercased()
         guard let entries = ruleSets[key] else {
@@ -265,7 +279,13 @@ public final class RuleEngine: RouteDeciding {
         visitedSets.insert(key)
         defer { visitedSets.remove(key) }
 
-        for entry in entries {
+        // Walk the members through their own index, in ascending order, so the
+        // first matching member is identical to the original linear scan.
+        let positions = index.memberRuleIndex(for: key)?.candidates(for: meta, host: host)
+            ?? Array(entries.indices)
+        for position in positions {
+            guard position >= 0 && position < entries.count else { continue }
+            let entry = entries[position]
             let sub = evaluate(entry, meta: meta, host: host, depth: depth + 1, visitedSets: &visitedSets)
             if sub.matched {
                 // Surge semantics: RULE-SET,name,POLICY applies that policy to the whole set.
@@ -284,34 +304,6 @@ public final class RuleEngine: RouteDeciding {
 
     // MARK: - Preparation
 
-    private static func prepare(_ rule: Rule) -> Prepared {
-        var value = rule.value
-        var cidr: CIDR?
-        var regex: RegexBox?
-        var operands: [Prepared] = []
-
-        switch rule.kind {
-        case .domain, .domainSuffix, .domainKeyword:
-            value = HostNormalizer.normalize(value)
-        case .geoIP:
-            value = value.uppercased()
-        case .ipCIDR, .ipCIDR6, .srcIPCIDR:
-            cidr = CIDR(value)
-            if let parsed = cidr { value = parsed.description }
-        case .domainRegex:
-            if let compiled = try? NSRegularExpression(pattern: value) {
-                regex = RegexBox(regex: compiled)
-            }
-        case .and, .or, .not:
-            if let parsed = try? RuleParser.parseOperands(value) {
-                operands = parsed.map(prepare)
-            }
-        default:
-            break
-        }
-        return Prepared(rule: rule, value: value, cidr: cidr, regex: regex, operands: operands)
-    }
-
     private static func processMatches(_ value: String, meta: ConnectionMeta) -> Bool {
         let target = value.lowercased()
         guard !target.isEmpty else { return false }
@@ -324,6 +316,248 @@ public final class RuleEngine: RouteDeciding {
             return false
         }
         return matches(meta.sourceApp) || matches(meta.sourceBundleID)
+    }
+
+
+    // MARK: - Diagnostics
+
+    /// Static analysis over this engine's own rules: duplicates, shadowed rules,
+    /// rules after FINAL, and rules that can never match. One entry per rule,
+    /// ordered by descending priority within a single pass (never more than one
+    /// finding per rule so the editor list stays stable).
+    public func diagnostics() -> [RuleDiagnostic] {
+        diagnostics(rules.map { $0.rule })
+    }
+
+    /// Static analysis for an arbitrary rule list, using this engine's loaded
+    /// rule-sets to resolve RULE-SET references.
+    public func diagnostics(_ sourceRules: [Rule]) -> [RuleDiagnostic] {
+        guard !sourceRules.isEmpty else { return [] }
+
+        var out: [RuleDiagnostic] = []
+        out.reserveCapacity(sourceRules.count)
+
+        // First occurrence per exact matcher (kind + value + negate), used for
+        // "shadowed"; the full signature adds policy and modifiers for "duplicate".
+        var firstMatcher: [String: Int] = [:]
+        var firstSignature: [String: Int] = [:]
+        // Earlier DOMAIN-SUFFIX rules that may cover later domain matchers.
+        var suffixAncestors: [(domain: String, index: Int)] = []
+        // Earlier, non-negated, plain CIDR rules that may cover later prefixes.
+        var cidrAncestors: [(cidr: CIDR, source: Bool, index: Int)] = []
+        // 1-based index of the first reachable FINAL rule; everything after it is dead.
+        var finalStop: Int?
+
+        for (offset, rule) in sourceRules.enumerated() {
+            // 0-based rule position, matching RuleDiagnostic consumers (the editor
+            // preview and the control plane both key by array offset).
+            let position = offset
+            let prepared = RulePrepared.make(rule, index: offset)
+            let raw = rule.raw.isEmpty
+                ? RuleParser.exportLine(rule, matchToken: "FINAL")
+                : rule.raw
+
+            if let stop = finalStop, position > stop {
+                out.append(RuleDiagnostic(ruleID: rule.id, raw: raw, index: position,
+                                          kind: .unreachable,
+                                          reason: "位于第 \(stop + 1) 条 FINAL/MATCH 之后，永远不会被评估",
+                                          shadowedByIndex: stop))
+                continue
+            }
+
+            if let why = Self.neverMatchReason(rule, prepared: prepared) {
+                out.append(RuleDiagnostic(ruleID: rule.id, raw: raw, index: position,
+                                          kind: .neverMatch, reason: why,
+                                          shadowedByIndex: nil))
+                Self.record(rule, prepared: prepared, position: position,
+                            matcher: &firstMatcher, signature: &firstSignature,
+                            suffixes: &suffixAncestors, cidrs: &cidrAncestors)
+                continue
+            }
+
+            let key = rule.value.lowercased()
+            if rule.kind == .ruleSet, ruleSets[key] == nil {
+                out.append(RuleDiagnostic(ruleID: rule.id, raw: raw, index: position,
+                                          kind: .ruleSetMissing,
+                                          reason: "引用的规则集 '\(rule.value)' 尚未加载",
+                                          shadowedByIndex: nil))
+                Self.record(rule, prepared: prepared, position: position,
+                            matcher: &firstMatcher, signature: &firstSignature,
+                            suffixes: &suffixAncestors, cidrs: &cidrAncestors)
+                continue
+            }
+
+            if let signature = Self.signatureKey(rule, prepared: prepared),
+               let earlier = firstSignature[signature] {
+                out.append(RuleDiagnostic(ruleID: rule.id, raw: raw, index: position,
+                                          kind: .duplicate,
+                                          reason: "与第 \(earlier + 1) 条完全重复（同 kind/value/policy/negate/modifiers）",
+                                          shadowedByIndex: earlier))
+                Self.record(rule, prepared: prepared, position: position,
+                            matcher: &firstMatcher, signature: &firstSignature,
+                            suffixes: &suffixAncestors, cidrs: &cidrAncestors)
+                continue
+            }
+
+            if let earlier = Self.shadowingIndex(rule, prepared: prepared,
+                                                 firstMatcher: firstMatcher,
+                                                 suffixes: suffixAncestors,
+                                                 cidrs: cidrAncestors) {
+                out.append(RuleDiagnostic(ruleID: rule.id, raw: raw, index: position,
+                                          kind: .shadowed,
+                                          reason: "被第 \(earlier + 1) 条的规则必然覆盖，永远不会命中",
+                                          shadowedByIndex: earlier))
+                Self.record(rule, prepared: prepared, position: position,
+                            matcher: &firstMatcher, signature: &firstSignature,
+                            suffixes: &suffixAncestors, cidrs: &cidrAncestors)
+                continue
+            }
+
+            Self.record(rule, prepared: prepared, position: position,
+                        matcher: &firstMatcher, signature: &firstSignature,
+                        suffixes: &suffixAncestors, cidrs: &cidrAncestors)
+
+            // A FINAL rule stops evaluation for everything after it. A negated
+            // FINAL can never fire (true toggled to false), so it is not a stop.
+            if rule.kind == .match, !rule.negate, finalStop == nil {
+                finalStop = position
+            }
+        }
+
+        return out
+    }
+
+    // MARK: - Diagnostics helpers
+
+    /// Records a rule as a possible shadower for later rules. Only simple,
+    /// non-negated matchers are eligible: negations and boolean expressions do
+    /// not imply "everything the later rule matches, the earlier rule matches".
+    private static func record(_ rule: Rule, prepared: RulePrepared, position: Int,
+                               matcher: inout [String: Int],
+                               signature: inout [String: Int],
+                               suffixes: inout [(domain: String, index: Int)],
+                               cidrs: inout [(cidr: CIDR, source: Bool, index: Int)]) {
+        if let key = matcherKey(rule, prepared: prepared), matcher[key] == nil {
+            matcher[key] = position
+        }
+        if let key = signatureKey(rule, prepared: prepared), signature[key] == nil {
+            signature[key] = position
+        }
+        guard !rule.negate else { return }
+        switch rule.kind {
+        case .domainSuffix where !prepared.value.isEmpty:
+            suffixes.append((prepared.value, position))
+        case .ipCIDR, .ipCIDR6, .srcIPCIDR:
+            if let cidr = prepared.cidr {
+                cidrs.append((cidr, rule.kind == .srcIPCIDR, position))
+            }
+        default:
+            break
+        }
+    }
+
+    /// Matcher identity without policy: kind family + normalized value + negate.
+    private static func matcherKey(_ rule: Rule, prepared: RulePrepared) -> String? {
+        switch rule.kind {
+        case .domain, .domainSuffix, .domainKeyword:
+            guard !prepared.value.isEmpty else { return nil }
+            return "\(rule.kind.rawValue)|\(prepared.value)|\(rule.negate)"
+        case .domainRegex:
+            return "regex|\(rule.value)|\(rule.negate)"
+        case .ipCIDR, .ipCIDR6, .srcIPCIDR:
+            guard let cidr = prepared.cidr else { return nil }
+            let target = rule.kind == .srcIPCIDR ? "src" : "dst"
+            return "cidr|\(target)|\(cidr.description)|\(rule.negate)"
+        case .processName:
+            return "process|\(prepared.value.lowercased())|\(rule.negate)"
+        case .geoIP:
+            return "geo|\(prepared.value)|\(rule.negate)"
+        case .ruleSet:
+            return "set|\(prepared.value.lowercased())|\(rule.negate)"
+        case .and, .or, .not:
+            return "expr|\(rule.kind.rawValue)|\(rule.value)|\(rule.negate)"
+        case .match:
+            return "final|\(rule.negate)"
+        }
+    }
+
+    /// Matcher identity plus policy and modifiers: two rules with the same
+    /// signature are true duplicates.
+    private static func signatureKey(_ rule: Rule, prepared: RulePrepared) -> String? {
+        guard let base = matcherKey(rule, prepared: prepared) else { return nil }
+        let modifiers = rule.modifiers.sorted().joined(separator: ",")
+        return "\(base)|\(rule.policy)|\(modifiers)"
+    }
+
+    /// Returns the 1-based index of an earlier rule that necessarily covers this
+    /// one, if any. Deliberately conservative: when in doubt, report nothing.
+    private static func shadowingIndex(_ rule: Rule, prepared: RulePrepared,
+                                       firstMatcher: [String: Int],
+                                       suffixes: [(domain: String, index: Int)],
+                                       cidrs: [(cidr: CIDR, source: Bool, index: Int)]) -> Int? {
+        guard !rule.negate else { return nil }
+        // Same matcher, different policy/modifiers: the later one can never win.
+        if let key = matcherKey(rule, prepared: prepared), let earlier = firstMatcher[key] {
+            return earlier
+        }
+        guard !prepared.value.isEmpty else { return nil }
+
+        switch rule.kind {
+        case .domainSuffix, .domain:
+            let value = prepared.value
+            for ancestor in suffixes where value == ancestor.domain || value.hasSuffix("." + ancestor.domain) {
+                return ancestor.index
+            }
+        case .ipCIDR, .ipCIDR6, .srcIPCIDR:
+            guard let inner = prepared.cidr else { return nil }
+            let source = rule.kind == .srcIPCIDR
+            for outer in cidrs where outer.source == source && cidrCovers(outer.cidr, inner) {
+                return outer.index
+            }
+        default:
+            break
+        }
+        return nil
+    }
+
+    /// True when every address inside inner also lives inside outer. Both must be
+    /// the same family; the caller only uses this for non-negated plain CIDRs.
+    private static func cidrCovers(_ outer: CIDR, _ inner: CIDR) -> Bool {
+        guard outer.family == inner.family, outer.prefix <= inner.prefix else { return false }
+        guard outer.prefix > 0 else { return true }
+        let wholeBytes = outer.prefix / 8
+        if wholeBytes > 0,
+           outer.networkBytes[0..<wholeBytes] != inner.networkBytes[0..<wholeBytes] {
+            return false
+        }
+        let remaining = outer.prefix % 8
+        guard remaining > 0 else { return true }
+        let index = wholeBytes
+        let mask = UInt8(truncatingIfNeeded: 0xFF << (8 - remaining))
+        return (outer.networkBytes[index] & mask) == (inner.networkBytes[index] & mask)
+    }
+
+    /// A rule that can never match, for reasons that are decidable statically.
+    private static func neverMatchReason(_ rule: Rule, prepared: RulePrepared) -> String? {
+        let trimmed = rule.value.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch rule.kind {
+        case .domain, .domainSuffix, .domainKeyword, .ipCIDR, .ipCIDR6, .srcIPCIDR,
+             .processName, .geoIP, .ruleSet:
+            if trimmed.isEmpty { return "value 为空，永远不会命中" }
+            if rule.kind == .ipCIDR || rule.kind == .ipCIDR6 || rule.kind == .srcIPCIDR,
+               prepared.cidr == nil {
+                return "CIDR '\(rule.value)' 无法解析，永远不会命中"
+            }
+        case .domainRegex:
+            // An empty but valid pattern matches every host, so only a compile
+            // failure counts as never-match.
+            if prepared.regex == nil { return "正则 '\(rule.value)' 编译失败，永远不会命中" }
+        case .or, .not:
+            if prepared.operands.isEmpty { return "缺少子规则，表达式永远不会命中" }
+        case .and, .match:
+            break
+        }
+        return nil
     }
 
     private func describe(_ rule: Rule) -> String {

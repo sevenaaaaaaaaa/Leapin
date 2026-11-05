@@ -1,9 +1,10 @@
-# TouchFlow 验收记录（v1.4，macOS 27.3 / arm64）
+# TouchFlow 验收记录（v1.6，macOS 27.3 / arm64）
 
 本文件只记录**真实跑过**的命令与结果，以及明确未验证的部分。所有结论都可用下方命令复现。
 v1.3 在 v1.2 视觉基础上只动 App 层：动效令牌化 + 全量 reduceMotion、按钮焦点环、设置页窄窗单列；网络/策略/Runtime 行为未变。
 v1.4 把视觉层迁到 macOS 26 Liquid Glass（窗口 behind-window 材质 + 功能层玻璃 + 内容层 clear glass），仍是纯 App 层改动，网络与策略行为未变。
 v1.5 开始 v3 路线图的 P0（诚实性）：AUTO 真测速、PROCESS/SRC-IP 接上、每条连接带裁决链、导入报告单列不可拨协议。
+v1.6 交付 P1 控制面（action API / SSE / token / 审计 / diff reload / CLI）与 P3 规则索引 + 永不命中诊断。
 
 ## 0. 视觉重构验证（v1.2）
 
@@ -72,6 +73,59 @@ P0 的目标不是加功能，而是把「界面上说了、引擎里没做」�
   1. 真实 ss/vmess/trojan 节点的 url-test 只做了单元级（TFHealth 注入）验证；本机没有可用服务器，未做真节点握手。
   2. MITM 解密后的请求，chain 与 sourceIP 取的是 CONNECT 阶段的决策（主机级）；同一隧道内多个 URL 的链不重新计算。
   3. 进程归属基于 TCP 端口快照，UDP/QUIC 与生命周期短于一秒的连接可能归不到进程（此时仍显示 IP）。
+
+## 0.4 P1 控制面 + P3 规则索引验证（v1.6，2026-11-05）
+
+本轮两条线：P1 控制面（本地 action API + SSE + token + 审计 + 局部 diff reload + CLI 三件套），
+P3 规则索引与诊断（后缀 Trie / AC keyword / IP radix + 10 万规则门限 + 编辑器「永不命中」）。
+
+- 构建：`swift build --scratch-path .build-lead` → Build complete，0 error / 0 warning；`./scripts/build-app.sh debug` 成功。
+- 测试：`swift test --scratch-path .build-lead` → **178 条**（Core 1 / Policy 75 / Net 75 / Integrations 11 / Control 16），0 failures；
+  Policy 的 perf 用例在 debug 下 1 条 skip，release `TF_PERF=1` 通过。
+- 端到端：`scripts/control-e2e.sh` → **pass=22 fail=0**；`scripts/smoke.sh` → **pass=10 fail=0**
+  （明文 / CONNECT / SOCKS5h / 独立 socks 端口 / rule explain / adblock / dns resolve / rule diagnostics / dns trace / http probe）。
+
+### P1 控制面
+
+- 端点（默认 `127.0.0.1:7900`，`controlEnabled=true`、`controlAllowLAN=false`）：
+  GET `/v1/status`、`/v1/connections`、`/v1/policies`、`/v1/audit`、`/v1/events`(SSE)；
+  POST `/v1/policies/select`、`/v1/reload`、`/v1/explain`、`/v1/dns/trace`、`/v1/http/probe`。
+- 鉴权：`$TF_PROFILE_ROOT/control-token`（目录 0700、文件 0600、64 hex、原子写、复用）；无 / 错 token → 401 且写审计；
+  e2e 实测 `stat -f %Lp` = 600。
+- 审计：`control-audit.jsonl`，字段 timestampMs / method / remote / allowed / tokenPrefix / action / status / path / detail，>5MB 轮转 `.1`；
+  e2e 验证 reload 与被拒请求都落审计。
+- 局部 reload：`POST /v1/reload` 重读配置并按 diff 应用；e2e 用 120000B 慢速下载贯穿 reload，连接未断（`restarted=false`），
+  新规则在 reload 后立即生效（REJECT）。
+- SSE：`/v1/events` 支持 `since` 回放 + 实时事件；e2e 收到含 example.com 的事件帧；客户端断开由空闲 receive 探针 <1s 摘除
+  （修掉「只写不读」导致断连客户端泄漏）。
+- CLI：`tfctl rules <host> [--diagnose|--measure N]`、`dns <host> --trace`（source / upstream / elapsedMs / cacheTTL / resolved + steps）、
+  `http-probe <url> [--timeout ms] [--json]`（不走系统代理，最多 3 跳重定向，逐跳 remoteAddress）。
+- 导入 / 导出：Clash 与 Surge 双向支持 `control-port` / `control-allow-lan`。
+
+### P3 规则索引与诊断
+
+- 索引：域名后缀反向标签 Trie + 精确域名字典 + DOMAIN-KEYWORD Aho-Corasick（非 ASCII contains 兜底）+
+  IPv4/IPv6 前缀树（目标 IP 与 SRC-IP-CIDR 各一棵）+ PROCESS-NAME 字典；negate / AND / OR / NOT / GEOIP / DOMAIN-REGEX 进 alwaysCheck 超集。
+  candidates 返回升序去重候选，逐条 evaluate、首命中即停；explain 保持线性，确保未命中规则可见。
+- 正确性：`RuleIndexDifferentialTests` 320 组随机规则集 × 12 meta（3840+ 次）与线性参考全字段对比
+  （policy / outbound / matchedRule / chain index / isFinal / 步骤 label+detail / explain trace）全部一致。
+- 性能（release）：`TF_PERF=1 swift test -c release --filter RuleIndexPerf` → rules=100001、load=99.6ms、p50=0.003ms、**p95=0.006ms**、p99=0.009ms
+  （阈值 p95<2ms、load<300ms 均通过）。独立复核：`.build-bench/release/tfctl rules example.com --profile .bench/profiles/rules-100000.surge --measure 2000`
+  → p50 0.001ms / p95 0.001ms。
+- 诊断：`RuleEngine.diagnostics()` 输出 duplicate / shadowed / unreachable / never-match / rule-set-missing
+  （0-based index，reason 用 1-based 文案；宁可漏报不误报）；15 个单测覆盖 5 类与反例。
+  `tfctl rules <host> --diagnose` 打印 1-based 列表（#2 与「被 #1 遮蔽」）。
+- 编辑器：RulesView 侧栏「诊断 / DIAGNOSTICS」显示永不命中计数与前 4 条（点击跳转并选中），RuleRow 加「永不命中」徽标 + help 原因，
+  AddRuleSheet 在添加前预览 draft 是否永不命中；扫描只在 .task / 规则数变化 / 重载 / 增删后触发，不在 body 内计算。
+  扫描实现 `RuleDiagnosticsScan.swift`（保守：regex 编译失败、CIDR 非法、父域覆盖、CIDR 包含、MATCH 之后不可达）。
+
+### 未验证 / 限制
+
+1. 编辑器诊断只做了编译级与逻辑级验证，未在真实 App 窗口目视取证（本次启动 App 未能可靠截到窗口）。
+2. `diagnostics()` 只看已加载规则，不递归 RULE-SET 成员内部；成员诊断需对 set 引擎调用 `diagnostics(sourceRules:)`。
+3. 遮蔽只覆盖可证明场景（同 matcher、后缀祖先、CIDR 包含），regex / geo / keyword 跨 matcher 不判定。
+4. control 热重载不覆盖监听器变更（MITM / capture / bypass 变更列 skipped，需手动重启）。
+5. 真机 120Hz 动画与 VoiceOver 走查仍沿用 v1.4 结论，本轮未重做。
 
 ## 1. 构建
 

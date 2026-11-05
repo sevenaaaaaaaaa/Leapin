@@ -28,6 +28,8 @@ struct TFCTL {
                 try await exportProfile(args)
             case "dns":
                 try await resolveDNS(args)
+            case "http-probe":
+                try await httpProbe(args)
             case "proxy":
                 try systemProxy(args)
             case "profiles":
@@ -99,13 +101,79 @@ struct TFCTL {
         let sets = await RuleSetLoader.load(sources: profile.rules.filter { $0.kind == .ruleSet }.map { $0.value },
                                             cacheDirectory: ProfileStore.shared.cacheDirectory)
         let engine = RuleEngine(profile: profile, ruleSets: sets)
-        let host = args.first(where: { !$0.hasPrefix("-") }) ?? "example.com"
-        let match = engine.explain(ConnectionMeta(host: host, port: 443))
+        let host = positional(args, valueFlags: ["--profile", "--port", "--app", "--measure"]) ?? "example.com"
+        let portRaw = flag("--port", in: args)
+        let port: UInt16
+        if let raw = portRaw {
+            guard let parsed = UInt16(raw), parsed > 0 else {
+                throw TouchFlowError.invalidConfiguration("无效端口：\(raw)")
+            }
+            port = parsed
+        } else {
+            port = 443
+        }
+        let meta = ConnectionMeta(host: host, port: port, sourceApp: flag("--app", in: args))
+        let match = engine.explain(meta)
         print("命中规则：\(match.matchedRule?.raw ?? "无")")
         print("策略：\(match.policy)")
         for line in match.trace { print("  · \(line)") }
-        let decision = engine.decide(ConnectionMeta(host: host, port: 443))
+        let decision = engine.decide(meta)
         print("出站：\(decision.outbound.name) (\(decision.outbound.type.rawValue) \(decision.outbound.host):\(decision.outbound.port))")
+        if args.contains("--diagnose") {
+            printRuleDiagnostics(engine)
+        }
+        if args.contains("--measure") {
+            let iterations: Int
+            if let raw = flag("--measure", in: args), raw != "--diagnose" {
+                guard let parsed = Int(raw), parsed > 0 else {
+                    throw TouchFlowError.invalidConfiguration("无效次数：\(raw)")
+                }
+                iterations = parsed
+            } else {
+                iterations = 2000
+            }
+            measure(engine: engine, meta: meta, iterations: iterations)
+        }
+    }
+
+    /// 打印静态诊断：永不命中的规则（重复/被遮蔽/FINAL 之后/永远不匹配）。
+    static func printRuleDiagnostics(_ engine: RuleEngine) {
+        let items = engine.diagnostics()
+        guard !items.isEmpty else {
+            print("没有永不命中的规则")
+            return
+        }
+        print("永不命中规则：\(items.count) 条")
+        for item in items {
+            print("  #\(item.index + 1)  \(item.raw)")
+            print("    原因：\(item.reason)")
+            if let shadow = item.shadowedByIndex {
+                print("    被 #\(shadow + 1) 遮蔽")
+            }
+        }
+    }
+
+    /// Percentile over an ascending sample array (nearest-rank).
+    static func percentile(_ sorted: [Double], _ p: Double) -> Double {
+        guard !sorted.isEmpty else { return 0 }
+        let rank = Int((p / 100.0 * Double(sorted.count)).rounded(.up)) - 1
+        return sorted[min(max(rank, 0), sorted.count - 1)]
+    }
+
+    static func measure(engine: RuleEngine, meta: ConnectionMeta, iterations: Int) {
+        for _ in 0..<100 { _ = engine.decide(meta) }
+        var samples = [Double]()
+        samples.reserveCapacity(iterations)
+        for _ in 0..<iterations {
+            let start = DispatchTime.now().uptimeNanoseconds
+            _ = engine.decide(meta)
+            let end = DispatchTime.now().uptimeNanoseconds
+            samples.append(Double(end - start) / 1_000_000.0)
+        }
+        samples.sort()
+        let p50 = percentile(samples, 50)
+        let p95 = percentile(samples, 95)
+        print("规则数：\(engine.ruleCount)  p50：\(String(format: "%.3f", p50)) ms  p95：\(String(format: "%.3f", p95)) ms（\(iterations) 次 decide，预热 100）")
     }
 
     static func adblock(_ args: [String]) async throws {
@@ -155,11 +223,83 @@ struct TFCTL {
     }
 
     static func resolveDNS(_ args: [String]) async throws {
-        guard let host = args.first else { throw TouchFlowError.invalidConfiguration("用法：tfctl dns <host>") }
         let profile = try loadProfile(args)
+        guard let host = positional(args, valueFlags: ["--profile"]) else {
+            throw TouchFlowError.invalidConfiguration("用法：tfctl dns <host> [--trace] [--profile file]")
+        }
         let resolver = DNSResolver(config: profile.dns)
+        if args.contains("--trace") {
+            let trace = await resolver.trace(host)
+            print("host：\(trace.host)")
+            print("source：\(trace.source.rawValue)")
+            print("upstream：\(trace.upstream ?? "-")")
+            print(String(format: "elapsedMs：%.3f", trace.elapsedMs))
+            print("cacheTTL：\(trace.cacheTTL.map(String.init) ?? "-")")
+            print("resolved：\(trace.resolved.isEmpty ? "-" : trace.resolved.joined(separator: ", "))")
+            print("steps：")
+            if trace.steps.isEmpty {
+                print("  · 无")
+            }
+            for step in trace.steps {
+                print(String(format: "  · [%@] %@ (%.3f ms)", step.stage, step.detail, step.elapsedMs))
+            }
+            if let error = trace.error {
+                FileHandle.standardError.write(Data("错误：\(error)\n".utf8))
+                exit(1)
+            }
+            return
+        }
         let ips = try await resolver.resolve(host)
         print(ips.joined(separator: "\n"))
+    }
+
+    /// First positional argument, skipping value-taking flags and their values.
+    static func positional(_ args: [String], valueFlags: [String]) -> String? {
+        var skipNext = false
+        for arg in args {
+            if skipNext { skipNext = false; continue }
+            if valueFlags.contains(arg) { skipNext = true; continue }
+            if arg.hasPrefix("-") { continue }
+            return arg
+        }
+        return nil
+    }
+
+    static func httpProbe(_ args: [String]) async throws {
+        if args.contains("--help") || args.contains("-h") {
+            print("用法：tfctl http-probe <url> [--timeout ms] [--json]")
+            return
+        }
+        let timeoutRaw = flag("--timeout", in: args)
+        let timeout = timeoutRaw.flatMap(Int.init) ?? 8000
+        guard let url = args.first(where: { !$0.hasPrefix("-") && $0 != timeoutRaw }) else {
+            throw TouchFlowError.invalidConfiguration("用法：tfctl http-probe <url> [--timeout ms] [--json]")
+        }
+        let result = await HTTPProbe.probe(url, timeoutMs: timeout)
+        if args.contains("--json") {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            if let data = try? encoder.encode(result), let text = String(data: data, encoding: .utf8) {
+                print(text)
+            } else {
+                print("{\"error\":\"encode-failed\"}")
+            }
+        } else {
+            print("状态码：\(result.statusCode.map(String.init) ?? "-")")
+            print(String(format: "耗时：%.3f ms", result.elapsedMs))
+            print("远端：\(result.remoteAddress ?? "-")")
+            print("TLS：\(result.tls ? "是" : "否")")
+            print("HTTP 版本：\(result.httpVersion ?? "-")")
+            print("重定向：\(result.redirects)")
+            for (name, value) in result.headers.sorted(by: { $0.key.lowercased() < $1.key.lowercased() }) {
+                print("  \(name): \(value)")
+            }
+            print("字节：头 \(result.headerBytes) / 体 \(result.bodyBytes)")
+        }
+        if let error = result.error {
+            FileHandle.standardError.write(Data("错误：\(error)\n".utf8))
+            exit(1)
+        }
     }
 
     static func systemProxy(_ args: [String]) throws {
@@ -193,9 +333,11 @@ struct TFCTL {
 
         用法：
           tfctl run [--profile <file>]        启动本地代理（前台运行）
-          tfctl rules <host> [--profile file] 解释某个域名命中哪条规则
+          tfctl rules <host> [--port N] [--app NAME] [--profile file] [--diagnose] [--measure N]
+                                              解释命中/出站；--diagnose 列出永不命中；--measure 测 p50/p95
           tfctl adblock <domain>              检查域名是否被拦截
-          tfctl dns <host> [--profile file]   用当前 DNS 配置解析
+          tfctl dns <host> [--trace] [--profile file]  用当前 DNS 配置解析（--trace 显示逐级过程）
+          tfctl http-probe <url> [--timeout ms] [--json]  直连探测 HTTP/S（不走系统代理）
           tfctl import <file>                 导入 Clash/Surge/JSON/base64 订阅
           tfctl export [clash|surge|json|hosts|abp|ruleset]  导出配置（缺省 clash）
           tfctl export --help                 导出格式说明
