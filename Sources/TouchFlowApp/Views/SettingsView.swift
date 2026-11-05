@@ -178,7 +178,7 @@ struct SettingsView: View {
                             .buttonStyle(TFGhostButtonStyle())
                     }
                     Text(engine.store.root.appendingPathComponent("ca/touchflow-ca.pem").path)
-                        .font(TFFont.mono(9.5))
+                        .font(TFFont.mono(10))
                         .foregroundStyle(TF.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -215,7 +215,7 @@ struct SettingsView: View {
                 }
                 .padding(.top, 2)
                 Text(engine.store.root.path)
-                    .font(TFFont.mono(9.5))
+                    .font(TFFont.mono(10))
                     .foregroundStyle(TF.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -432,7 +432,7 @@ private struct PlainField: View {
         TextField("", text: $text, prompt: Text(placeholder).foregroundColor(TF.textTertiary))
             .textFieldStyle(.plain)
             .focused($focused)
-            .font(TFFont.mono(11.5))
+            .font(TFFont.mono(12))
             .multilineTextAlignment(.trailing)
             .lineLimit(1)
             .truncationMode(.tail)

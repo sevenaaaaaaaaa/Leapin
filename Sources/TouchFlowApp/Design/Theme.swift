@@ -240,7 +240,7 @@ struct TFEyebrow: View {
 
     var body: some View {
         Text(text)
-            .font(TFFont.mono(9, weight: .medium))
+            .font(TFFont.mono(10, weight: .medium))
             .tracking(1.5)
             .foregroundStyle(tint)
     }
@@ -324,7 +324,7 @@ struct TFRule: View {
             Rectangle().fill(TF.stroke).frame(height: 1)
             if let label {
                 Text(label)
-                    .font(TFFont.mono(9, weight: .medium))
+                    .font(TFFont.mono(10, weight: .medium))
                     .tracking(1.2)
                     .foregroundStyle(TF.textTertiary)
                     .fixedSize()

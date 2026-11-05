@@ -227,7 +227,7 @@ struct SSHView: View {
                     .frame(width: 5, height: 5)
 
                 Text(connected ? "LIVE" : "IDLE")
-                    .font(TFFont.mono(9, weight: .bold))
+                    .font(TFFont.mono(10, weight: .bold))
                     .tracking(1.2)
                     .foregroundStyle(connected ? TF.mint : Color(red: 0.45, green: 0.50, blue: 0.58))
             }

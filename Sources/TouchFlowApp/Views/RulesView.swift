@@ -169,7 +169,7 @@ struct RulesView: View {
                         Spacer(minLength: 8)
                         Text("策略")
                     }
-                    .font(TFFont.mono(9, weight: .medium))
+                    .font(TFFont.mono(10, weight: .medium))
                     .tracking(1.2)
                     .foregroundStyle(TF.textTertiary)
                     .padding(.horizontal, 18)
@@ -242,7 +242,7 @@ struct RulesView: View {
                             VStack(alignment: .leading, spacing: 5) {
                                 HStack(spacing: 7) {
                                     Text(group.name)
-                                        .font(.system(size: 11.5, weight: .medium))
+                                        .font(.system(size: 12, weight: .medium))
                                         .foregroundStyle(TF.text)
                                     Spacer()
                                     Text(group.type.rawValue.uppercased())
@@ -287,7 +287,7 @@ struct RulesView: View {
                     } else {
                         ForEach(sets) { rule in
                             Text(rule.value)
-                                .font(TFFont.mono(9.5))
+                                .font(TFFont.mono(10))
                                 .foregroundStyle(TF.textSecondary)
                                 .lineLimit(1)
                         }
@@ -362,7 +362,7 @@ struct RuleRow: View {
                 .lineLimit(1)
                 .frame(width: 66, alignment: .leading)
             Text(rule.value)
-                .font(TFFont.mono(11.5))
+                .font(TFFont.mono(12))
                 .foregroundStyle(TF.text)
                 .lineLimit(1)
             if rule.noResolve { Badge(text: "no-resolve", color: TF.textTertiary) }

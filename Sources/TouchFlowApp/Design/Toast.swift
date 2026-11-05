@@ -40,14 +40,14 @@ struct ToastOverlay: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(kind.tint)
             Text(text)
-                .font(.system(size: 11.5, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(TF.text)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             if let actionTitle, let action {
                 Button(actionTitle) { action() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11.5, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(TF.accent)
                     .padding(.leading, 2)
             }

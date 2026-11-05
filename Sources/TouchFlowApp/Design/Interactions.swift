@@ -125,7 +125,7 @@ struct TFKeyCap: View {
     var keys: String
     var body: some View {
         Text(keys)
-            .font(TFFont.mono(9.5, weight: .medium))
+            .font(TFFont.mono(10, weight: .medium))
             .foregroundStyle(TF.textTertiary)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)

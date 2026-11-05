@@ -12,8 +12,10 @@ struct DashboardView: View {
     @State private var probe: RuleMatch?
     @State private var probeVerdict: BlockVerdict?
     @State private var dismissedHints: Set<String> = []
-    @State private var rateHistory: [Double] = Array(repeating: 0, count: 60)
-    @State private var lastSampleBytes: Int = -1
+    @State private var rateIn: [Double] = Array(repeating: 0, count: 60)
+    @State private var rateOut: [Double] = Array(repeating: 0, count: 60)
+    @State private var lastSampleIn: Int = -1
+    @State private var lastSampleOut: Int = -1
     @State private var rateCeiling: Double = 0
     @FocusState private var probeFocused: Bool
 
@@ -45,16 +47,20 @@ struct DashboardView: View {
         }
     }
 
-    /// 每秒取一次累计字节差值，喂给 60 秒轨迹；空闲页面仍在跑，但曲线是平的。
+    /// 每秒取一次累计字节差值，分别喂给上行/下行两条 60 秒轨迹。
     private func sampleTraffic() {
-        let total = engine.stats.bytesIn + engine.stats.bytesOut
-        if lastSampleBytes < 0 { lastSampleBytes = total; return }
-        let delta = max(0, Double(total - lastSampleBytes))
-        lastSampleBytes = total
-        rateHistory.removeFirst()
-        rateHistory.append(delta)
+        let inNow = engine.stats.bytesIn
+        let outNow = engine.stats.bytesOut
+        if lastSampleIn < 0 {
+            lastSampleIn = inNow; lastSampleOut = outNow; return
+        }
+        let dIn = max(0, Double(inNow - lastSampleIn))
+        let dOut = max(0, Double(outNow - lastSampleOut))
+        lastSampleIn = inNow; lastSampleOut = outNow
+        rateIn.removeFirst(); rateIn.append(dIn)
+        rateOut.removeFirst(); rateOut.append(dOut)
         // 纵轴上限缓慢衰减（每秒 6%）：尖峰进出窗口时曲线不会整体缩放抖动。
-        let peak = rateHistory.max() ?? 0
+        let peak = (rateIn + rateOut).max() ?? 0
         rateCeiling = max(peak, rateCeiling * 0.94)
     }
 
@@ -73,7 +79,7 @@ struct DashboardView: View {
                         .foregroundStyle(TF.text)
                         .lineLimit(1)
                     Text("v1.1")
-                        .font(TFFont.mono(9, weight: .medium))
+                        .font(TFFont.mono(10, weight: .medium))
                         .foregroundStyle(TF.textTertiary)
                 }
 
@@ -99,7 +105,7 @@ struct DashboardView: View {
 
                 if case .failed = engine.state {
                     Text(engine.lastError.map(friendlyError) ?? "端口可能被占用，查看设置中的日志后重试。")
-                        .font(TFFont.mono(9.5))
+                        .font(TFFont.mono(10))
                         .foregroundStyle(TF.danger)
                         .lineLimit(2)
                         .padding(.top, 8)
@@ -302,66 +308,112 @@ struct DashboardView: View {
         .tfHoverLift()
     }
 
-    /// 签名器件：最近 60 秒的流量轨迹。空闲时是一条基准线，跑起来才有形状。
+    /// 签名器件：最近 60 秒的上行/下行轨迹（下载在基准线上方、上传在下方）。
+    /// 空闲时只留基准线与零位游标，跑起来才有形状——不画一条假的平线。
     private var trafficSeismograph: some View {
-        HStack(alignment: .center, spacing: 14) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .center, spacing: 18) {
+            VStack(alignment: .leading, spacing: 6) {
                 TFEyebrow(text: "流量 / 60S")
-                Text(rateText)
-                    .font(TFFont.num(11, weight: .medium))
-                    .foregroundStyle(TF.textSecondary)
-                    .contentTransition(.numericText())
-            }
-            .frame(width: 74, alignment: .leading)
-
-            Canvas { context, size in
-                let mid = size.height / 2
-                var baseline = Path()
-                baseline.move(to: CGPoint(x: 0, y: mid + 0.5))
-                baseline.addLine(to: CGPoint(x: size.width, y: mid + 0.5))
-                context.stroke(baseline, with: .color(TF.stroke.opacity(0.8)), lineWidth: 1)
-
-                guard rateHistory.count > 1, let rawPeak = rateHistory.max(), rawPeak > 0.5 else {
-                    // 无流量：只留基准线与零位游标，不画一条假的平线。
-                    var tick = Path()
-                    tick.move(to: CGPoint(x: size.width - 1, y: mid - 5))
-                    tick.addLine(to: CGPoint(x: size.width - 1, y: mid + 5))
-                    context.stroke(tick, with: .color(TF.accent), lineWidth: 2)
-                    return
+                HStack(spacing: 14) {
+                    legend(color: TF.text.opacity(0.85), dashed: false, text: "↓ \(rateInText)")
+                    legend(color: TF.textTertiary, dashed: true, text: "↑ \(rateOutText)")
                 }
-                let peak = max(rateCeiling, rawPeak)
-                var line = Path()
-                for (i, v) in rateHistory.enumerated() {
-                    let x = size.width * CGFloat(i) / CGFloat(rateHistory.count - 1)
+            }
+            .frame(width: 216, alignment: .leading)
+
+            VStack(spacing: 3) {
+                Canvas { context, size in
+                    let mid = size.height / 2
+                    var baseline = Path()
+                    baseline.move(to: CGPoint(x: 0, y: mid + 0.5))
+                    baseline.addLine(to: CGPoint(x: size.width, y: mid + 0.5))
+                    context.stroke(baseline, with: .color(TF.stroke.opacity(0.8)), lineWidth: 1)
+
+                    let rawPeak = (rateIn + rateOut).max() ?? 0
+                    guard rateIn.count > 1, rawPeak > 0.5 else {
+                        var tick = Path()
+                        tick.move(to: CGPoint(x: size.width - 1, y: mid - 5))
+                        tick.addLine(to: CGPoint(x: size.width - 1, y: mid + 5))
+                        context.stroke(tick, with: .color(TF.accent), lineWidth: 2)
+                        return
+                    }
+                    let peak = max(rateCeiling, rawPeak)
                     // sqrt 映射：小流量也看得出起伏，大尖峰不至于把其余压成直线。
-                    let ratio = CGFloat((max(v, 0) / peak).squareRoot())
-                    let y = mid - (mid - 2) * ratio
-                    if i == 0 { line.move(to: CGPoint(x: x, y: y)) }
-                    else { line.addLine(to: CGPoint(x: x, y: y)) }
-                }
-                context.stroke(line, with: .color(TF.text.opacity(0.85)), lineWidth: 1)
+                    func path(_ series: [Double], mirrored: Bool) -> Path {
+                        var p = Path()
+                        for (i, v) in series.enumerated() {
+                            let x = size.width * CGFloat(i) / CGFloat(series.count - 1)
+                            let ratio = CGFloat((max(v, 0) / peak).squareRoot())
+                            let y = mirrored ? mid + (mid - 2) * ratio : mid - (mid - 2) * ratio
+                            if i == 0 { p.move(to: CGPoint(x: x, y: y)) }
+                            else { p.addLine(to: CGPoint(x: x, y: y)) }
+                        }
+                        return p
+                    }
+                    context.stroke(path(rateIn, mirrored: false),
+                                   with: .color(TF.text.opacity(0.85)), lineWidth: 1)
+                    context.stroke(path(rateOut, mirrored: true),
+                                   with: .color(TF.textTertiary),
+                                   style: StrokeStyle(lineWidth: 1, dash: [2, 2]))
 
-                if let last = rateHistory.last {
-                    let x = size.width
-                    let y = mid - (mid - 2) * CGFloat((max(last, 0) / peak).squareRoot())
-                    var cursor = Path()
-                    cursor.move(to: CGPoint(x: x - 1, y: 1))
-                    cursor.addLine(to: CGPoint(x: x - 1, y: size.height - 1))
-                    context.stroke(cursor, with: .color(TF.accent.opacity(0.55)), lineWidth: 1)
-                    context.fill(Path(ellipseIn: CGRect(x: x - 3.5, y: y - 3, width: 6, height: 6)),
-                                 with: .color(TF.accent))
+                    if let lastIn = rateIn.last, let lastOut = rateOut.last {
+                        let x = size.width
+                        let yIn = mid - (mid - 2) * CGFloat((max(lastIn, 0) / peak).squareRoot())
+                        var cursor = Path()
+                        cursor.move(to: CGPoint(x: x - 1, y: 1))
+                        cursor.addLine(to: CGPoint(x: x - 1, y: size.height - 1))
+                        context.stroke(cursor, with: .color(TF.accent.opacity(0.55)), lineWidth: 1)
+                        context.fill(Path(ellipseIn: CGRect(x: x - 3.5, y: yIn - 3, width: 6, height: 6)),
+                                     with: .color(TF.accent))
+                        let yOut = mid + (mid - 2) * CGFloat((max(lastOut, 0) / peak).squareRoot())
+                        context.fill(Path(ellipseIn: CGRect(x: x - 2.5, y: yOut - 2.5, width: 5, height: 5)),
+                                     with: .color(TF.textTertiary))
+                    }
+                }
+                .frame(height: 34)
+
+                HStack(spacing: 8) {
+                    Text("60 秒前").font(TFFont.mono(8.5)).foregroundStyle(TF.textTertiary)
+                    Spacer()
+                    Text("峰值 \(Fmt.bytes(Int(rateCeiling)))/s")
+                        .font(TFFont.mono(8.5))
+                        .foregroundStyle(TF.textTertiary)
+                    Spacer()
+                    Text("现在").font(TFFont.mono(8.5)).foregroundStyle(TF.textTertiary)
                 }
             }
-            .frame(height: 30)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("最近 60 秒流量轨迹")
+            .accessibilityLabel("最近 60 秒上行与下行流量轨迹")
         }
     }
 
-    private var rateText: String {
-        let samples = rateHistory.suffix(5)
+    private func legend(color: Color, dashed: Bool, text: String) -> some View {
+        HStack(spacing: 5) {
+            HStack(spacing: 2) {
+                if dashed {
+                    ForEach(0..<3, id: \.self) { _ in
+                        Rectangle().fill(color).frame(width: 3, height: 1)
+                    }
+                } else {
+                    Rectangle().fill(color).frame(width: 13, height: 1)
+                }
+            }
+            .frame(width: 13, alignment: .leading)
+            Text(text)
+                .font(TFFont.num(10, weight: .medium))
+                .foregroundStyle(TF.textSecondary)
+                .lineLimit(1)
+                .contentTransition(.numericText())
+        }
+    }
+
+    private var rateInText: String { rateLabel(rateIn) }
+    private var rateOutText: String { rateLabel(rateOut) }
+
+    private func rateLabel(_ series: [Double]) -> String {
+        let samples = series.suffix(5)
         let avg = samples.isEmpty ? 0 : samples.reduce(0, +) / Double(samples.count)
-        return avg < 1 ? "静止" : Fmt.bytes(Int(avg)) + "/s"
+        return avg < 1 ? "0 B/s" : Fmt.bytes(Int(avg)) + "/s"
     }
 
     private var stripDivider: some View {
@@ -436,7 +488,7 @@ struct DashboardView: View {
         } content: {
             HStack(spacing: 10) {
                 Text(tag)
-                    .font(TFFont.mono(9.5, weight: .semibold))
+                    .font(TFFont.mono(10, weight: .semibold))
                     .tracking(0.6)
                     .foregroundStyle(copyable ? TF.textSecondary : TF.textTertiary)
                     .frame(width: 42, alignment: .leading)
@@ -494,7 +546,7 @@ struct DashboardView: View {
                 }
                 Button(action: runProbe) {
                     HStack(spacing: 4) {
-                        Text("判断").font(.system(size: 11.5, weight: .semibold))
+                        Text("判断").font(.system(size: 12, weight: .semibold))
                         Image(systemName: "arrow.right").font(.system(size: 9, weight: .bold))
                     }
                     .foregroundStyle(probeReady ? TF.accent : TF.textTertiary)
@@ -548,7 +600,7 @@ struct DashboardView: View {
                             HStack(spacing: 6) {
                                 Rectangle().fill(TF.strokeStrong).frame(width: 3, height: 3)
                                 Text(line)
-                                    .font(TFFont.mono(9.5))
+                                    .font(TFFont.mono(10))
                                     .foregroundStyle(TF.textTertiary)
                                     .lineLimit(2)
                             }
@@ -607,7 +659,7 @@ struct DashboardView: View {
             runProbe()
         } label: {
             Text(host)
-                .font(TFFont.mono(9.5))
+                .font(TFFont.mono(10))
                 .foregroundStyle(TF.textSecondary)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 4)
@@ -640,7 +692,7 @@ struct DashboardView: View {
                 Text("主机 / 规则").frame(maxWidth: .infinity, alignment: .leading)
                 Text("流量").frame(width: 120, alignment: .trailing)
             }
-            .font(TFFont.mono(9, weight: .medium))
+            .font(TFFont.mono(10, weight: .medium))
             .tracking(1)
             .foregroundStyle(TF.textTertiary)
             .padding(.bottom, 7)

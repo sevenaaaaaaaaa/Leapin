@@ -498,26 +498,43 @@ private struct SidebarView: View {
                 .padding(.horizontal, 14)
                 .padding(.bottom, 20)
 
-            if !compact {
-                Text("工作区")
-                    .font(TFFont.mono(8.5, weight: .medium))
-                    .tracking(1.7)
-                    .foregroundStyle(TF.textTertiary)
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 8)
-            }
+            // 按「域」分组而不是十个平铺页：工作区 → 代理 → 观测 → 工具 → 系统。
+            ForEach(Array(Self.groups.enumerated()), id: \.offset) { groupIndex, group in
+                if groupIndex > 0 {
+                    if compact {
+                        Rectangle().fill(TF.stroke).frame(height: 1)
+                            .padding(.horizontal, 16).padding(.vertical, 8)
+                    } else {
+                        Text(group.title)
+                            .font(TFFont.mono(8.5, weight: .medium))
+                            .tracking(1.7)
+                            .foregroundStyle(TF.textTertiary)
+                            .padding(.horizontal, 20)
+                            .padding(.top, groupIndex == 1 ? 6 : 18)
+                            .padding(.bottom, 7)
+                    }
+                } else if !compact {
+                    Text(group.title)
+                        .font(TFFont.mono(8.5, weight: .medium))
+                        .tracking(1.7)
+                        .foregroundStyle(TF.textTertiary)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 7)
+                }
 
-            VStack(spacing: 2) {
-                ForEach(Array(AppModel.Section.allCases.enumerated()), id: \.element) { index, section in
-                    SidebarRow(section: section,
-                               selected: app.section == section,
-                               hint: index < 9 ? "\(index + 1)" : "0",
-                               compact: compact) {
-                        app.go(to: section)
+                VStack(spacing: 2) {
+                    ForEach(group.sections) { section in
+                        let index = AppModel.Section.allCases.firstIndex(of: section) ?? 0
+                        SidebarRow(section: section,
+                                   selected: app.section == section,
+                                   hint: index < 9 ? "\(index + 1)" : "0",
+                                   compact: compact) {
+                            app.go(to: section)
+                        }
                     }
                 }
+                .padding(.horizontal, 10)
             }
-            .padding(.horizontal, compact ? 10 : 10)
 
             Spacer(minLength: 8)
             StatusCard(compact: compact).padding(compact ? 8 : 10)
@@ -525,6 +542,14 @@ private struct SidebarView: View {
         .frame(width: compact ? 68 : 216)
         .background(TF.bg.opacity(0.55))
     }
+
+    private static let groups: [(title: String, sections: [AppModel.Section])] = [
+        ("工作区", [.dashboard]),
+        ("代理", [.rules, .adblock]),
+        ("观测", [.capture]),
+        ("工具", [.ssh, .nas, .learn]),
+        ("系统", [.privacy, .profiles, .settings])
+    ]
 
     private var paletteEntry: some View {
         Button {
@@ -691,7 +716,7 @@ private struct StatusCard: View {
                 HStack(spacing: 7) {
                     StatusDot(color: stateColor, pulsing: engine.state == .running)
                     Text(engine.state.label)
-                        .font(.system(size: 11.5, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(TF.text)
                     Spacer(minLength: 0)
                 }
@@ -730,7 +755,7 @@ private struct StatusCard: View {
         HStack {
             Text(label).font(.system(size: 10)).foregroundStyle(TF.textTertiary)
             Spacer()
-            Text(":" + String(port)).font(TFFont.mono(9.5, weight: .medium)).foregroundStyle(TF.textSecondary)
+            Text(":" + String(port)).font(TFFont.mono(10, weight: .medium)).foregroundStyle(TF.textSecondary)
         }
     }
 
@@ -908,7 +933,7 @@ struct MenuBarPanel: View {
             } label: {
                 HStack(spacing: 5) {
                     Text("127.0.0.1:\(engine.profile.general.mixedPort)")
-                        .font(TFFont.mono(9.5, weight: .medium))
+                        .font(TFFont.mono(10, weight: .medium))
                     Image(systemName: "doc.on.doc").font(.system(size: 8))
                 }
                 .foregroundStyle(TF.textTertiary)

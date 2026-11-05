@@ -256,7 +256,7 @@ struct AdBlockView: View {
                                 .foregroundStyle(TF.textTertiary)
                                 .frame(width: 14)
                             Text(item)
-                                .font(TFFont.mono(11.5))
+                                .font(TFFont.mono(12))
                                 .foregroundStyle(TF.text)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
@@ -289,7 +289,7 @@ struct AdBlockView: View {
                             .foregroundStyle(TF.textTertiary)
                         TextField("https://… 或本地文件路径", text: $newList)
                             .textFieldStyle(.plain)
-                            .font(TFFont.mono(11.5))
+                            .font(TFFont.mono(12))
                     }
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)

@@ -227,7 +227,7 @@ struct CaptureView: View {
                 Text("状态").frame(width: 34, alignment: .trailing)
                 Text("耗时").frame(width: 52, alignment: .trailing)
             }
-            .font(TFFont.mono(9, weight: .medium))
+            .font(TFFont.mono(10, weight: .medium))
             .tracking(1.2)
             .foregroundStyle(TF.textTertiary)
             .padding(.horizontal, 18)
@@ -305,7 +305,7 @@ struct CaptureView: View {
                         Text("状态").frame(width: 34, alignment: .trailing)
                         Text("耗时").frame(width: 52, alignment: .trailing)
                     }
-                    .font(TFFont.mono(9, weight: .medium))
+                    .font(TFFont.mono(10, weight: .medium))
                     .tracking(1.2)
                     .foregroundStyle(TF.textTertiary)
                     .padding(.horizontal, 18)
@@ -413,7 +413,7 @@ struct CaptureView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(alignment: .top) {
                             Badge(text: req.method, color: methodColor(req.method))
-                            Text(req.url).font(TFFont.mono(11.5)).textSelection(.enabled).lineLimit(2)
+                            Text(req.url).font(TFFont.mono(12)).textSelection(.enabled).lineLimit(2)
                             Spacer(minLength: 6)
                             Menu {
                                 Button("复制 URL") {

@@ -58,7 +58,7 @@ struct StatTile: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 6) {
                 Text(title)
-                    .font(TFFont.mono(9.5, weight: .medium))
+                    .font(TFFont.mono(10, weight: .medium))
                     .tracking(1.1)
                     .foregroundStyle(TF.textTertiary)
                     .lineLimit(1)
@@ -241,7 +241,7 @@ struct FlowRow: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(flow.host)
-                    .font(TFFont.mono(11.5, weight: .medium))
+                    .font(TFFont.mono(12, weight: .medium))
                     .foregroundStyle(TF.text)
                     .lineLimit(1)
                 HStack(spacing: 6) {
