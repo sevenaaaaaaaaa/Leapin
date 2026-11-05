@@ -119,10 +119,29 @@ public enum NASMounter {
     // MARK: - Helpers
 
     static func makeMountPoint(share: String) throws -> URL {
-        let safeShare = share.replacingOccurrences(of: "/", with: "-")
+        // The share name becomes a path component under ~/Volumes, so anything that
+        // could escape that directory ("", ".", "..", "a/../b") must be rejected
+        // before we create folders or hand the path to mount_smbfs.
+        let trimmed = share.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else {
+            throw TouchFlowError.invalidConfiguration("share name is required")
+        }
+        guard trimmed != ".", trimmed != ".." else {
+            throw TouchFlowError.invalidConfiguration("invalid share name \"\(share)\"")
+        }
+        let components = trimmed.split(separator: "/", omittingEmptySubsequences: false)
+        guard components.contains("..") == false else {
+            throw TouchFlowError.invalidConfiguration("share name \"\(share)\" must not contain \"..\"")
+        }
+        let safeShare = trimmed.replacingOccurrences(of: "/", with: "-")
         let base = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Volumes", isDirectory: true)
-        let mountPoint = base.appendingPathComponent(safeShare, isDirectory: true)
+            .standardizedFileURL
+        let mountPoint = base.appendingPathComponent(safeShare, isDirectory: true).standardizedFileURL
+        // Belt and braces: the resolved path must stay directly under ~/Volumes.
+        guard mountPoint.deletingLastPathComponent().path == base.path else {
+            throw TouchFlowError.invalidConfiguration("share name \"\(share)\" escapes the mount root")
+        }
         do {
             try FileManager.default.createDirectory(at: mountPoint, withIntermediateDirectories: true,
                                                     attributes: nil)

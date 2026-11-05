@@ -17,8 +17,10 @@ public final class AdBlockEngine: DomainBlocking, @unchecked Sendable {
     private let blockKeywords: [(pattern: String, rule: FilterRule)]
     private let allowKeywords: [(pattern: String, rule: FilterRule)]
     private let allowDomains: [String]
-    private let cosmeticBlocks: [(domain: String, selectors: [String])]
-    private let cosmeticExceptions: [(domain: String, selectors: [String])]
+    /// Cosmetic rules are keyed by their ABP domain (or "*"). Lookup walks the
+    /// host's suffix chain, so a query is O(labels) instead of O(all cosmetic rules).
+    private let cosmeticBlocks: [String: [String]]
+    private let cosmeticExceptions: [String: [String]]
     private let totalRules: Int
 
     public init(blockRules: [FilterRule] = [], allowRules: [FilterRule] = [],
@@ -55,14 +57,19 @@ public final class AdBlockEngine: DomainBlocking, @unchecked Sendable {
         for rule in blockRules { insert(rule, exception: false) }
         for rule in allowRules { insert(rule, exception: true) }
 
-        var blockMap: [(String, [String])] = []
-        var exceptionMap: [(String, [String])] = []
+        var blockMap: [String: [String]] = [:]
+        var blockSeen: [String: Set<String>] = [:]
+        var exceptionMap: [String: [String]] = [:]
+        var exceptionSeen: [String: Set<String>] = [:]
+        blockMap.reserveCapacity(min(cosmeticRules.count, 4096))
         for rule in cosmeticRules {
             let key = rule.domain.isEmpty ? "*" : rule.domain
             if rule.isException {
-                AdBlockEngine.appendSelector(rule.selector, for: key, into: &exceptionMap)
+                AdBlockEngine.appendSelector(rule.selector, for: key,
+                                             into: &exceptionMap, seen: &exceptionSeen)
             } else {
-                AdBlockEngine.appendSelector(rule.selector, for: key, into: &blockMap)
+                AdBlockEngine.appendSelector(rule.selector, for: key,
+                                             into: &blockMap, seen: &blockSeen)
             }
         }
 
@@ -116,6 +123,12 @@ public final class AdBlockEngine: DomainBlocking, @unchecked Sendable {
         blockVerdict(for: domain, thirdParty: false)
     }
 
+    /// Path-aware verdict for HTTP-level checks: URL-anchored ABP rules
+    /// (`|https://host/path`) only fire when the request path matches.
+    public func verdict(for domain: String, path: String?, thirdParty: Bool) -> BlockVerdict {
+        blockVerdict(for: domain, path: path, thirdParty: thirdParty)
+    }
+
     public func isBlocked(_ domain: String) -> Bool {
         blockVerdict(for: domain, thirdParty: false).blocked
     }
@@ -123,16 +136,20 @@ public final class AdBlockEngine: DomainBlocking, @unchecked Sendable {
     public func cosmeticSelectors(for domain: String) -> [String] {
         let host = HostNormalizer.normalize(domain)
         guard !host.isEmpty else { return [] }
+        guard !cosmeticBlocks.isEmpty || !cosmeticExceptions.isEmpty else { return [] }
+        let keys = AdBlockEngine.suffixKeys(of: host)
+
         var removed = Set<String>()
-        for entry in cosmeticExceptions where AdBlockEngine.keyMatches(entry.domain, host: host) {
-            removed.formUnion(entry.selectors)
+        for key in keys {
+            if let selectors = cosmeticExceptions[key] { removed.formUnion(selectors) }
         }
+
         var result: [String] = []
         var seen = Set<String>()
-        for entry in cosmeticBlocks where AdBlockEngine.keyMatches(entry.domain, host: host) {
-            for selector in entry.selectors
-            where !removed.contains(selector) && !seen.contains(selector) {
-                seen.insert(selector)
+        for key in keys {
+            guard let selectors = cosmeticBlocks[key] else { continue }
+            for selector in selectors
+            where !removed.contains(selector) && seen.insert(selector).inserted {
                 result.append(selector)
             }
         }
@@ -141,7 +158,7 @@ public final class AdBlockEngine: DomainBlocking, @unchecked Sendable {
 
     // MARK: - Core matching
 
-    private func blockVerdict(for domain: String, thirdParty: Bool) -> BlockVerdict {
+    private func blockVerdict(for domain: String, path: String? = nil, thirdParty: Bool) -> BlockVerdict {
         let host = HostNormalizer.normalize(domain)
         guard !host.isEmpty else { return .allow }
 
@@ -166,18 +183,18 @@ public final class AdBlockEngine: DomainBlocking, @unchecked Sendable {
             }
             consumed += 1
             node = next
-            for rule in next.allowSuffix where !rule.thirdPartyOnly || thirdParty {
+            for rule in next.allowSuffix where AdBlockEngine.ruleMatches(rule, host: host, path: path, thirdParty: thirdParty) {
                 allowHits.append(rule)
             }
-            for rule in next.blockSuffix where !rule.thirdPartyOnly || thirdParty {
+            for rule in next.blockSuffix where AdBlockEngine.ruleMatches(rule, host: host, path: path, thirdParty: thirdParty) {
                 blockHits.append(rule)
             }
             if consumed == total {
-                for rule in next.allowExact where !rule.thirdPartyOnly || thirdParty {
+                for rule in next.allowExact where AdBlockEngine.ruleMatches(rule, host: host, path: path, thirdParty: thirdParty) {
                     allowHits.append(rule)
                     matchedAllowExact = true
                 }
-                for rule in next.blockExact where !rule.thirdPartyOnly || thirdParty {
+                for rule in next.blockExact where AdBlockEngine.ruleMatches(rule, host: host, path: path, thirdParty: thirdParty) {
                     blockHits.append(rule)
                     matchedBlockExact = true
                 }
@@ -187,10 +204,10 @@ public final class AdBlockEngine: DomainBlocking, @unchecked Sendable {
         _ = matchedBlockExact
 
         for (pattern, rule) in allowKeywords where host.contains(pattern) {
-            allowHits.append(rule)
+            if AdBlockEngine.ruleMatches(rule, host: host, path: path, thirdParty: thirdParty) { allowHits.append(rule) }
         }
         for (pattern, rule) in blockKeywords where host.contains(pattern) {
-            blockHits.append(rule)
+            if AdBlockEngine.ruleMatches(rule, host: host, path: path, thirdParty: thirdParty) { blockHits.append(rule) }
         }
 
         if let exception = allowHits.first {
@@ -204,6 +221,22 @@ public final class AdBlockEngine: DomainBlocking, @unchecked Sendable {
     }
 
     // MARK: - Helpers
+
+    /// ABP scope / path / third-party gate for a single rule.
+    static func ruleMatches(_ rule: FilterRule, host: String, path: String?, thirdParty: Bool) -> Bool {
+        if rule.thirdPartyOnly && !thirdParty { return false }
+        if !rule.scope.isEmpty {
+            guard rule.scope.contains(where: { HostNormalizer.matchesSuffix(host, $0) }) else { return false }
+        }
+        if !rule.excludedScope.isEmpty,
+           rule.excludedScope.contains(where: { HostNormalizer.matchesSuffix(host, $0) }) { return false }
+        if let prefix = rule.pathPrefix {
+            // Without a path a URL-anchored rule cannot be decided; do not
+            // degrade it into a whole-domain block.
+            guard let path, path.hasPrefix(prefix) else { return false }
+        }
+        return true
+    }
 
     static func isExactAnchored(_ rule: FilterRule) -> Bool {
         var raw = rule.raw
@@ -223,16 +256,27 @@ public final class AdBlockEngine: DomainBlocking, @unchecked Sendable {
         return body.lowercased()
     }
 
-    static func keyMatches(_ key: String, host: String) -> Bool {
-        if key == "*" { return true }
-        return HostNormalizer.matchesSuffix(host, key)
+    /// Keys a host can match, wildcard first, then most specific suffix to TLD:
+    /// "a.b.c" → ["*", "a.b.c", "b.c", "c"].
+    static func suffixKeys(of host: String) -> [String] {
+        var keys: [String] = ["*"]
+        let labels = host.split(separator: ".")
+        guard !labels.isEmpty else { return keys }
+        keys.reserveCapacity(labels.count + 1)
+        var start = 0
+        while start < labels.count {
+            keys.append(labels[start...].joined(separator: "."))
+            start += 1
+        }
+        return keys
     }
 
-    static func appendSelector(_ selector: String, for domain: String, into list: inout [(String, [String])]) {
-        if let index = list.firstIndex(where: { $0.0 == domain }) {
-            if !list[index].1.contains(selector) { list[index].1.append(selector) }
-        } else {
-            list.append((domain, [selector]))
-        }
+    static func appendSelector(_ selector: String, for domain: String,
+                               into map: inout [String: [String]],
+                               seen: inout [String: Set<String>]) {
+        var domainSeen = seen[domain] ?? []
+        guard domainSeen.insert(selector).inserted else { return }
+        seen[domain] = domainSeen
+        map[domain, default: []].append(selector)
     }
 }

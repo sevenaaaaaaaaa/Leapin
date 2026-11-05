@@ -17,21 +17,33 @@ public final class TFLog: @unchecked Sendable {
     public static let shared = TFLog()
 
     private let lock = NSLock()
-    private var buffer: [LogEntry] = []
+    /// Ring buffer: overwriting the oldest slot is O(1), while `removeFirst` used to
+    /// memmove the whole buffer on every line once it was full.
+    private var ring: [LogEntry?]
+    private var ringHead = 0
+    private var ringCount = 0
     private let capacity: Int
     private var observers: [(LogEntry) -> Void] = []
     public var minimumLevel: LogLevel = .info
     private let osLog = Logger(subsystem: "com.touchflow.app", category: "core")
 
-    public init(capacity: Int = 2000) { self.capacity = capacity }
+    public init(capacity: Int = 2000) {
+        self.capacity = max(1, capacity)
+        self.ring = Array(repeating: nil, count: max(1, capacity))
+    }
 
     public func log(_ level: LogLevel, _ category: String, _ message: String) {
         guard level >= minimumLevel else { return }
         let safe = Redactor.redact(message)
         let entry = LogEntry(level: level, category: category, message: safe)
         lock.lock()
-        buffer.append(entry)
-        if buffer.count > capacity { buffer.removeFirst(buffer.count - capacity) }
+        if ringCount < capacity {
+            ring[(ringHead + ringCount) % capacity] = entry
+            ringCount += 1
+        } else {
+            ring[ringHead] = entry
+            ringHead = (ringHead + 1) % capacity
+        }
         let obs = observers
         lock.unlock()
         osLog.log(level: level == .error ? .error : .default, "\(category, privacy: .public): \(safe, privacy: .public)")
@@ -43,8 +55,17 @@ public final class TFLog: @unchecked Sendable {
     public func warn(_ c: String, _ m: String) { log(.warning, c, m) }
     public func error(_ c: String, _ m: String) { log(.error, c, m) }
 
-    public func snapshot() -> [LogEntry] { lock.withLock { buffer } }
-    public func clear() { lock.withLock { buffer.removeAll() } }
+    public func snapshot() -> [LogEntry] {
+        lock.withLock { (0..<ringCount).compactMap { ring[(ringHead + $0) % capacity] } }
+    }
+
+    public func clear() {
+        lock.withLock {
+            ring = Array(repeating: nil, count: capacity)
+            ringHead = 0
+            ringCount = 0
+        }
+    }
     public func addObserver(_ o: @escaping (LogEntry) -> Void) { lock.withLock { observers.append(o) } }
 }
 
@@ -57,12 +78,40 @@ public enum Redactor {
         (#"(?i)([a-z]+://[^:/\s]+):([^@/\s]+)@"#, "$1:<redacted>@"),
     ]
 
+    private struct CompiledRule: @unchecked Sendable {
+        let regex: NSRegularExpression
+        let template: String
+    }
+
+    /// Compiled once. The old code compiled five regular expressions on *every* log
+    /// line, which dominated the logger's cost on connect-heavy workloads.
+    private static let compiled: [CompiledRule] = patterns.compactMap { pattern, template in
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        return CompiledRule(regex: regex, template: template)
+    }
+
+    /// A rule can only match when one of these substrings is present, so the regex
+    /// pass is skipped for ordinary log lines ("listening on 127.0.0.1:7890", ...).
+    private static let triggers = [
+        "authorization", "cookie", "password", "passwd", "pwd",
+        "token", "secret", "apikey", "api_key", "://",
+    ]
+
     public static func redact(_ text: String) -> String {
+        guard mightContainSecret(text) else { return text }
         var out = text
-        for (pattern, replacement) in patterns {
-            out = out.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression)
+        for rule in compiled {
+            let range = NSRange(out.startIndex..<out.endIndex, in: out)
+            out = rule.regex.stringByReplacingMatches(in: out, options: [], range: range,
+                                                      withTemplate: rule.template)
         }
         return out
+    }
+
+    private static func mightContainSecret(_ text: String) -> Bool {
+        guard text.utf8.count >= 4 else { return false }
+        let lowered = text.lowercased()
+        return triggers.contains { lowered.contains($0) }
     }
 
     /// Drops credential-bearing headers from capture/export paths.

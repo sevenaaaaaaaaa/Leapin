@@ -51,7 +51,11 @@ public enum MiniYAMLError: Error, CustomStringConvertible {
 
 public enum MiniYAML {
     public static func parse(_ text: String) throws -> YAMLValue {
-        var parser = Parser(text: text)
+        var content = text
+        // A UTF-8 BOM would otherwise become part of the first key, silently
+        // producing an empty map for otherwise valid Clash profiles.
+        if content.hasPrefix("\u{FEFF}") { content.removeFirst() }
+        var parser = Parser(text: content)
         return try parser.parseDocument()
     }
 
@@ -86,7 +90,15 @@ public enum MiniYAML {
 
         mutating func parseDocument() throws -> YAMLValue {
             guard !lines.isEmpty else { return .null }
-            return try parseBlock(minIndent: lines[0].indent)
+            let value = try parseBlock(minIndent: lines[0].indent)
+            // Anything left over is a construct this parser does not understand
+            // (anchors, tags, block scalars inside sequences). Failing loudly beats
+            // silently dropping the rest of the document.
+            if index < lines.count {
+                let line = lines[index]
+                throw MiniYAMLError.parse("unsupported YAML construct: '\(line.text)'", line: line.number)
+            }
+            return value
         }
 
         mutating func parseBlock(minIndent: Int) throws -> YAMLValue {

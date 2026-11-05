@@ -1,4 +1,9 @@
 .build/
+.build-*/
+.build-runtime/
+.bench/
+.stress/
 dist/
+docs/shots/
 .DS_Store
 *.xcuserstate

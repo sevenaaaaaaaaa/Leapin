@@ -27,17 +27,26 @@ public enum BytePump {
         let started = Date()
         let state = PumpState(idleTimeout: idleTimeout, left: left, right: right)
 
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask { await pipe(from: left, to: right, state: state, inbound: true) }
-            group.addTask { await pipe(from: right, to: left, state: state, inbound: false) }
-            group.addTask {
-                while await state.isRunning {
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
-                    if Task.isCancelled { return }
-                    if await state.checkIdle() { return }
+        await withTaskCancellationHandler {
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await pipe(from: left, to: right, state: state, inbound: true) }
+                group.addTask { await pipe(from: right, to: left, state: state, inbound: false) }
+                group.addTask {
+                    while await state.isRunning {
+                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                        if Task.isCancelled { return }
+                        if await state.checkIdle() { return }
+                    }
                 }
+                await group.waitForAll()
             }
-            await group.waitForAll()
+        } onCancel: {
+            // A cancelled client task would otherwise stay parked on a blocking read
+            // (the read is not cancellation-aware by itself) until the peer closes or
+            // the 300 s idle timeout fires. Closing both ends makes every suspended
+            // read return immediately. `close()` is idempotent.
+            left.close()
+            right.close()
         }
 
         TFLog.shared.debug("pump", "done \(left.remoteDescription) <-> \(right.remoteDescription)")

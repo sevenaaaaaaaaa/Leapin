@@ -58,16 +58,39 @@ public final class RuleEngine: RouteDeciding {
     // MARK: - RouteDeciding
 
     public func decide(_ meta: ConnectionMeta) -> RouteDecision {
-        let match = explain(meta)
-        let outbound = resolver.resolve(match.policy)
+        // Hot path: `match()` keeps the first-match semantics but skips every trace
+        // string allocation and the per-rule `describe()` call that `explain()` needs
+        // for the UI. With 100k rules the trace used to dominate the decision.
+        let outcome = match(meta)
+        let outbound = resolver.resolve(outcome.policy)
         let matchedLabel: String?
-        if let rule = match.matchedRule {
+        if let rule = outcome.matchedRule {
             matchedLabel = rule.raw.isEmpty ? RuleParser.exportLine(rule, matchToken: "FINAL") : rule.raw
         } else {
             matchedLabel = nil
         }
-        return RouteDecision(policy: match.policy, outbound: outbound,
+        return RouteDecision(policy: outcome.policy, outbound: outbound,
                              matchedRule: matchedLabel, isBlocked: outbound.type == .reject)
+    }
+
+    /// First-match evaluation without building a trace. `trace` is always empty; use
+    /// `explain(_:)` when the per-rule explanation is actually rendered.
+    public func match(_ meta: ConnectionMeta) -> RuleMatch {
+        let host = HostNormalizer.normalize(meta.host)
+        // One reusable set: `evaluateRuleSet` inserts and removes its key before
+        // returning, so the set is empty again after every rule. Hoisting it avoids a
+        // fresh allocation per rule in the linear scan.
+        var visitedSets: Set<String> = []
+        for prepared in rules {
+            let result = evaluate(prepared, meta: meta, host: host, depth: 0, visitedSets: &visitedSets)
+            if result.matched {
+                let policy = result.policyOverride ?? prepared.rule.policy
+                return RuleMatch(matchedRule: prepared.rule,
+                                 policy: policy.isEmpty ? "DIRECT" : policy,
+                                 trace: [])
+            }
+        }
+        return RuleMatch(matchedRule: nil, policy: "DIRECT", trace: [])
     }
 
     public func explain(_ meta: ConnectionMeta) -> RuleMatch {
@@ -78,8 +101,8 @@ public final class RuleEngine: RouteDeciding {
         if let app = meta.sourceApp, !app.isEmpty { header += " app=\(app)" }
         trace.append(header)
 
+        var visitedSets: Set<String> = []
         for (index, prepared) in rules.enumerated() {
-            var visitedSets: Set<String> = []
             let result = evaluate(prepared, meta: meta, host: host, depth: 0, visitedSets: &visitedSets)
             if result.matched {
                 let policy = result.policyOverride ?? prepared.rule.policy

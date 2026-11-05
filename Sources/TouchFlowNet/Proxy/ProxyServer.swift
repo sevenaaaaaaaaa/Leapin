@@ -54,6 +54,10 @@ public final class ProxyServer: @unchecked Sendable {
     private var activeCount = 0
     private var clientSockets: [UUID: NetSocket] = [:]
     private var clientTasks: [UUID: Task<Void, Never>] = [:]
+    /// Upstream sockets dialed on behalf of a client. Registered so `stop()` can close
+    /// them; without this a stopped proxy keeps upstream FDs (and the pump blocked on
+    /// them) alive until the 300 s idle timeout fires.
+    private var clientUpstreams: [UUID: ByteStream] = [:]
 
     public init(options: Options,
                 router: RouteDeciding,
@@ -152,20 +156,26 @@ public final class ProxyServer: @unchecked Sendable {
     }
 
     public func stop() {
-        let snapshot: (NWListener?, [(UUID, NetSocket)], [UUID: Task<Void, Never>]) = lock.withLock {
+        let snapshot: (NWListener?, [(UUID, NetSocket)], [UUID: Task<Void, Never>], [UUID: ByteStream]) = lock.withLock {
             let l = self.listener
             let sockets = Array(self.clientSockets)
             let tasks = self.clientTasks
+            let upstreams = self.clientUpstreams
             self.listener = nil
             self.running = false
             self.clientSockets.removeAll()
             self.clientTasks.removeAll()
+            self.clientUpstreams.removeAll()
             self.activeCount = 0
-            return (l, sockets, tasks)
+            return (l, sockets, tasks, upstreams)
         }
         snapshot.0?.cancel()
         for (_, socket) in snapshot.1 { socket.close() }
         for (_, task) in snapshot.2 { task.cancel() }
+        // Client sockets and pumps own their upstream only while the client lives, so
+        // close the upstreams explicitly — cancelling the task alone leaves the pump
+        // blocked on a read that never returns.
+        for (_, upstream) in snapshot.3 { upstream.close() }
         if snapshot.0 != nil {
             TFLog.shared.info("net.proxy", "stopped listener on port \(listeningPort)")
         }
@@ -200,6 +210,26 @@ public final class ProxyServer: @unchecked Sendable {
             return s
         }
         socket?.close()
+    }
+
+    /// Tracks the upstream currently used by `id` so `stop()` can close it. A plain
+    /// HTTP client dials one upstream per request; registering closes any predecessor.
+    private func registerUpstream(_ upstream: ByteStream, for id: UUID) {
+        let previous = lock.withLock { () -> ByteStream? in
+            let old = clientUpstreams[id]
+            clientUpstreams[id] = upstream
+            return old
+        }
+        previous?.close()
+    }
+
+    /// Forgets (and closes) the upstream of `id`. Closing twice is safe: every
+    /// `ByteStream` implementation treats `close()` as idempotent.
+    private func releaseUpstream(for id: UUID) {
+        let upstream = lock.withLock { () -> ByteStream? in
+            clientUpstreams.removeValue(forKey: id)
+        }
+        upstream?.close()
     }
 
     // MARK: - Client dispatch
@@ -238,7 +268,7 @@ public final class ProxyServer: @unchecked Sendable {
                 }
                 // handleSOCKS5 re-reads the version byte, so hand it back first.
                 stream.pushBack(Data([first]))
-                try await handleSOCKS5(stream: stream, socket: socket, remote: remote)
+                try await handleSOCKS5(id: id, stream: stream, socket: socket, remote: remote)
             } else {
                 stream.pushBack(Data([first]))
                 guard options.enableHTTP else {
@@ -250,7 +280,7 @@ public final class ProxyServer: @unchecked Sendable {
                     socket.close()
                     return
                 }
-                try await handleHTTP(stream: stream, socket: socket, remote: remote)
+                try await handleHTTP(id: id, stream: stream, socket: socket, remote: remote)
             }
         } catch {
             TFLog.shared.warn("net.proxy", "client session ended: \(error.localizedDescription)")
@@ -260,19 +290,19 @@ public final class ProxyServer: @unchecked Sendable {
 
     // MARK: - HTTP
 
-    private func handleHTTP(stream: BufferedStream, socket: NetSocket, remote: String?) async throws {
+    private func handleHTTP(id: UUID, stream: BufferedStream, socket: NetSocket, remote: String?) async throws {
         while true {
             guard let request = try await HTTPCodec.readRequestHead(stream) else { return }
             if request.isConnect {
-                await handleCONNECT(request: request, stream: stream, socket: socket, remote: remote)
+                await handleCONNECT(id: id, request: request, stream: stream, socket: socket, remote: remote)
                 return
             }
-            let keepAlive = try await forwardPlainHTTP(request: request, stream: stream, socket: socket)
+            let keepAlive = try await forwardPlainHTTP(id: id, request: request, stream: stream, socket: socket)
             if !keepAlive { return }
         }
     }
 
-    private func handleCONNECT(request: HTTPRequestHead, stream: BufferedStream, socket: NetSocket, remote: String?) async {
+    private func handleCONNECT(id: UUID, request: HTTPRequestHead, stream: BufferedStream, socket: NetSocket, remote: String?) async {
         guard let authority = request.targetAuthority(defaultPort: 443) else {
             try? await writePlainHTTP(socket, status: 400, reason: "Bad Request",
                                       message: "TouchFlow could not parse CONNECT target \(request.target)")
@@ -326,11 +356,12 @@ public final class ProxyServer: @unchecked Sendable {
             return
         }
 
-        await tunnel(authority: authority, meta: meta, decision: decision, socket: socket)
+        await tunnel(id: id, authority: authority, meta: meta, decision: decision, socket: socket)
     }
 
     /// Establishes the CONNECT tunnel and pumps bytes until either side finishes.
-    private func tunnel(authority: (host: String, port: UInt16),
+    private func tunnel(id: UUID,
+                        authority: (host: String, port: UInt16),
                         meta: ConnectionMeta,
                         decision: RouteDecision,
                         socket: NetSocket) async {
@@ -339,6 +370,8 @@ public final class ProxyServer: @unchecked Sendable {
             let upstream = try await dialer.connect(via: decision.outbound,
                                                     host: authority.host,
                                                     port: authority.port)
+            registerUpstream(upstream, for: id)
+            defer { releaseUpstream(for: id) }
             try await socket.write(Data("HTTP/1.1 200 Connection Established\r\n\r\n".utf8))
             flows?.record(makeEvent(phase: .opened, meta: meta, decision: decision,
                                     bytesIn: 0, bytesOut: 0, durationMs: 0))
@@ -362,7 +395,8 @@ public final class ProxyServer: @unchecked Sendable {
 
     /// Forwards one absolute-URI plain HTTP request. Returns whether the client
     /// connection may be reused.
-    private func forwardPlainHTTP(request: HTTPRequestHead,
+    private func forwardPlainHTTP(id: UUID,
+                                  request: HTTPRequestHead,
                                   stream: BufferedStream,
                                   socket: NetSocket) async throws -> Bool {
         let framing = try HTTPCodec.framing(for: request.headers, isRequest: true)
@@ -385,7 +419,7 @@ public final class ProxyServer: @unchecked Sendable {
                                      message: "TouchFlow blocked \(authority.host)")
             return false
         }
-        if let blocker, blocker.verdict(for: authority.host, thirdParty: false).blocked {
+        if let blocker, blocker.verdict(for: authority.host, path: request.target, thirdParty: false).blocked {
             recordRejected(meta, decision: decision, blockedBy: "adblock")
             recordBlockedCapture(host: authority.host, url: request.target,
                                  method: request.method.uppercased(), request: request)
@@ -406,7 +440,8 @@ public final class ProxyServer: @unchecked Sendable {
                                      message: "TouchFlow could not reach \(authority.host):\(authority.port)")
             return false
         }
-        defer { upstream.close() }
+        registerUpstream(upstream, for: id)
+        defer { releaseUpstream(for: id) }
         flows?.record(makeEvent(phase: .opened, meta: meta, decision: decision,
                                 bytesIn: 0, bytesOut: 0, durationMs: 0))
 
@@ -507,7 +542,7 @@ public final class ProxyServer: @unchecked Sendable {
 
     // MARK: - SOCKS5
 
-    private func handleSOCKS5(stream: BufferedStream, socket: NetSocket, remote: String?) async throws {
+    private func handleSOCKS5(id: UUID, stream: BufferedStream, socket: NetSocket, remote: String?) async throws {
         guard let greeting = try await stream.readExactly(2).nilIfEmpty else {
             throw TouchFlowError.protocolError("socks5: client closed during method negotiation")
         }
@@ -560,6 +595,8 @@ public final class ProxyServer: @unchecked Sendable {
         let started = Date()
         do {
             let upstream = try await dialer.connect(via: decision.outbound, host: host, port: port)
+            registerUpstream(upstream, for: id)
+            defer { releaseUpstream(for: id) }
             try await stream.write(SOCKS5.encodeReply(.succeeded))
             // Early client payload may already sit in the handshake's BufferedStream.
             let leftover = stream.drainBuffer()

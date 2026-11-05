@@ -21,6 +21,7 @@ struct SSHView: View {
     @State private var output = ""
     @State private var command = ""
     @State private var errorText: String?
+    @EnvironmentObject private var app: AppModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -95,6 +96,7 @@ struct SSHView: View {
                                 await session.disconnect()
                                 connected = false
                                 output += "\n[已断开]\n"
+                                app.showToast("已断开 SSH 连接", kind: .info)
                             }
                         } label: {
                             HStack(spacing: 5) {
@@ -146,6 +148,25 @@ struct SSHView: View {
                     .foregroundStyle(Color(red: 0.62, green: 0.68, blue: 0.78))
                     .padding(.leading, 6)
                 Spacer()
+                if !output.isEmpty {
+                    Button {
+                        TFClipboard.copy(clean(output))
+                        app.showToast("已复制终端输出", kind: .info)
+                    } label: {
+                        Image(systemName: "doc.on.doc").font(.system(size: 9.5))
+                            .foregroundStyle(Color(red: 0.62, green: 0.68, blue: 0.78))
+                    }
+                    .buttonStyle(.plain)
+                    .help("复制全部输出")
+                    Button {
+                        output = ""
+                    } label: {
+                        Image(systemName: "eraser").font(.system(size: 9.5))
+                            .foregroundStyle(Color(red: 0.62, green: 0.68, blue: 0.78))
+                    }
+                    .buttonStyle(.plain)
+                    .help("清空输出")
+                }
                 Text(connected ? "LIVE" : "IDLE")
                     .font(TFFont.mono(8.5, weight: .bold))
                     .tracking(1)
@@ -218,9 +239,11 @@ struct SSHView: View {
                 connected = true
                 errorText = nil
                 output += "[已连接 \(user)@\(h):\(p)]\n"
+                app.showToast("已连接 \(user)@\(h)", kind: .success)
             } catch {
                 errorText = error.localizedDescription
                 output += "\n[连接失败] \(error.localizedDescription)\n"
+                app.showToast("连接失败：\(error.localizedDescription)", kind: .error)
             }
             connecting = false
         }

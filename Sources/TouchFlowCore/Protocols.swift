@@ -19,7 +19,18 @@ public protocol RouteDeciding: Sendable {
 /// Domain blocking (adblock / tracker / privacy lists).
 public protocol DomainBlocking: Sendable {
     func verdict(for domain: String, thirdParty: Bool) -> BlockVerdict
+    /// Path-scoped rules (`||host/path`) can only be decided with the request path.
+    /// DNS-stage callers keep using the host-only form below.
+    func verdict(for domain: String, path: String?, thirdParty: Bool) -> BlockVerdict
     func cosmeticSelectors(for domain: String) -> [String]
+}
+
+public extension DomainBlocking {
+    /// Default keeps host-only conformances (and DNS callers) working: a rule that
+    /// needs a path simply cannot match without one.
+    func verdict(for domain: String, path: String?, thirdParty: Bool) -> BlockVerdict {
+        verdict(for: domain, thirdParty: thirdParty)
+    }
 }
 
 public protocol FlowRecording: AnyObject, Sendable {

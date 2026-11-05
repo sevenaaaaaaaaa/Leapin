@@ -9,6 +9,26 @@ public enum OutboundType: String, Codable, Sendable, CaseIterable {
     case shadowsocks
     case trojan
     case reject
+    // Protocols that can be imported/exported verbatim but are not dialable yet.
+    // Keeping them distinct means a Clash/Surge profile no longer loses nodes on
+    // round-trip (see docs/audit-formats.md, MD-01).
+    case vmess
+    case vless
+    case hysteria
+    case hysteria2
+    case tuic
+    case wireguard
+    case snell
+    /// Unknown protocol token from an imported profile; see `OutboundConfig.rawType`.
+    case unsupported
+
+    /// Protocols TouchFlow can actually open a connection for today.
+    public var isDialable: Bool {
+        switch self {
+        case .direct, .http, .socks5, .shadowsocks, .trojan, .reject: return true
+        case .vmess, .vless, .hysteria, .hysteria2, .tuic, .wireguard, .snell, .unsupported: return false
+        }
+    }
 }
 
 public struct OutboundConfig: Codable, Sendable, Identifiable, Hashable {
@@ -25,15 +45,55 @@ public struct OutboundConfig: Codable, Sendable, Identifiable, Hashable {
     public var tls: Bool
     /// SNI override for TLS outbounds
     public var sni: String?
-    /// AES-256-GCM PSK for trojan (hex) or shadowsocks password
+    /// Original `type:` token from the source profile ("vmess", "hysteria2", ...).
+    public var rawType: String?
+    /// vmess / vless client id.
+    public var uuid: String?
+    /// vmess alterId, snell version, ...
+    public var alterId: Int?
+    /// vless `flow`, e.g. xtls-rprx-vision.
+    public var flow: String?
+    /// Transport: tcp / ws / grpc / h2 / http.
+    public var network: String?
+    public var wsPath: String?
+    public var wsHost: String?
+    public var grpcServiceName: String?
+    /// TLS stack: tls / reality / none.
+    public var security: String?
+    public var skipCertVerify: Bool?
+    public var udp: Bool?
+    public var alpn: [String]?
+    /// reality public key / short id.
+    public var publicKey: String?
+    public var shortID: String?
+    public var obfs: String?
+    public var obfsPassword: String?
+    public var plugin: String?
+    public var pluginOpts: String?
+    /// Keys we parsed but do not model, kept verbatim so export does not lose them.
     public var extra: [String: String]
 
     public init(name: String, type: OutboundType, host: String = "", port: UInt16 = 0,
                 username: String? = nil, password: String? = nil, cipher: String? = nil,
-                tls: Bool = false, sni: String? = nil, extra: [String: String] = [:]) {
+                tls: Bool = false, sni: String? = nil, rawType: String? = nil,
+                uuid: String? = nil, alterId: Int? = nil, flow: String? = nil,
+                network: String? = nil, wsPath: String? = nil, wsHost: String? = nil,
+                grpcServiceName: String? = nil, security: String? = nil,
+                skipCertVerify: Bool? = nil, udp: Bool? = nil, alpn: [String]? = nil,
+                publicKey: String? = nil, shortID: String? = nil, obfs: String? = nil,
+                obfsPassword: String? = nil, plugin: String? = nil, pluginOpts: String? = nil,
+                extra: [String: String] = [:]) {
         self.name = name; self.type = type; self.host = host; self.port = port
         self.username = username; self.password = password; self.cipher = cipher
-        self.tls = tls; self.sni = sni; self.extra = extra
+        self.tls = tls; self.sni = sni; self.rawType = rawType
+        self.uuid = uuid; self.alterId = alterId; self.flow = flow
+        self.network = network; self.wsPath = wsPath; self.wsHost = wsHost
+        self.grpcServiceName = grpcServiceName; self.security = security
+        self.skipCertVerify = skipCertVerify; self.udp = udp; self.alpn = alpn
+        self.publicKey = publicKey; self.shortID = shortID
+        self.obfs = obfs; self.obfsPassword = obfsPassword
+        self.plugin = plugin; self.pluginOpts = pluginOpts
+        self.extra = extra
     }
 
     public static let direct = OutboundConfig(name: "DIRECT", type: .direct)
@@ -109,6 +169,33 @@ public enum PolicyGroupType: String, Codable, Sendable, CaseIterable {
     case reject
 }
 
+/// Clash `rule-providers` / `proxy-providers` entry, kept for round-trip export
+/// and for RuleSetLoader to resolve remote rule-sets.
+public struct RuleProvider: Codable, Sendable, Identifiable, Hashable {
+    public var id: String { name }
+    public var name: String
+    /// http / file / inline
+    public var type: String
+    /// domain / ipcidr / classical
+    public var behavior: String
+    public var url: String?
+    public var path: String?
+    public var interval: Int?
+    public var format: String?
+    /// Inline `payload:` rules (type == inline).
+    public var payload: [String]
+    /// Keys we do not model, kept verbatim for round-trip.
+    public var extra: [String: String]
+
+    public init(name: String, type: String, behavior: String = "classical", url: String? = nil,
+                path: String? = nil, interval: Int? = nil, format: String? = nil,
+                payload: [String] = [], extra: [String: String] = [:]) {
+        self.name = name; self.type = type; self.behavior = behavior; self.url = url
+        self.path = path; self.interval = interval; self.format = format
+        self.payload = payload; self.extra = extra
+    }
+}
+
 public struct PolicyGroup: Codable, Sendable, Identifiable, Hashable {
     public var id: String { name }
     public var name: String
@@ -119,15 +206,31 @@ public struct PolicyGroup: Codable, Sendable, Identifiable, Hashable {
     public var tolerance: Int?
     /// Manual pick from the UI (nil = automatic / first proxy).
     public var selected: String?
+    /// Source `type:` token when it is not one of `PolicyGroupType` (Clash `relay`,
+    /// Surge `smart`/`subnet`). `type` is then only a runtime fallback.
+    public var rawType: String?
+    /// Clash `use:` — proxy-provider names.
+    public var use: [String]
+    /// Clash `filter:` / Surge `policy-regex-filter`.
+    public var filter: String?
+    /// Clash `exclude-filter:`.
+    public var excludeFilter: String?
+    /// Clash `include-all` / `include-all-proxies` / `include-all-providers`.
+    public var includeAll: Bool
 
     public init(name: String, type: PolicyGroupType, proxies: [String], url: String? = nil,
-                interval: Int? = nil, tolerance: Int? = nil, selected: String? = nil) {
+                interval: Int? = nil, tolerance: Int? = nil, selected: String? = nil,
+                rawType: String? = nil, use: [String] = [], filter: String? = nil,
+                excludeFilter: String? = nil, includeAll: Bool = false) {
         self.name = name; self.type = type; self.proxies = proxies
         self.url = url; self.interval = interval; self.tolerance = tolerance; self.selected = selected
+        self.rawType = rawType; self.use = use; self.filter = filter
+        self.excludeFilter = excludeFilter; self.includeAll = includeAll
     }
 
     private enum CodingKeys: String, CodingKey {
         case name, type, proxies, url, interval, tolerance, selected
+        case rawType, use, filter, excludeFilter, includeAll
     }
 
     public init(from decoder: Decoder) throws {
@@ -139,6 +242,11 @@ public struct PolicyGroup: Codable, Sendable, Identifiable, Hashable {
         interval = try c.decodeIfPresent(Int.self, forKey: .interval)
         tolerance = try c.decodeIfPresent(Int.self, forKey: .tolerance)
         selected = try c.decodeIfPresent(String.self, forKey: .selected)
+        rawType = try c.decodeIfPresent(String.self, forKey: .rawType)
+        use = try c.decodeIfPresent([String].self, forKey: .use) ?? []
+        filter = try c.decodeIfPresent(String.self, forKey: .filter)
+        excludeFilter = try c.decodeIfPresent(String.self, forKey: .excludeFilter)
+        includeAll = try c.decodeIfPresent(Bool.self, forKey: .includeAll) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -150,6 +258,11 @@ public struct PolicyGroup: Codable, Sendable, Identifiable, Hashable {
         try c.encodeIfPresent(interval, forKey: .interval)
         try c.encodeIfPresent(tolerance, forKey: .tolerance)
         try c.encodeIfPresent(selected, forKey: .selected)
+        try c.encodeIfPresent(rawType, forKey: .rawType)
+        if !use.isEmpty { try c.encode(use, forKey: .use) }
+        try c.encodeIfPresent(filter, forKey: .filter)
+        try c.encodeIfPresent(excludeFilter, forKey: .excludeFilter)
+        if includeAll { try c.encode(includeAll, forKey: .includeAll) }
     }
 }
 
@@ -171,15 +284,54 @@ public struct DNSConfig: Codable, Sendable, Hashable {
     public var fakeIPRange: String
     public var blockResponse: String      // "nxdomain" or "0.0.0.0"
     public var cacheTTL: Int
+    /// Clash `nameserver-policy`: domain pattern -> upstream list (e.g. "geosite:cn", "+.corp.example").
+    public var nameserverPolicy: [String: [String]]
+    /// Clash `fake-ip-filter`: domain patterns that must bypass fake-IP.
+    public var fakeIPFilter: [String]
 
     public init(mode: DNSMode = .doh, listenPort: UInt16 = 5354,
                 upstreams: [String] = ["https://1.1.1.1/dns-query", "tls://1.0.0.1"],
                 fallback: [String] = ["223.5.5.5"], hosts: [String: String] = [:],
                 fakeIPRange: String = "198.18.0.0/15", blockResponse: String = "nxdomain",
-                cacheTTL: Int = 300) {
+                cacheTTL: Int = 300, nameserverPolicy: [String: [String]] = [:],
+                fakeIPFilter: [String] = []) {
         self.mode = mode; self.listenPort = listenPort; self.upstreams = upstreams
         self.fallback = fallback; self.hosts = hosts; self.fakeIPRange = fakeIPRange
         self.blockResponse = blockResponse; self.cacheTTL = cacheTTL
+        self.nameserverPolicy = nameserverPolicy; self.fakeIPFilter = fakeIPFilter
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case mode, listenPort, upstreams, fallback, hosts, fakeIPRange
+        case blockResponse, cacheTTL, nameserverPolicy, fakeIPFilter
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try c.decodeIfPresent(DNSMode.self, forKey: .mode) ?? .doh
+        listenPort = try c.decodeIfPresent(UInt16.self, forKey: .listenPort) ?? 5354
+        upstreams = try c.decodeIfPresent([String].self, forKey: .upstreams) ?? []
+        fallback = try c.decodeIfPresent([String].self, forKey: .fallback) ?? []
+        hosts = try c.decodeIfPresent([String: String].self, forKey: .hosts) ?? [:]
+        fakeIPRange = try c.decodeIfPresent(String.self, forKey: .fakeIPRange) ?? "198.18.0.0/15"
+        blockResponse = try c.decodeIfPresent(String.self, forKey: .blockResponse) ?? "nxdomain"
+        cacheTTL = try c.decodeIfPresent(Int.self, forKey: .cacheTTL) ?? 300
+        nameserverPolicy = try c.decodeIfPresent([String: [String]].self, forKey: .nameserverPolicy) ?? [:]
+        fakeIPFilter = try c.decodeIfPresent([String].self, forKey: .fakeIPFilter) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(mode, forKey: .mode)
+        try c.encode(listenPort, forKey: .listenPort)
+        try c.encode(upstreams, forKey: .upstreams)
+        try c.encode(fallback, forKey: .fallback)
+        try c.encode(hosts, forKey: .hosts)
+        try c.encode(fakeIPRange, forKey: .fakeIPRange)
+        try c.encode(blockResponse, forKey: .blockResponse)
+        try c.encode(cacheTTL, forKey: .cacheTTL)
+        if !nameserverPolicy.isEmpty { try c.encode(nameserverPolicy, forKey: .nameserverPolicy) }
+        if !fakeIPFilter.isEmpty { try c.encode(fakeIPFilter, forKey: .fakeIPFilter) }
     }
 }
 
@@ -238,14 +390,41 @@ public struct Profile: Codable, Sendable, Identifiable, Hashable {
     public var groups: [PolicyGroup]
     public var rules: [Rule]
     public var sourcePath: String?
+    /// Clash `rule-providers` preserved for round-trip and RULE-SET resolution.
+    public var ruleProviders: [RuleProvider]
+    /// Clash `proxy-providers` preserved for round-trip (not used at runtime).
+    public var proxyProviders: [RuleProvider]
 
     public init(id: UUID = UUID(), name: String, general: GeneralConfig = .init(),
                 dns: DNSConfig = .init(), adblock: AdBlockConfig = .init(),
                 outbounds: [OutboundConfig] = [.direct, .reject], groups: [PolicyGroup] = [],
-                rules: [Rule] = [], sourcePath: String? = nil) {
+                rules: [Rule] = [], sourcePath: String? = nil,
+                ruleProviders: [RuleProvider] = [], proxyProviders: [RuleProvider] = []) {
         self.id = id; self.name = name; self.general = general; self.dns = dns
         self.adblock = adblock; self.outbounds = outbounds; self.groups = groups
         self.rules = rules; self.sourcePath = sourcePath
+        self.ruleProviders = ruleProviders; self.proxyProviders = proxyProviders
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, general, dns, adblock, outbounds, groups, rules, sourcePath
+        case ruleProviders, proxyProviders
+    }
+
+    /// Hand-written so profiles saved by older builds (no `ruleProviders`) still decode.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "未命名配置"
+        general = try c.decodeIfPresent(GeneralConfig.self, forKey: .general) ?? GeneralConfig()
+        dns = try c.decodeIfPresent(DNSConfig.self, forKey: .dns) ?? DNSConfig()
+        adblock = try c.decodeIfPresent(AdBlockConfig.self, forKey: .adblock) ?? AdBlockConfig()
+        outbounds = try c.decodeIfPresent([OutboundConfig].self, forKey: .outbounds) ?? [.direct, .reject]
+        groups = try c.decodeIfPresent([PolicyGroup].self, forKey: .groups) ?? []
+        rules = try c.decodeIfPresent([Rule].self, forKey: .rules) ?? []
+        sourcePath = try c.decodeIfPresent(String.self, forKey: .sourcePath)
+        ruleProviders = try c.decodeIfPresent([RuleProvider].self, forKey: .ruleProviders) ?? []
+        proxyProviders = try c.decodeIfPresent([RuleProvider].self, forKey: .proxyProviders) ?? []
     }
 
     public func outbound(named name: String) -> OutboundConfig? {

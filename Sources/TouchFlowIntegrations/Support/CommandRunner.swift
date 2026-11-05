@@ -128,9 +128,19 @@ public enum CommandRunner {
 
         let stdout = decode(outBox.get())
         let stderr = decode(errBox.get())
+        // Reading `terminationStatus` while the child is still alive raises an
+        // Objective-C exception that Swift cannot catch (SIGKILL may not have landed
+        // yet). Report such a child as a timeout instead of crashing the host app.
+        let exited = !process.isRunning
+        let status: Int32 = exited ? process.terminationStatus : -1
+        if !exited {
+            TFLog.shared.error("integrations.cmd",
+                               "\(executable) pid \(process.processIdentifier) survived SIGKILL; reporting timeout")
+        }
         TFLog.shared.debug("integrations.cmd",
-                           "\(executable) \(arguments.joined(separator: " ")) -> \(process.terminationStatus)\(timedOut ? " (timeout)" : "")")
-        return CommandOutput(status: process.terminationStatus, stdout: stdout, stderr: stderr, timedOut: timedOut)
+                           "\(executable) \(arguments.joined(separator: " ")) -> \(exited ? String(status) : "pid \(process.processIdentifier) still running")\(timedOut ? " (timeout)" : "")")
+        return CommandOutput(status: status, stdout: stdout, stderr: stderr,
+                             timedOut: timedOut || !exited)
     }
 
     /// Runs the command and maps timeout / non-zero exit to `TouchFlowError`.

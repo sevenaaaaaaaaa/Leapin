@@ -50,23 +50,34 @@ public enum SystemProxy {
             throw TouchFlowError.invalidConfiguration("invalid proxy host or port")
         }
         let service = try resolveService()
-        try run(["-setwebproxy", service, host, String(port)])
-        try run(["-setsecurewebproxy", service, host, String(port)])
-        try run(["-setsocksfirewallproxy", service, host, String(socksPort)])
-        try run(["-setwebproxystate", service, "on"])
-        try run(["-setsecurewebproxystate", service, "on"])
-        try run(["-setsocksfirewallproxystate", service, "on"])
-        // networksetup can exit 0 while refusing the change (e.g. missing admin rights);
-        // read the state back so the caller never believes a no-op succeeded.
-        let state = status(service: service)
-        guard state.enabled else {
-            throw TouchFlowError.connectionFailed("networksetup did not enable the proxy on \(service); administrator privileges may be required")
+        do {
+            try run(["-setwebproxy", service, host, String(port)])
+            try run(["-setsecurewebproxy", service, host, String(port)])
+            try run(["-setsocksfirewallproxy", service, host, String(socksPort)])
+            try run(["-setwebproxystate", service, "on"])
+            try run(["-setsecurewebproxystate", service, "on"])
+            try run(["-setsocksfirewallproxystate", service, "on"])
+            // networksetup can exit 0 while refusing the change (e.g. missing admin rights);
+            // read the state back so the caller never believes a no-op succeeded.
+            let state = status(service: service)
+            guard state.enabled else {
+                throw TouchFlowError.connectionFailed("networksetup did not enable the proxy on \(service); administrator privileges may be required")
+            }
+        } catch {
+            // A half-applied setup (HTTP proxy on, SOCKS off, or a stale host) breaks
+            // every app on the machine, so never leave one behind.
+            try? disable(service: service)
+            throw error
         }
         TFLog.shared.info("integrations.proxy", "enabled \(host):\(port) (socks \(socksPort)) on \(service)")
     }
 
     public static func disable() throws {
         let service = try resolveService()
+        try disable(service: service)
+    }
+
+    private static func disable(service: String) throws {
         try run(["-setwebproxystate", service, "off"])
         try run(["-setsecurewebproxystate", service, "off"])
         try run(["-setsocksfirewallproxystate", service, "off"])

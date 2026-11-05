@@ -213,7 +213,11 @@ struct LearnView: View {
 
     private func parseText() {
         apps = AppListParser.parse(text: rawText)
-        if apps.isEmpty { app.toast = "没有识别出应用，请检查格式" }
+        if apps.isEmpty {
+            app.showToast("没有识别出应用，请检查格式（每行一个应用名 / Bundle ID / 域名）", kind: .warning)
+        } else {
+            app.showToast("识别到 \(apps.count) 个应用", kind: .success)
+        }
         suggest()
     }
 
@@ -226,9 +230,13 @@ struct LearnView: View {
                 rawText = result.text
                 apps = AppListParser.parse(text: result.text)
                 suggest()
-                if apps.isEmpty { app.toast = "截图里没有识别到应用名" }
+                if apps.isEmpty {
+                    app.showToast("截图里没有识别到应用名，试试更清晰的列表页", kind: .warning)
+                } else {
+                    app.showToast("OCR 识别到 \(apps.count) 个应用", kind: .success)
+                }
             } catch {
-                app.toast = "识别失败：\(error.localizedDescription)"
+                app.showToast("识别失败：\(error.localizedDescription)", kind: .error)
             }
             busy = false
         }
@@ -250,7 +258,11 @@ struct LearnView: View {
     private func apply() {
         let rules = suggestions.filter { selected.contains($0.id) }.map(\.rule)
         let n = engine.addRules(rules)
-        app.toast = "已添加 \(n) 条规则"
+        if n == 0 {
+            app.showToast("这些规则都已存在，未新增", kind: .warning)
+        } else {
+            app.showToast("已添加 \(n) 条规则", kind: .success, actionTitle: "查看规则") { app.go(to: .rules) }
+        }
         suggestions.removeAll()
         selected.removeAll()
     }

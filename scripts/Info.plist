@@ -14,6 +14,15 @@
     <key>NSHighResolutionCapable</key><true/>
     <key>NSHumanReadableCopyright</key><string>TouchFlow</string>
     <key>NSLocalNetworkUsageDescription</key><string>TouchFlow 需要扫描本地网络以发现 NAS 设备（Bonjour / SMB）。</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key><string>com.touchflow.app.url</string>
+            <key>CFBundleURLSchemes</key>
+            <array><string>touchflow</string></array>
+        </dict>
+    </array>
+    <key>LSApplicationCategoryType</key><string>public.app-category.utilities</string>
     <key>NSBonjourServices</key>
     <array>
         <string>_smb._tcp</string>

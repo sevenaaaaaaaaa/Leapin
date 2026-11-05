@@ -104,22 +104,75 @@ public final class ProfileStore: @unchecked Sendable {
         case .surge: return ProfileExporter.surge(profile)
         case .json:
             return String(data: try JSONEncoder.touchflow.encode(profile), encoding: .utf8) ?? "{}"
+        case .hosts: return ProfileExporter.hosts(profile)
+        case .abp: return ProfileExporter.abp(profile)
+        case .ruleSet: return ProfileExporter.ruleSet(profile)
         }
     }
 
-    /// Detects Clash / Surge / TouchFlow JSON and imports into a new profile.
+    /// Detects Clash / Surge / TouchFlow JSON / base64 subscription and imports
+    /// into a new profile, returning the diagnostics the UI should surface.
+    public func importFileDetailed(at url: URL) throws -> ProfileImportOutcome {
+        let data = try Data(contentsOf: url)
+        // Decoding as UTF-8 never fails; the YAML/ABP parsers strip BOM themselves.
+        let text = String(decoding: data, as: UTF8.self)
+        let name = url.deletingPathExtension().lastPathComponent
+        var outcome = try ProfileImporter.importText(text, name: name, pathExtension: url.pathExtension)
+        outcome.profile.sourcePath = url.path
+        _ = try save(outcome.profile)
+        return outcome
+    }
+
+    /// Convenience wrapper for callers that only need the profile.
     public func importFile(at url: URL) throws -> Profile {
-        let text = try String(contentsOf: url, encoding: .utf8)
-        let profile: Profile
-        if url.pathExtension.lowercased() == "json" {
-            profile = try JSONDecoder.touchflow.decode(Profile.self, from: Data(text.utf8))
-        } else if text.contains("[Rule]") || text.contains("[Proxy]") || text.contains("[General]") {
-            profile = try ProfileImporter.surge(text, name: url.deletingPathExtension().lastPathComponent)
-        } else {
-            profile = try ProfileImporter.clash(text, name: url.deletingPathExtension().lastPathComponent)
+        try importFileDetailed(at: url).profile
+    }
+
+    /// Downloads a remote subscription (base64 list, URI list, or a full
+    /// Clash/Surge profile) and imports it with the same diagnostics as files.
+    /// Only http(s) is accepted so a pasted file path never reaches the network
+    /// layer, and a 20s timeout keeps the UI from hanging on a dead host.
+    public func importRemote(_ link: String, name: String? = nil) async throws -> ProfileImportOutcome {
+        let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url.host != nil else {
+            throw RemoteImportError.badLink(trimmed)
         }
-        try save(profile)
-        return profile
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        request.setValue("TouchFlow/0.1 (+profile-import)", forHTTPHeaderField: "User-Agent")
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw RemoteImportError.network(error.localizedDescription)
+        }
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw RemoteImportError.httpStatus(http.statusCode)
+        }
+        // Subscriptions are frequently base64 without a declared charset; decoding
+        // as UTF-8 first and falling back to Latin-1 avoids losing the whole body.
+        guard var text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
+            throw RemoteImportError.notText
+        }
+        text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { throw RemoteImportError.emptyBody }
+        let resolvedName = name?.isEmpty == false ? name! : (url.host ?? "远程订阅")
+        var outcome = try ProfileImporter.importText(text, name: resolvedName, pathExtension: nil)
+        outcome.profile.sourcePath = url.absoluteString
+        _ = try save(outcome.profile)
+        return outcome
+    }
+
+    /// Imports pasted text (drag-drop, clipboard subscription link, tests).
+    public func importText(_ text: String, name: String,
+                           pathExtension: String? = nil) throws -> ProfileImportOutcome {
+        let outcome = try ProfileImporter.importText(text, name: name, pathExtension: pathExtension)
+        _ = try save(outcome.profile)
+        return outcome
     }
 
     /// Seeds the bundled starter blocklists into the app-support directory (idempotent).
@@ -167,10 +220,85 @@ public final class ProfileStore: @unchecked Sendable {
     }
 }
 
+/// Failure modes of a remote subscription import, phrased for the UI.
+public enum RemoteImportError: Error, LocalizedError, Equatable {
+    case badLink(String)
+    case httpStatus(Int)
+    case notText
+    case emptyBody
+    case network(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .badLink(let text):
+            return "链接无效：\(text.isEmpty ? "（空）" : text)，只支持 http/https 订阅地址"
+        case .httpStatus(let code):
+            return "服务器返回 \(code)，无法下载订阅"
+        case .notText:
+            return "订阅内容不是文本，可能是压缩包或需要登录"
+        case .emptyBody:
+            return "订阅内容为空"
+        case .network(let message):
+            return "下载失败：\(message)"
+        }
+    }
+}
+
 public enum ProfileFormat: String, Sendable, CaseIterable {
     case clash = "Clash YAML"
     case surge = "Surge Conf"
     case json = "TouchFlow JSON"
+    /// `/etc/hosts` style blocklist (only exact REJECT domains can be expressed).
+    case hosts = "Hosts 拦截表"
+    /// Adblock Plus / uBlock Origin filter list.
+    case abp = "ABP 过滤列表"
+    /// Clash `behavior: classical` rule-set payload.
+    case ruleSet = "Clash rule-set"
+
+    /// Stable token used by the CLI and by import/export APIs
+    /// (clash / surge / json / hosts / abp / ruleset).
+    public var cliName: String {
+        switch self {
+        case .clash: return "clash"
+        case .surge: return "surge"
+        case .json: return "json"
+        case .hosts: return "hosts"
+        case .abp: return "abp"
+        case .ruleSet: return "ruleset"
+        }
+    }
+
+    /// File extension suggested when writing this format to disk.
+    public var fileExtension: String {
+        switch self {
+        case .clash: return "yaml"
+        case .surge: return "conf"
+        case .json: return "json"
+        case .hosts: return "txt"
+        case .abp: return "txt"
+        case .ruleSet: return "yaml"
+        }
+    }
+
+    /// Formats that can be imported (network blocklists are export-only).
+    public var canImport: Bool {
+        switch self {
+        case .clash, .surge, .json: return true
+        case .hosts, .abp, .ruleSet: return false
+        }
+    }
+
+    public init?(cliName: String) {
+        switch cliName.lowercased() {
+        case "clash", "yaml", "yml": self = .clash
+        case "surge", "conf": self = .surge
+        case "json": self = .json
+        case "hosts": self = .hosts
+        case "abp", "adblock", "ublock": self = .abp
+        case "ruleset", "rule-set": self = .ruleSet
+        default: return nil
+        }
+    }
 }
 
 extension JSONDecoder {

@@ -56,18 +56,26 @@ struct NASView: View {
                             let h = manualHost.trimmingCharacters(in: .whitespaces)
                             guard !h.isEmpty else { return }
                             let device = NASDevice(id: h, name: h, host: h, port: 445, service: "_smb._tcp", model: nil)
-                            if !devices.contains(device) { devices.append(device) }
+                            if devices.contains(device) {
+                                app.showToast("该设备已在列表中", kind: .warning)
+                            } else {
+                                devices.append(device)
+                                selected = device
+                                if share.isEmpty { share = "home" }
+                                app.showToast("已添加 \(h)", kind: .success)
+                            }
                             manualHost = ""
                         }
                         .buttonStyle(TFGhostButtonStyle())
                     }
                     if devices.isEmpty {
                         HStack(spacing: 6) {
-                            Image(systemName: "info.circle").font(.system(size: 10))
-                            Text("未发现设备。点击开始扫描，或手动输入 NAS 的 IP / 主机名。")
+                            Image(systemName: scanning ? "dot.radiowaves.left.and.right" : "info.circle")
+                                .font(.system(size: 10))
+                            Text(scanning ? "正在扫描局域网中的 SMB 广播…" : "未发现设备。点击开始扫描，或手动输入 NAS 的 IP / 主机名。")
                                 .font(.system(size: 10.5))
                         }
-                        .foregroundStyle(TF.textTertiary)
+                        .foregroundStyle(scanning ? TF.amber : TF.textTertiary)
                     }
                 }
 
@@ -153,14 +161,21 @@ struct NASView: View {
                             .disabled(busy || share.isEmpty)
 
                             Button("在 Finder 打开") {
-                                NSWorkspace.shared.open(URL(string: "smb://\(device.host)/\(share.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? share)")!)
+                                let encoded = share.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? share
+                                if let url = URL(string: "smb://\(device.host)/\(encoded)") {
+                                    NSWorkspace.shared.open(url)
+                                } else {
+                                    app.showToast("无法构造 smb:// 地址", kind: .warning)
+                                }
                             }
                             .buttonStyle(TFGhostButtonStyle())
 
                             Button("读取密码") {
                                 if let pw = Keychain.get(account: "smb:\(user)@\(device.host)") {
                                     password = pw
-                                    app.toast = "已读取保存的密码"
+                                    app.showToast("已读取保存的密码", kind: .info)
+                                } else {
+                                    app.showToast("钥匙串中没有该主机的密码", kind: .warning)
                                 }
                             }
                             .buttonStyle(TFGhostButtonStyle())
@@ -170,8 +185,12 @@ struct NASView: View {
                                 .font(.caption2).foregroundStyle(.tertiary)
                         }
                     } else {
-                        EmptyHint(icon: "externaldrive.badge.questionmark", text: "选择上方一台设备后即可挂载 SMB 共享")
-                            .frame(height: 90)
+                        TFEmptyState(icon: "externaldrive.badge.questionmark",
+                                     title: "还没有选择设备",
+                                     message: devices.isEmpty ? "先扫描或手动添加一台 NAS，再选择它。" : "在上方设备列表中选择一台即可挂载。",
+                                     actionTitle: devices.isEmpty ? (scanning ? nil : "开始扫描") : nil,
+                                     action: devices.isEmpty && !scanning ? { toggleScan() } : nil)
+                            .frame(height: 170)
                     }
                 }
 
@@ -218,7 +237,15 @@ struct NASView: View {
             devices.removeAll()
             discovery.start { list in
                 Task { @MainActor in
-                    devices = list
+                    if list.isEmpty {
+                        devices = list
+                    } else {
+                        let added = list.count - devices.count
+                        devices = list
+                        if added > 0 {
+                            app.showToast("发现 \(list.count) 台设备", kind: .success)
+                        }
+                    }
                 }
             }
         }
@@ -232,9 +259,9 @@ struct NASView: View {
                 let url = try NASMounter.mountSMB(host: host, share: sh, user: u, password: pw)
                 if remember, !pw.isEmpty { _ = Keychain.set(pw, account: "smb:\(u)@\(host)") }
                 NSWorkspace.shared.activateFileViewerSelecting([url])
-                app.toast = "已挂载 \(host)/\(sh)"
+                app.showToast("已挂载 \(host)/\(sh)", kind: .success)
             } catch {
-                app.toast = "挂载失败：\(error.localizedDescription)"
+                app.showToast("挂载失败：\(error.localizedDescription)", kind: .error)
             }
             busy = false
         }

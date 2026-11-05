@@ -72,7 +72,13 @@ public enum RuleParser {
             number += 1
             let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty || trimmed.hasPrefix("#") || trimmed.hasPrefix("//") { continue }
-            if trimmed == "rules:" { continue }
+            if trimmed == "rules:" || trimmed == "payload:" || trimmed == "payload" { continue }
+            // Clash rule-set members: bare domains, "+.suffix", ".suffix", "*.glob".
+            if !trimmed.contains(","),
+               let member = makeRuleSetMember(trimmed) {
+                rules.append(member)
+                continue
+            }
             do {
                 let rule = try parse(line: rawLine)
                 rules.append(rule)
@@ -100,10 +106,33 @@ public enum RuleParser {
         if rule.kind == .match { return "\(matchToken),\(rule.policy)" }
         var token = typeToken(for: rule.kind)
         if rule.negate { token = "!" + token }
-        var fields = [token, rule.value, rule.policy]
+        var fields = [token, rule.value]
+        // A policy-less rule-set member must not grow a trailing comma.
+        if !rule.policy.isEmpty || !rule.modifiers.isEmpty { fields.append(rule.policy) }
         fields.append(contentsOf: rule.modifiers)
         if fields.last?.isEmpty == true { fields.removeLast() }
         return fields.joined(separator: ",")
+    }
+
+    /// Parses a single Clash rule-set / Surge ruleset member line such as
+    /// `+.google.com`, `.blogger.com`, `10.0.0.0/8` or `ads.example`.
+    /// Returns nil for anything that is not a bare domain/CIDR member.
+    static func makeRuleSetMember(_ rawLine: String) -> Rule? {
+        var text = rawLine.trimmingCharacters(in: .whitespaces)
+        if text.hasPrefix("- ") { text = String(text.dropFirst(2)).trimmingCharacters(in: .whitespaces) }
+        text = unquote(text)
+        guard !text.isEmpty, !text.contains(","), !text.contains(" ") else { return nil }
+        if let cidr = CIDR(text) {
+            let kind: RuleKind = cidr.isIPv4 ? .ipCIDR : .ipCIDR6
+            return try? makeRule(kind: kind, rawValue: text, policy: "", modifiers: [], negate: false, raw: rawLine)
+        }
+        var value = text
+        var kind: RuleKind = .domain
+        if value.hasPrefix("+.") { kind = .domainSuffix; value = String(value.dropFirst(2)) }
+        else if value.hasPrefix("*.") { kind = .domainSuffix; value = String(value.dropFirst(2)) }
+        else if value.hasPrefix(".") { kind = .domainSuffix; value = String(value.dropFirst()) }
+        guard value.contains(".") else { return nil }
+        return try? makeRule(kind: kind, rawValue: value, policy: "", modifiers: [], negate: false, raw: rawLine)
     }
 
     // MARK: - Internals
@@ -153,6 +182,9 @@ public enum RuleParser {
         case .domain, .domainSuffix, .domainKeyword:
             var value = HostNormalizer.normalize(rawValue)
             if kind == .domainSuffix {
+                // Surge/Clash both accept "*.example.com" and ".example.com" as suffixes.
+                // Leaving the "*." prefix made the rule unmatchable (audit RP-03).
+                while value.hasPrefix("*.") { value.removeFirst(2) }
                 while value.hasPrefix(".") { value.removeFirst() }
             }
             guard !value.isEmpty, !value.contains(" "), value != "*" else {

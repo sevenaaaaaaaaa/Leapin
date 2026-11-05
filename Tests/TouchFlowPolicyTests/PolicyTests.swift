@@ -295,8 +295,9 @@ final class PolicyTests: XCTestCase {
         XCTAssertFalse(engine.verdict(for: "third.test", thirdParty: false).blocked)
         XCTAssertTrue(engine.verdict(for: "third.test", thirdParty: true).blocked)
 
-        XCTAssertTrue(engine.verdict(for: "tracker.test", thirdParty: false).blocked)
-        XCTAssertFalse(engine.verdict(for: "sub.tracker.test", thirdParty: false).blocked)
+        // |http://tracker.test/pixel is URL-anchored: it must only fire for that path.
+        XCTAssertFalse(engine.verdict(for: "tracker.test", thirdParty: false).blocked)
+        XCTAssertTrue(engine.verdict(for: "tracker.test", path: "/pixel", thirdParty: false).blocked)
 
         XCTAssertTrue(engine.verdict(for: "hosts.test", thirdParty: false).blocked)
         XCTAssertTrue(engine.isBlocked("hosts.test"))

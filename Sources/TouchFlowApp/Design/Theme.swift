@@ -30,7 +30,8 @@ enum TF {
     // Text
     static let text = dyn(hex(0x111A28), hex(0xEDF2FB))
     static let textSecondary = dyn(hex(0x5A6779), hex(0x99A7BC))
-    static let textTertiary = dyn(hex(0x8B98AB), hex(0x6B7A90))
+    // 9–10pt 说明文字大量使用三级色：浅底需 ≥4.5:1，深底同样拉亮到 5:1 以上。
+    static let textTertiary = dyn(hex(0x5F6C82), hex(0x7A8AA3))
 
     // Accents
     static let accent = dyn(hex(0x3D6BFF), hex(0x6E93FF))
@@ -293,6 +294,7 @@ struct TFSwitch: View {
     @Binding var isOn: Bool
     var tint: Color = TF.accent
     var width: CGFloat = 38
+    @FocusState private var focused: Bool
 
     var body: some View {
         let h = width * 22 / 38
@@ -311,8 +313,18 @@ struct TFSwitch: View {
                         .offset(x: isOn ? (width - h) / 2 : -(width - h) / 2)
                 )
                 .animation(.spring(response: 0.26, dampingFraction: 0.82), value: isOn)
+                .overlay(
+                    Capsule(style: .continuous)
+                        .strokeBorder(focused ? TF.accent : .clear, lineWidth: 2)
+                        .padding(-3)
+                )
         }
         .buttonStyle(.plain)
+        .focused($focused)
+        .focusable(true)
+        .onKeyPress(.space) { isOn.toggle(); return .handled }
+        .onKeyPress(.return) { isOn.toggle(); return .handled }
         .accessibilityRepresentation { Toggle(isOn: $isOn) { EmptyView() } }
+        .accessibilityValue(isOn ? "开启" : "关闭")
     }
 }

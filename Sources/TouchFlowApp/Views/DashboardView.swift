@@ -11,11 +11,16 @@ struct DashboardView: View {
     @State private var probeHost = ""
     @State private var probe: RuleMatch?
     @State private var probeVerdict: BlockVerdict?
+    @State private var dismissedHints: Set<String> = []
+    @FocusState private var probeFocused: Bool
 
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
                 hero
+                if let step = nextStep {
+                    nextStepCard(step)
+                }
                 statsGrid
                 HStack(alignment: .top, spacing: 16) {
                     endpoints
@@ -24,6 +29,9 @@ struct DashboardView: View {
                 recentFlows
             }
             .pagePadding()
+        }
+        .onChange(of: app.searchFocusRequest) { _, _ in
+            probeFocused = true
         }
     }
 
@@ -76,8 +84,15 @@ struct DashboardView: View {
                 .controlSize(.large)
 
                 HStack(spacing: 14) {
-                    toggleChip("去广告", isOn: engine.profile.adblock.enabled) { engine.setAdBlockEnabled($0) }
-                    toggleChip("HTTPS 解密", isOn: engine.profile.general.mitmEnabled) { engine.setMITMEnabled($0) }
+                    toggleChip("去广告", isOn: engine.profile.adblock.enabled) { on in
+                        engine.setAdBlockEnabled(on)
+                        app.showToast(on ? "去广告已开启" : "去广告已关闭", kind: .info)
+                    }
+                    toggleChip("HTTPS 解密", isOn: engine.profile.general.mitmEnabled) { on in
+                        engine.setMITMEnabled(on)
+                        app.showToast(on ? "HTTPS 解密已开启，请确认已信任 CA" : "HTTPS 解密已关闭",
+                                      kind: on ? .warning : .info)
+                    }
                 }
             }
         }
@@ -120,6 +135,88 @@ struct DashboardView: View {
         }
     }
 
+    // MARK: Next step
+
+    private struct NextStep {
+        let id: String
+        let icon: String
+        let title: String
+        let message: String
+        let actionTitle: String
+        let action: () -> Void
+    }
+
+    private var nextStep: NextStep? {
+        if case .failed = engine.state {
+            return NextStep(id: "retry", icon: "exclamationmark.triangle.fill",
+                            title: "上次启动失败",
+                            message: engine.lastError ?? "检查端口是否被占用，或查看设置中的日志。",
+                            actionTitle: "重试启动", action: { app.toggle() })
+        }
+        if engine.state == EngineState.running, !engine.systemProxyActive {
+            return NextStep(id: "proxy", icon: "network",
+                            title: "代理已就绪，但系统流量还没经过它",
+                            message: "开启系统代理后，浏览器与 App 的请求会自动走 127.0.0.1:\(engine.profile.general.mixedPort)。",
+                            actionTitle: "开启系统代理", action: { engine.toggleSystemProxy(true) })
+        }
+        if engine.state == EngineState.running, engine.flows.isEmpty {
+            return NextStep(id: "verify", icon: "waveform.path.ecg",
+                            title: "验证流量确实在走代理",
+                            message: "抓包页会逐条显示请求；也可以先用系统代理访问任意网站再回来看。",
+                            actionTitle: "打开抓包", action: { app.go(to: .capture) })
+        }
+        if !app.isRunning {
+            return NextStep(id: "start", icon: "play.circle.fill",
+                            title: "第一步：启动本地代理",
+                            message: "混合端口同时支持 HTTP 与 SOCKS5，启动后即可把任何 App 指向它。",
+                            actionTitle: "启动代理", action: { app.toggle() })
+        }
+        return nil
+    }
+
+    @ViewBuilder private func nextStepCard(_ step: NextStep) -> some View {
+        if !dismissedHints.contains(step.id) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(TF.accentSoft)
+                    Image(systemName: step.icon)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(TF.accent)
+                }
+                .frame(width: 34, height: 34)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(step.title)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(TF.text)
+                    Text(step.message)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(TF.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 10)
+                Button(step.actionTitle, action: step.action)
+                    .buttonStyle(TFPrimaryButtonStyle())
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { _ = dismissedHints.insert(step.id) }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(TF.textTertiary)
+                        .padding(5)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("暂时忽略此建议")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(TF.panel, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(TF.stroke))
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        }
+    }
+
     // MARK: Stats
 
     private var statsGrid: some View {
@@ -140,12 +237,13 @@ struct DashboardView: View {
     // MARK: Endpoints
 
     private var endpoints: some View {
-        Card(title: "本地端点", subtitle: "Clash / Surge 兼容", icon: "network") {
+        Card(title: "本地端点", subtitle: "点击任意一行即可复制", icon: "network") {
             VStack(spacing: 2) {
                 endpoint("混合", "HTTP + SOCKS5", "127.0.0.1:\(engine.profile.general.mixedPort)")
                 endpoint("HTTP", "明文 / CONNECT", "127.0.0.1:\(engine.profile.general.httpPort)")
                 endpoint("SOCKS5", "TCP / UDP 关联", "127.0.0.1:\(engine.profile.general.socksPort)")
-                endpoint("DNS", engine.profile.general.dnsHijack ? "DoH / DoT / UDP" : "已关闭",
+                endpoint("DNS",
+                         engine.profile.general.dnsHijack ? "DoH / DoT / UDP" : "已关闭",
                          engine.profile.general.dnsHijack ? "127.0.0.1:\(engine.profile.dns.listenPort)" : "—")
                 TFDivider().padding(.vertical, 8)
                 HStack(spacing: 10) {
@@ -165,24 +263,35 @@ struct DashboardView: View {
     }
 
     private func endpoint(_ tag: String, _ note: String, _ value: String) -> some View {
-        HStack(spacing: 10) {
-            Text(tag)
-                .font(TFFont.mono(9.5, weight: .semibold))
-                .foregroundStyle(TF.accent)
-                .frame(width: 46, alignment: .leading)
-            Text(note)
-                .font(.system(size: 10.5))
-                .foregroundStyle(TF.textTertiary)
-                .lineLimit(1)
-            Spacer(minLength: 8)
-            Text(value)
-                .font(TFFont.mono(10.5, weight: .medium))
-                .foregroundStyle(TF.text)
-                .textSelection(.enabled)
+        let copyable = value != "—"
+        return TFRow(accessibilityText: copyable ? "\(tag) \(value)，复制" : "\(tag) 已关闭") {
+            if copyable {
+                TFClipboard.copy(value)
+                app.showToast("已复制 \(value)", kind: .info)
+            }
+        } content: {
+            HStack(spacing: 8) {
+                Text(tag)
+                    .font(TFFont.mono(9.5, weight: .semibold))
+                    .foregroundStyle(copyable ? TF.accent : TF.textTertiary)
+                    .frame(width: 46, alignment: .leading)
+                Text(note)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(TF.textTertiary)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                Text(value)
+                    .font(TFFont.mono(10.5, weight: .medium))
+                    .foregroundStyle(copyable ? TF.text : TF.textTertiary)
+                    .textSelection(.enabled)
+                if copyable {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 8.5))
+                        .foregroundStyle(TF.textTertiary)
+                }
+            }
         }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
-        .background(TF.stroke.opacity(0.35), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .disabled(!copyable)
     }
 
     // MARK: Explainer
@@ -193,15 +302,33 @@ struct DashboardView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 10))
-                        .foregroundStyle(TF.textTertiary)
+                        .foregroundStyle(probeFocused ? TF.accent : TF.textTertiary)
                     TextField("例如 api.spotify.com", text: $probeHost)
                         .textFieldStyle(.plain)
                         .font(TFFont.mono(11))
+                        .focused($probeFocused)
                         .onSubmit(runProbe)
+                    if !probeHost.isEmpty {
+                        Button {
+                            probeHost = ""
+                            probe = nil
+                            probeVerdict = nil
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 9.5))
+                                .foregroundStyle(TF.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("清除域名")
+                    }
                 }
                 .padding(.horizontal, 9)
                 .padding(.vertical, 6)
                 .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(probeFocused ? TF.accent.opacity(0.45) : Color.clear, lineWidth: 1)
+                )
 
                 Button("判断", action: runProbe)
                     .buttonStyle(TFPrimaryButtonStyle())
@@ -216,6 +343,17 @@ struct DashboardView: View {
                             .font(TFFont.mono(10))
                             .foregroundStyle(TF.textSecondary)
                             .lineLimit(1)
+                        Spacer(minLength: 4)
+                        Button {
+                            TFClipboard.copy(probe.policy)
+                            app.showToast("已复制策略 \(probe.policy)", kind: .info)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                                .font(.system(size: 9))
+                                .foregroundStyle(TF.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("复制命中策略")
                     }
                     if let verdict = probeVerdict, verdict.blocked {
                         HStack(spacing: 5) {
@@ -246,6 +384,12 @@ struct DashboardView: View {
                     Text("启动代理后可用").font(.system(size: 10.5))
                 }
                 .foregroundStyle(TF.textTertiary)
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: "return").font(.system(size: 9))
+                    Text("输入后按 ↩ 立即判断").font(.system(size: 10.5))
+                }
+                .foregroundStyle(TF.textTertiary)
             }
         }
     }
@@ -267,6 +411,12 @@ struct DashboardView: View {
                             TFDivider().opacity(0.6)
                         }
                     }
+                    HStack {
+                        Spacer()
+                        Button("查看全部 \(engine.flows.count) 条") { app.go(to: .capture) }
+                            .buttonStyle(TFGhostButtonStyle())
+                    }
+                    .padding(.top, 8)
                 }
             }
         }
@@ -277,5 +427,8 @@ struct DashboardView: View {
         guard !host.isEmpty else { return }
         probe = engine.explain(host: host, port: 443)
         probeVerdict = engine.adblockVerdict(domain: host)
+        if probe == nil {
+            app.showToast("无法解释 \(host)，请确认代理已启动", kind: .warning)
+        }
     }
 }

@@ -175,7 +175,7 @@ final class MITMHandler: @unchecked Sendable {
         let target = self.target(for: request)
         let started = Date()
 
-        if let blocker, let verdict = blocker.verdict(for: target.host, thirdParty: false) as BlockVerdict?, verdict.blocked {
+        if let blocker, let verdict = blocker.verdict(for: target.host, path: target.path, thirdParty: false) as BlockVerdict?, verdict.blocked {
             let reason = verdict.reason ?? "blocked"
             TFLog.shared.info("net.mitm", "blocked \(request.method) \(target.url): \(reason)")
             let payload = Data("TouchFlow blocked this request: \(reason)".utf8)

@@ -6,13 +6,19 @@ import TouchFlowCore
 /// Ordered, case-insensitive HTTP header collection.
 public struct HTTPHeaders: Sendable, Equatable {
     public private(set) var items: [(name: String, value: String)]
+    /// Lower-cased mirror of `items[].name`. Header lookups happen dozens of times
+    /// per proxied request, and lower-casing every name on every lookup (plus the
+    /// two allocations per comparison) showed up in the hot path.
+    private var lowered: [String]
 
     public init() {
         self.items = []
+        self.lowered = []
     }
 
     public init(_ items: [(String, String)]) {
         self.items = items.map { (name: $0.0, value: $0.1) }
+        self.lowered = items.map { $0.0.lowercased() }
     }
 
     public var isEmpty: Bool { items.isEmpty }
@@ -28,43 +34,56 @@ public struct HTTPHeaders: Sendable, Equatable {
 
     public func first(_ name: String) -> String? {
         let key = name.lowercased()
-        for item in items where item.name.lowercased() == key { return item.value }
+        for index in items.indices where lowered[index] == key { return items[index].value }
         return nil
     }
 
     public func all(_ name: String) -> [String] {
         let key = name.lowercased()
-        return items.filter { $0.name.lowercased() == key }.map(\.value)
+        var out: [String] = []
+        out.reserveCapacity(1)
+        for index in items.indices where lowered[index] == key { out.append(items[index].value) }
+        return out
     }
 
     public func contains(_ name: String) -> Bool { first(name) != nil }
 
     public mutating func add(_ name: String, _ value: String) {
         items.append((name: name, value: value))
+        lowered.append(name.lowercased())
     }
 
     public mutating func set(_ name: String, _ value: String) {
         remove(name)
-        items.append((name: name, value: value))
+        add(name, value)
     }
 
     public mutating func remove(_ name: String) {
         let key = name.lowercased()
-        items.removeAll { $0.name.lowercased() == key }
+        var index = items.count - 1
+        while index >= 0 {
+            if lowered[index] == key {
+                items.remove(at: index)
+                lowered.remove(at: index)
+            }
+            index -= 1
+        }
     }
 
     public var dictionary: [String: String] {
         var out: [String: String] = [:]
+        out.reserveCapacity(items.count)
         for item in items { out[item.name] = item.value }
         return out
     }
 
     public func serialized() -> Data {
-        var text = ""
+        var parts: [String] = []
+        parts.reserveCapacity(items.count + 1)
         for item in items {
-            text += "\(item.name): \(item.value)\r\n"
+            parts.append(item.name + ": " + item.value + "\r\n")
         }
-        return Data(text.utf8)
+        return Data(parts.joined().utf8)
     }
 }
 
@@ -101,10 +120,12 @@ public struct HTTPRequestHead: Sendable, Equatable {
     }
 
     public func serialized() -> Data {
-        var head = "\(method) \(target) \(version)\r\n"
-        for item in headers.items { head += "\(item.name): \(item.value)\r\n" }
-        head += "\r\n"
-        return Data(head.utf8)
+        var parts: [String] = []
+        parts.reserveCapacity(headers.items.count + 2)
+        parts.append(method + " " + target + " " + version + "\r\n")
+        for item in headers.items { parts.append(item.name + ": " + item.value + "\r\n") }
+        parts.append("\r\n")
+        return Data(parts.joined().utf8)
     }
 }
 
@@ -123,10 +144,12 @@ public struct HTTPResponseHead: Sendable, Equatable {
 
     public var serialized: Data {
         get {
-            var head = "\(version) \(status) \(reason)\r\n"
-            for item in headers.items { head += "\(item.name): \(item.value)\r\n" }
-            head += "\r\n"
-            return Data(head.utf8)
+            var parts: [String] = []
+            parts.reserveCapacity(headers.items.count + 2)
+            parts.append(version + " " + String(status) + " " + reason + "\r\n")
+            for item in headers.items { parts.append(item.name + ": " + item.value + "\r\n") }
+            parts.append("\r\n")
+            return Data(parts.joined().utf8)
         }
     }
 }

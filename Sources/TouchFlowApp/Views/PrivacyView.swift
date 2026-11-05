@@ -19,9 +19,8 @@ struct PrivacyView: View {
         "quantserve.com", "criteo.com", "taboola.com", "outbrain.com", "moatads.com", "adnxs.com",
     ]
 
-    private var report: PrivacyReport {
-        PrivacyAudit.audit(flows: engine.flows, trackerDomains: trackerDomains)
-    }
+    /// 全量审计有成本：按抓包数量节流重算，避免每条请求都重扫全部 flow。
+    @State private var report = PrivacyAudit.audit(flows: [], trackerDomains: [])
 
     var body: some View {
         ScrollView {
@@ -33,6 +32,12 @@ struct PrivacyView: View {
                 }
             }
             .pagePadding()
+        }
+        .task(id: engine.stats.captures) {
+            // 600ms 合并窗口：抓包高峰期的连续事件只触发一次审计。
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            report = PrivacyAudit.audit(flows: engine.flows, trackerDomains: trackerDomains)
         }
     }
 
@@ -133,9 +138,9 @@ struct PrivacyView: View {
                 check("HTTPS 解密默认关闭", !engine.profile.general.mitmEnabled,
                       engine.profile.general.mitmEnabled ? "已开启 MITM：出站证书由本机 CA 签发" : "未开启，抓包只见明文")
                 TFDivider().opacity(0.5).padding(.vertical, 4)
-                check("日志自动脱敏", true, "Authorization / Cookie / token 等在写入前被替换")
+                note("抓包与导出脱敏", "详情面板与 HAR 导出前由 Redactor 替换 Authorization / Cookie / token")
                 TFDivider().opacity(0.5).padding(.vertical, 4)
-                check("凭据保存在钥匙串", true, "SSH / NAS 密码可选择仅存 Keychain")
+                note("凭据存储", "SSH / NAS 密码可选仅存 Keychain，可在「钥匙串访问」中核对")
                 TFDivider().opacity(0.5).padding(.vertical, 4)
                 check("系统代理可一键关闭", !engine.systemProxyActive || engine.state == .running,
                       engine.systemProxyActive ? "当前已接管系统代理" : "未接管")
@@ -183,13 +188,32 @@ struct PrivacyView: View {
                             }
                             Spacer(minLength: 8)
                             Button("加入拦截") {
+                                let domain = finding.domain
+                                var added = false
                                 engine.updateProfile(restart: true) { profile in
-                                    let rule = "||\(finding.domain)^"
-                                    if !profile.adblock.blockLists.contains(rule) {
-                                        profile.adblock.blockLists.append(rule)
+                                    let exists = profile.rules.contains {
+                                        $0.kind == .domainSuffix && $0.value.caseInsensitiveCompare(domain) == .orderedSame
+                                    }
+                                    if !exists {
+                                        profile.rules.append(Rule(kind: .domainSuffix, value: domain, policy: "REJECT",
+                                                                  raw: "DOMAIN-SUFFIX,\(domain),REJECT"))
+                                        added = true
                                     }
                                 }
-                                app.toast = "已加入拦截：\(finding.domain)"
+                                if added {
+                                    app.showToast("已加入拦截：\(domain)", kind: .success, actionTitle: "撤销") {
+                                        engine.updateProfile(restart: true) { profile in
+                                            profile.rules.removeAll {
+                                                $0.kind == .domainSuffix
+                                                    && $0.value.caseInsensitiveCompare(domain) == .orderedSame
+                                                    && $0.policy.uppercased() == "REJECT"
+                                            }
+                                        }
+                                        app.showToast("已撤销拦截：\(domain)", kind: .info)
+                                    }
+                                } else {
+                                    app.showToast("\(domain) 已在拦截规则中", kind: .warning)
+                                }
                             }
                             .buttonStyle(TFGhostButtonStyle())
                         }
@@ -221,12 +245,48 @@ struct PrivacyView: View {
         .padding(.vertical, 2)
     }
 
+    /// 仅作说明的事实行：不是可勾选的安全项，避免出现「永远通过」的假绿灯。
+    private func note(_ title: String, _ detail: String) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 12))
+                .foregroundStyle(TF.textTertiary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(TF.text)
+                Text(detail)
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(TF.textTertiary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// 文案与配色共用同一阈值表，避免「85 分说良好但显示琥珀色」的错位。
+    private enum HealthLevel {
+        case good, fair, weak
+        static func of(_ score: Int) -> HealthLevel {
+            score >= 80 ? .good : score >= 55 ? .fair : .weak
+        }
+    }
+
     private func scoreHeadline(_ score: Int) -> String {
-        score >= 85 ? "防护状态良好" : score >= 60 ? "还有几处可以加强" : "建议先完成基础加固"
+        switch HealthLevel.of(score) {
+        case .good: return "防护状态良好"
+        case .fair: return "还有几处可以加强"
+        case .weak: return "建议先完成基础加固"
+        }
     }
 
     private func scoreColor(_ score: Int) -> Color {
-        score >= 80 ? TF.mint : score >= 55 ? TF.amber : TF.danger
+        switch HealthLevel.of(score) {
+        case .good: return TF.mint
+        case .fair: return TF.amber
+        case .weak: return TF.danger
+        }
     }
     private func severityColor(_ s: Int) -> Color {
         s >= 3 ? TF.danger : s == 2 ? TF.amber : TF.textTertiary

@@ -7,13 +7,28 @@ public struct FilterRule: Sendable, Hashable {
     public var domain: String?
     public var isException: Bool
     public var thirdPartyOnly: Bool
+    /// ABP `$domain=a.com|b.com` scope: the rule only applies inside these domains.
+    public var scope: [String]
+    /// `$domain=~a.com` exclusions inside `scope`.
+    public var excludedScope: [String]
+    /// URL-anchored rules (`|https://host/path`) keep the path so they match exactly
+    /// at the HTTP layer instead of blocking the whole domain.
+    public var pathPrefix: String?
 
-    public init(raw: String, domain: String? = nil, isException: Bool = false, thirdPartyOnly: Bool = false) {
+    public init(raw: String, domain: String? = nil, isException: Bool = false,
+                thirdPartyOnly: Bool = false, scope: [String] = [],
+                excludedScope: [String] = [], pathPrefix: String? = nil) {
         self.raw = raw
         self.domain = domain
         self.isException = isException
         self.thirdPartyOnly = thirdPartyOnly
+        self.scope = scope
+        self.excludedScope = excludedScope
+        self.pathPrefix = pathPrefix
     }
+
+    /// True when the rule can only be decided with the request path (URL-anchored).
+    public var requiresPathMatch: Bool { pathPrefix != nil }
 
     /// True for `||domain^` style rules (matches the domain and every subdomain).
     public var isSuffixRule: Bool {
@@ -46,7 +61,12 @@ public enum FilterParser {
         block.reserveCapacity(1 << 10)
 
         // Byte-level line scanning: 100k-line lists must load well under a second.
-        let bytes = Array(text.utf8)
+        var bytes = Array(text.utf8)
+        // Filter lists saved on Windows often start with a UTF-8 BOM; without
+        // stripping it the first rule's pattern starts with U+FEFF and never matches.
+        if bytes.count >= 3, bytes[0] == 0xEF, bytes[1] == 0xBB, bytes[2] == 0xBF {
+            bytes.removeFirst(3)
+        }
         for raw in bytes.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true) {
             var start = raw.startIndex
             var end = raw.endIndex
@@ -177,6 +197,8 @@ public enum FilterParser {
             body = String(body.dropFirst(2))
         }
         var thirdPartyOnly = false
+        var scope: [String] = []
+        var excludedScope: [String] = []
         var pattern = body
         if let dollar = body.lastIndex(of: "$") {
             let options = String(body[body.index(after: dollar)...]).lowercased()
@@ -189,6 +211,19 @@ public enum FilterParser {
             }
             if looksLikeOptions {
                 thirdPartyOnly = parts.contains("third-party") || parts.contains("3p")
+                for part in parts where part.hasPrefix("domain=") {
+                    let list = String(part.dropFirst("domain=".count))
+                    for entry in list.split(separator: "|") {
+                        let token = entry.trimmingCharacters(in: .whitespaces)
+                        if token.hasPrefix("~") {
+                            let domain = HostNormalizer.normalize(String(token.dropFirst()))
+                            if !domain.isEmpty { excludedScope.append(domain) }
+                        } else {
+                            let domain = HostNormalizer.normalize(token)
+                            if !domain.isEmpty { scope.append(domain) }
+                        }
+                    }
+                }
                 pattern = String(body[..<dollar])
             }
         }
@@ -197,8 +232,38 @@ public enum FilterParser {
         if pattern == "*" || pattern == "||" { return nil }
         if pattern.hasPrefix("#") || pattern.hasPrefix("!") { return nil }
 
+        // `|https://host/path` keeps its path so the engine does not kill the whole host.
+        if let anchored = splitAnchoredURL(pattern) {
+            return FilterRule(raw: line, domain: anchored.host, isException: isException,
+                              thirdPartyOnly: thirdPartyOnly, scope: scope,
+                              excludedScope: excludedScope, pathPrefix: anchored.path)
+        }
         let domain = extractDomain(pattern)
-        return FilterRule(raw: line, domain: domain, isException: isException, thirdPartyOnly: thirdPartyOnly)
+        return FilterRule(raw: line, domain: domain, isException: isException,
+                          thirdPartyOnly: thirdPartyOnly, scope: scope,
+                          excludedScope: excludedScope)
+    }
+
+    /// Splits `|http(s)://host/path` into its host and (wildcard-free) path prefix.
+    static func splitAnchoredURL(_ pattern: String) -> (host: String, path: String?)? {
+        guard pattern.hasPrefix("|") else { return nil }
+        let body = String(pattern.dropFirst())
+        guard body.hasPrefix("http://") || body.hasPrefix("https://"),
+              let schemeEnd = body.range(of: "://") else { return nil }
+        var rest = String(body[schemeEnd.upperBound...])
+        var path: String?
+        if let slash = rest.firstIndex(of: "/") {
+            path = String(rest[slash...])
+            rest = String(rest[..<slash])
+        }
+        if rest.hasSuffix("^") { rest.removeLast() }
+        let host = HostNormalizer.normalize(rest)
+        guard isBareHost(host) else { return nil }
+        var prefix = path
+        if let value = prefix, let star = value.firstIndex(of: "*") { prefix = String(value[..<star]) }
+        prefix = prefix?.trimmingCharacters(in: CharacterSet(charactersIn: "^"))
+        if prefix == "/" || prefix?.isEmpty == true { prefix = nil }
+        return (host, prefix)
     }
 
     /// Best-effort host extraction: `||domain^`, `|http://host/path`, plain host, URL.

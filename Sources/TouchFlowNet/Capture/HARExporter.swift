@@ -71,7 +71,8 @@ public enum HARExporter {
             "httpVersion": "HTTP/1.1",
             "cookies": [Any](),
             "headers": headerArray(request.requestHeaders, redact: redact),
-            "queryString": queryString(from: request.url),
+            // Must use the redacted URL: query parameters are where tokens live.
+            "queryString": queryString(from: url),
             "headersSize": -1,
             "bodySize": request.requestBody?.count ?? 0,
         ]

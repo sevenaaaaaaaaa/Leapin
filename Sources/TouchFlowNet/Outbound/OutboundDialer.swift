@@ -31,6 +31,15 @@ public struct OutboundDialer: Sendable {
 
         case .trojan:
             return try await connectTrojan(outbound: outbound, host: host, port: port)
+
+        case .vmess, .vless, .hysteria, .hysteria2, .tuic, .wireguard, .snell:
+            // Imported verbatim so profiles round-trip; dialing is not implemented yet.
+            throw TouchFlowError.invalidConfiguration(
+                "outbound \(outbound.name): protocol '\(outbound.rawType ?? outbound.type.rawValue)' is not dialable yet")
+
+        case .unsupported:
+            throw TouchFlowError.invalidConfiguration(
+                "outbound \(outbound.name): unknown protocol '\(outbound.rawType ?? "?")'")
         }
     }
 

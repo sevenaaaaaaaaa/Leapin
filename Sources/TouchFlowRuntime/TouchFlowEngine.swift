@@ -74,7 +74,8 @@ public final class TouchFlowEngine: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.logs.append(entry)
-                if self.logs.count > 1500 { self.logs.removeFirst(self.logs.count - 1500) }
+                // Hysteresis: trimming on every append meant an O(n) memmove per line.
+                if self.logs.count > 1800 { self.logs.removeFirst(self.logs.count - 1500) }
             }
         }
     }
@@ -106,8 +107,15 @@ public final class TouchFlowEngine: ObservableObject {
                 let server = DNSServer(port: profile.dns.listenPort, resolver: dnsResolver,
                                        blocker: blocker,
                                        fakeIP: profile.dns.mode == .fakeIP ? FakeIPPool(range: profile.dns.fakeIPRange) : nil)
-                try server.start()
-                dnsServer = server
+                do {
+                    try server.start()
+                    dnsServer = server
+                } catch {
+                    // A busy DNS port must not take the whole proxy down: the mixed port
+                    // keeps working, only DNS hijack is skipped (audit DNS-01).
+                    dnsServer = nil
+                    TFLog.shared.warn("engine", "DNS 端口 \(profile.dns.listenPort) 未启动：\(error.localizedDescription)")
+                }
             }
 
             if profile.general.mitmEnabled {
@@ -120,6 +128,7 @@ public final class TouchFlowEngine: ObservableObject {
             }
 
             sink.reset()
+            resetRecordings()
             let general = profile.general
             let sinkCapture: CaptureSink? = general.captureEnabled ? sink : nil
             func makeServer(_ port: UInt16, http: Bool, socks: Bool) -> ProxyServer {
@@ -159,10 +168,33 @@ public final class TouchFlowEngine: ObservableObject {
     }
 
     public func stop() {
+        // Roll the system proxy back *before* the listeners disappear. Otherwise every
+        // app on the machine keeps pointing at a port that is about to close, which
+        // looks exactly like "the network is down".
+        rollbackSystemProxyIfNeeded()
         teardown()
         state = .stopped
         stats.startedAt = nil
         TFLog.shared.info("engine", "代理已停止")
+    }
+
+    /// Disables the system proxy when TouchFlow enabled it. Safe to call from every
+    /// stop path: explicit stop, profile switch, failed start and app termination.
+    /// Returns false when the rollback failed, in which case `systemProxyActive`
+    /// stays true so the UI can still offer a retry.
+    @discardableResult
+    private func rollbackSystemProxyIfNeeded() -> Bool {
+        guard systemProxyActive else { return true }
+        do {
+            try SystemProxy.disable()
+            systemProxyActive = false
+            TFLog.shared.info("system", "已回滚系统代理")
+            return true
+        } catch {
+            lastError = error.localizedDescription
+            TFLog.shared.error("system", "系统代理回滚失败：\(error.localizedDescription)")
+            return false
+        }
     }
 
     private func teardown() {
@@ -207,13 +239,35 @@ public final class TouchFlowEngine: ObservableObject {
     }
 
     public func importProfile(from url: URL) async throws -> Profile {
-        let imported = try store.importFile(at: url)
+        try await importProfileDetailed(from: url).profile
+    }
+
+    /// Same as importProfile(from:) but also returns per-item diagnostics so the
+    /// UI can tell the user what was dropped instead of silently losing nodes.
+    @discardableResult
+    public func importProfileDetailed(from url: URL) async throws -> ProfileImportOutcome {
+        let outcome = try store.importFileDetailed(at: url)
+        let imported = outcome.profile
         store.activeProfileID = imported.id
         let wasRunning = state == .running
         if wasRunning { stop() }
         profile = imported
         if wasRunning { await start() }
-        return imported
+        return outcome
+    }
+
+    /// Imports a remote subscription link (http/https) and keeps the engine
+    /// running across the swap, mirroring importProfileDetailed(from:).
+    @discardableResult
+    public func importRemoteProfile(_ link: String) async throws -> ProfileImportOutcome {
+        let outcome = try await store.importRemote(link)
+        let imported = outcome.profile
+        store.activeProfileID = imported.id
+        let wasRunning = state == .running
+        if wasRunning { stop() }
+        profile = imported
+        if wasRunning { await start() }
+        return outcome
     }
 
     public func exportProfile(_ format: ProfileFormat) throws -> String {
@@ -229,8 +283,8 @@ public final class TouchFlowEngine: ObservableObject {
         return engine.explain(ConnectionMeta(host: host, port: port))
     }
 
-    public func adblockVerdict(domain: String) -> BlockVerdict {
-        adblock?.verdict(for: domain, thirdParty: false) ?? .allow
+    public func adblockVerdict(domain: String, path: String? = nil) -> BlockVerdict {
+        adblock?.verdict(for: domain, path: path, thirdParty: false) ?? .allow
     }
 
     private func ruleSetSources() -> [String] {
@@ -243,16 +297,33 @@ public final class TouchFlowEngine: ObservableObject {
     public func toggleSystemProxy(_ enabled: Bool) {
         do {
             if enabled {
-                try SystemProxy.enable(host: "127.0.0.1", port: Int(profile.general.httpPort),
-                                       socksPort: Int(profile.general.socksPort))
+                try enableSystemProxy()
+                systemProxyActive = true
             } else {
                 try SystemProxy.disable()
+                systemProxyActive = false
             }
-            systemProxyActive = enabled
         } catch {
             lastError = error.localizedDescription
             TFLog.shared.error("system", "系统代理设置失败：\(error.localizedDescription)")
         }
+    }
+
+    /// Points the system proxy at the mixed listener that is actually bound.
+    ///
+    /// The dedicated HTTP/SOCKS ports are best-effort (see `start()`), so writing
+    /// `general.httpPort`/`general.socksPort` could aim the whole machine at a port
+    /// that never came up. The mixed port speaks both protocols and is mandatory.
+    private func enableSystemProxy() throws {
+        guard state == .running, let proxy, proxy.isRunning else {
+            throw TouchFlowError.invalidConfiguration("代理尚未运行，无法开启系统代理")
+        }
+        let port = Int(proxy.listeningPort)
+        guard (1...65535).contains(port) else {
+            throw TouchFlowError.invalidConfiguration("代理监听端口不可用（\(port)）")
+        }
+        try SystemProxy.enable(host: "127.0.0.1", port: port, socksPort: port)
+        TFLog.shared.info("system", "系统代理已指向 127.0.0.1:\(port)")
     }
 
     public func refreshSystemProxyStatus() {
@@ -267,37 +338,111 @@ public final class TouchFlowEngine: ObservableObject {
         try HARExporter.export(captures, redact: true)
     }
 
-    // MARK: - Sink callbacks (any thread)
+    // MARK: - Sink callbacks
 
-    fileprivate func ingest(_ event: FlowEvent) {
-        Task { @MainActor in
-            self.stats.requests += 1
-            self.stats.bytesIn += event.bytesIn
-            self.stats.bytesOut += event.bytesOut
-            if event.blockedBy != nil { self.stats.blocked += 1 }
-            if event.phase == .opened { self.stats.connections += 1 }
-            self.flows.append(event)
-            if self.flows.count > 2000 { self.flows.removeFirst(self.flows.count - 2000) }
+    private static let flowLimit = 2000
+    private static let captureLimit = 1000
+
+    /// Applies one coalesced batch coming from `EngineSink`.
+    fileprivate func applyBuffered(_ events: [FlowEvent], _ requests: [CapturedRequest]) {
+        if !requests.isEmpty {
+            stats.captures += requests.count
+            captures.append(contentsOf: requests)
+            Self.trim(&captures, to: Self.captureLimit)
         }
+        guard !events.isEmpty else { return }
+        for event in events {
+            stats.requests += 1
+            stats.bytesIn += event.bytesIn
+            stats.bytesOut += event.bytesOut
+            if event.blockedBy != nil { stats.blocked += 1 }
+            if event.phase == .opened { stats.connections += 1 }
+        }
+        flows.append(contentsOf: events)
+        Self.trim(&flows, to: Self.flowLimit)
     }
 
-    fileprivate func ingest(_ request: CapturedRequest) {
-        Task { @MainActor in
-            self.stats.captures += 1
-            self.captures.append(request)
-            if self.captures.count > 1000 { self.captures.removeFirst(self.captures.count - 1000) }
-        }
+    private static func trim<T>(_ list: inout [T], to limit: Int) {
+        guard list.count > limit + limit / 4 else { return }
+        list.removeFirst(list.count - limit)
+    }
+
+    /// Clears per-session recordings so restarting the engine does not keep stale
+    /// flows/captures (PF-10).
+    private func resetRecordings() {
+        flows.removeAll(keepingCapacity: false)
+        captures.removeAll(keepingCapacity: false)
+        stats = EngineStats()
+        ruleTraceCount = 0
     }
 }
 
+/// Buffers events from any thread and flushes them to the engine in ~16ms batches.
+///
+/// This used to allocate two `Task`s per event and push onto the main actor one by
+/// one, so a single page load could enqueue hundreds of hops and every hop published
+/// `flows` again (full SwiftUI invalidation).
 private final class EngineSink: FlowRecording, CaptureSink, @unchecked Sendable {
     weak var engine: TouchFlowEngine?
-    func reset() {}
-    func record(_ event: FlowEvent) {
-        Task { @MainActor [weak engine] in engine?.ingest(event) }
+
+    private let lock = NSLock()
+    private var pendingFlows: [FlowEvent] = []
+    private var pendingCaptures: [CapturedRequest] = []
+    private var flushScheduled = false
+    private static let maxPending = 4096
+
+    func reset() {
+        lock.lock()
+        pendingFlows.removeAll(keepingCapacity: true)
+        pendingCaptures.removeAll(keepingCapacity: true)
+        lock.unlock()
     }
+
+    func record(_ event: FlowEvent) {
+        lock.lock()
+        pendingFlows.append(event)
+        if pendingFlows.count > Self.maxPending {
+            pendingFlows.removeFirst(pendingFlows.count - Self.maxPending)
+        }
+        let schedule = !flushScheduled
+        if schedule { flushScheduled = true }
+        lock.unlock()
+        if schedule { scheduleFlush() }
+    }
+
     func capture(_ request: CapturedRequest) {
-        Task { @MainActor [weak engine] in engine?.ingest(request) }
+        lock.lock()
+        pendingCaptures.append(request)
+        if pendingCaptures.count > Self.maxPending {
+            pendingCaptures.removeFirst(pendingCaptures.count - Self.maxPending)
+        }
+        let schedule = !flushScheduled
+        if schedule { flushScheduled = true }
+        lock.unlock()
+        if schedule { scheduleFlush() }
+    }
+
+    private func scheduleFlush() {
+        // The hop is what used to happen per event; now a whole burst shares one.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 16_000_000)
+            guard let self else { return }
+            let (events, requests) = self.drain()
+            self.engine?.applyBuffered(events, requests)
+        }
+    }
+
+    /// Takes the pending batch. Callable from any thread; the engine hop happens
+    /// on the caller's main-actor task.
+    private func drain() -> ([FlowEvent], [CapturedRequest]) {
+        lock.lock()
+        defer { lock.unlock() }
+        flushScheduled = false
+        let events = pendingFlows
+        let requests = pendingCaptures
+        pendingFlows.removeAll(keepingCapacity: true)
+        pendingCaptures.removeAll(keepingCapacity: true)
+        return (events, requests)
     }
 }
 

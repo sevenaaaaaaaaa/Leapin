@@ -53,12 +53,11 @@ struct TFCTL {
     static func loadProfile(_ args: [String]) throws -> Profile {
         if let path = flag("--profile", in: args) {
             let url = URL(fileURLWithPath: path)
-            let text = try String(contentsOf: url, encoding: .utf8)
-            if url.pathExtension.lowercased() == "json" {
-                return try JSONDecoder.touchflow.decode(Profile.self, from: Data(text.utf8))
-            }
-            if text.contains("[Rule]") { return try ProfileImporter.surge(text, name: url.lastPathComponent) }
-            return try ProfileImporter.clash(text, name: url.lastPathComponent)
+            let data = try Data(contentsOf: url)
+            let text = String(decoding: data, as: UTF8.self)
+            return try ProfileImporter.importText(text,
+                                                  name: url.deletingPathExtension().lastPathComponent,
+                                                  pathExtension: url.pathExtension).profile
         }
         return ProfileStore.shared.activeProfile()
     }
@@ -122,14 +121,35 @@ struct TFCTL {
     }
 
     static func importProfile(_ args: [String]) async throws {
-        guard let path = args.first else { throw TouchFlowError.invalidConfiguration("用法：tfctl import <file>") }
-        let profile = try ProfileStore.shared.importFile(at: URL(fileURLWithPath: path))
-        print("已导入：\(profile.name)（\(profile.rules.count) 条规则，\(profile.outbounds.count) 个出站）")
-        print("id: \(profile.id.uuidString)")
+        if args.contains("--help") || args.contains("-h") {
+            print("用法：tfctl import <file>  （支持 Clash YAML / Surge conf / TouchFlow JSON / base64 订阅）")
+            return
+        }
+        guard let path = args.first(where: { !$0.hasPrefix("-") }) else {
+            throw TouchFlowError.invalidConfiguration("用法：tfctl import <file>")
+        }
+        let outcome = try ProfileStore.shared.importFileDetailed(at: URL(fileURLWithPath: path))
+        print("已导入：\(outcome.profile.name)")
+        print(outcome.report.summary)
+        print("id: \(outcome.profile.id.uuidString)")
+        for issue in outcome.report.issues.prefix(10) {
+            print("  · \(issue.display)")
+        }
+        if outcome.report.issues.count > 10 {
+            print("  … 其余 \(outcome.report.issues.count - 10) 条诊断请在应用内查看")
+        }
     }
 
     static func exportProfile(_ args: [String]) async throws {
-        let format = args.first.flatMap { ProfileFormat(rawValue: $0) } ?? .clash
+        if args.contains("--help") || args.contains("-h") {
+            print("用法：tfctl export [--profile <file>] [clash|surge|json|hosts|abp|ruleset]（缺省 clash）")
+            return
+        }
+        let profilePath = flag("--profile", in: args)
+        let token = args.first { !$0.hasPrefix("-") && $0 != profilePath } ?? "clash"
+        guard let format = ProfileFormat(cliName: token) else {
+            throw TouchFlowError.invalidConfiguration("未知导出格式：\(token)（支持 clash / surge / json / hosts / abp / ruleset）")
+        }
         let profile = try loadProfile(args)
         print(try ProfileStore.shared.export(profile, format: format))
     }
@@ -176,8 +196,9 @@ struct TFCTL {
           tfctl rules <host> [--profile file] 解释某个域名命中哪条规则
           tfctl adblock <domain>              检查域名是否被拦截
           tfctl dns <host> [--profile file]   用当前 DNS 配置解析
-          tfctl import <file>                 导入 Clash/Surge/TouchFlow 配置
-          tfctl export <format>               导出 clash / surge / json
+          tfctl import <file>                 导入 Clash/Surge/JSON/base64 订阅
+          tfctl export [clash|surge|json|hosts|abp|ruleset]  导出配置（缺省 clash）
+          tfctl export --help                 导出格式说明
           tfctl proxy status|on|off            系统代理开关
           tfctl profiles                      列出配置
         """)
