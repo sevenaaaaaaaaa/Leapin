@@ -1,0 +1,38 @@
+#!/bin/bash
+# Build TouchFlow.app + tfctl into ./dist
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+CONFIG="${1:-release}"
+APP="dist/TouchFlow.app"
+
+echo "==> swift build -c ${CONFIG}"
+swift build -c "${CONFIG}" --product TouchFlowApp
+swift build -c "${CONFIG}" --product tfctl
+BIN="$(swift build -c "${CONFIG}" --show-bin-path)"
+
+echo "==> assemble ${APP}"
+rm -rf "${APP}"
+mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources"
+cp "${BIN}/TouchFlowApp" "${APP}/Contents/MacOS/TouchFlowApp"
+cp "${BIN}/tfctl" "${APP}/Contents/MacOS/tfctl"
+cp scripts/Info.plist "${APP}/Contents/Info.plist"
+if [ -f Assets/AppIcon.icns ]; then
+    mkdir -p "${APP}/Contents/Resources"
+    cp Assets/AppIcon.icns "${APP}/Contents/Resources/AppIcon.icns"
+    /usr/libexec/PlistBuddy -c "Add :CFBundleIconFile string AppIcon" "${APP}/Contents/Info.plist" 2>/dev/null \
+      || /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "${APP}/Contents/Info.plist"
+fi
+
+# SwiftPM resource bundles (TouchFlow_TouchFlowRuntime.bundle etc.)
+for b in "${BIN}"/*.bundle; do
+    [ -e "$b" ] && cp -R "$b" "${APP}/Contents/Resources/"
+done
+
+# ad-hoc sign so the app launches without a developer account
+codesign --force --deep --sign - "${APP}" >/dev/null 2>&1 || echo "warn: codesign failed (app still runnable locally)"
+codesign -dv "${APP}" 2>&1 | head -3 || true
+
+echo "==> done: ${APP}"
+echo "   open dist/TouchFlow.app"
+echo "   dist/TouchFlow.app/Contents/MacOS/tfctl run"
