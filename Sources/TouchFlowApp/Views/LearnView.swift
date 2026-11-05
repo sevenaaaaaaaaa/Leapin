@@ -22,12 +22,53 @@ struct LearnView: View {
         ScrollView {
             VStack(spacing: 16) {
                 inputCard
+                if apps.isEmpty && suggestions.isEmpty { howCard }
                 if !apps.isEmpty { appsCard }
                 if !suggestions.isEmpty { suggestionCard }
             }
             .pagePadding()
         }
         .navigationTitle("智能学习")
+    }
+
+    private var howCard: some View {
+        Card(title: "工作方式", subtitle: "三步把「哪个 App 走哪条线」变成规则", icon: "wand.and.stars") {
+            HStack(alignment: .top, spacing: 0) {
+                step(1, "识别", "App 名 / Bundle ID / 域名，或直接从截图 OCR 出应用清单")
+                arrow
+                step(2, "建议", "按内置 55 个应用目录与最近连接，给出直连 / 代理 / 拦截建议")
+                arrow
+                step(3, "落地", "勾选建议后写入分流规则，立即生效并可随时删除")
+            }
+        }
+    }
+
+    private func step(_ n: Int, _ title: String, _ detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 7) {
+                Text(String(n))
+                    .font(TFFont.num(10, weight: .bold))
+                    .foregroundStyle(TF.accent)
+                    .frame(width: 18, height: 18)
+                    .background(TF.accent.opacity(0.13), in: Circle())
+                Text(title)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(TF.text)
+            }
+            Text(detail)
+                .font(.system(size: 10.5))
+                .foregroundStyle(TF.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var arrow: some View {
+        Image(systemName: "arrow.right")
+            .font(.system(size: 9, weight: .semibold))
+            .foregroundStyle(TF.textTertiary.opacity(0.6))
+            .padding(.horizontal, 10)
+            .padding(.top, 5)
     }
 
     private var inputCard: some View {
@@ -37,35 +78,45 @@ struct LearnView: View {
                     Text("方式一：粘贴应用名 / Bundle ID / 域名（每行一个，逗号分隔也可）")
                         .font(.caption).foregroundStyle(.secondary)
                     TextEditor(text: $rawText)
-                        .font(.callout.monospaced())
-                        .frame(height: 130)
+                        .font(TFFont.mono(11))
+                        .frame(height: 132)
                         .scrollContentBackground(.hidden)
-                        .background(.quaternary.opacity(0.2), in: RoundedRectangle(cornerRadius: 8))
-                    HStack {
-                        Button("解析列表") { parseText() }.disabled(rawText.isEmpty)
+                        .padding(8)
+                        .background(TF.stroke.opacity(0.4), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    HStack(spacing: 8) {
+                        Button("解析列表") { parseText() }
+                            .buttonStyle(TFPrimaryButtonStyle())
+                            .disabled(rawText.isEmpty)
                         Button("清空") { rawText = ""; apps = []; suggestions = [] }
+                            .buttonStyle(TFGhostButtonStyle())
                         Spacer()
-                        Text("内置目录 \(AppCatalog.builtin.count) 个应用").font(.caption2).foregroundStyle(.tertiary)
+                        Text("内置目录 \(AppCatalog.builtin.count) 个应用")
+                            .font(.system(size: 10))
+                            .foregroundStyle(TF.textTertiary)
                     }
                 }
 
-                Divider()
+                Rectangle().fill(TF.stroke).frame(width: 1).padding(.vertical, 2)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("方式二：拖入截图（App 列表页 / 订阅页 / 分流规则页）")
                         .font(.caption).foregroundStyle(.secondary)
                     ZStack {
-                        RoundedRectangle(cornerRadius: 10)
-                            .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
-                            .foregroundStyle(dropped ? Color.accentColor : Color.secondary.opacity(0.5))
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(dropped ? TF.accent.opacity(0.08) : TF.stroke.opacity(0.3))
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
+                            .foregroundStyle(dropped ? TF.accent : TF.strokeStrong)
                         VStack(spacing: 6) {
                             Image(systemName: busy ? "hourglass" : "photo.on.rectangle.angled")
-                                .font(.system(size: 24)).foregroundStyle(.secondary)
+                                .font(.system(size: 22, weight: .light))
+                                .foregroundStyle(dropped ? TF.accent : TF.textTertiary)
                             Text(busy ? "识别中…" : "拖拽图片到此处，或点下方按钮")
-                                .font(.caption).foregroundStyle(.secondary)
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(TF.textSecondary)
                         }
                     }
-                    .frame(width: 260, height: 130)
+                    .frame(width: 262, height: 132)
                     .dropDestination(for: URL.self) { urls, _ in
                         guard let url = urls.first else { return false }
                         dropped = true
@@ -73,6 +124,7 @@ struct LearnView: View {
                         return true
                     }
                     Button("选择截图…") { pickImage() }
+                        .buttonStyle(TFGhostButtonStyle())
                     if !ocrText.isEmpty {
                         Text(ocrText.prefix(120)).font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(2)
                     }
@@ -86,20 +138,32 @@ struct LearnView: View {
         Card(title: "已识别应用", subtitle: "\(apps.count) 个", icon: "app.badge.checkmark") {
             ForEach(apps) { learned in
                 HStack(spacing: 8) {
-                    Image(systemName: "app.fill").foregroundStyle(.secondary)
-                    Text(learned.name).font(.callout)
+                    Image(systemName: "app.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(TF.accent)
+                    Text(learned.name)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(TF.text)
                     if let bid = learned.bundleID {
-                        Text(bid).font(.caption2.monospaced()).foregroundStyle(.tertiary)
+                        Text(bid)
+                            .font(TFFont.mono(9.5))
+                            .foregroundStyle(TF.textTertiary)
                     }
-                    Spacer()
+                    Spacer(minLength: 8)
                     Text(learned.domains.prefix(3).joined(separator: ", "))
-                        .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                    Badge(text: learned.source, color: .blue)
+                        .font(TFFont.mono(9.5))
+                        .foregroundStyle(TF.textSecondary)
+                        .lineLimit(1)
+                    Badge(text: learned.source, color: TF.accent)
                 }
                 .padding(.vertical, 2)
             }
             if suggestions.isEmpty {
-                Button("生成分流建议") { suggest() }.buttonStyle(.borderedProminent)
+                HStack {
+                    Spacer()
+                    Button("生成分流建议") { suggest() }
+                        .buttonStyle(TFPrimaryButtonStyle())
+                }
             }
         }
     }
@@ -114,23 +178,34 @@ struct LearnView: View {
                     }
                 )) {
                     HStack(spacing: 8) {
-                        Text(suggestion.domain).font(.callout.monospaced())
-                        Badge(text: suggestion.appName, color: .blue)
-                        Text(suggestion.rule.kind.rawValue).font(.caption2).foregroundStyle(.secondary)
-                        Text(suggestion.rationale).font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
-                        Spacer()
+                        Text(suggestion.domain)
+                            .font(TFFont.mono(11))
+                            .foregroundStyle(TF.text)
+                        Badge(text: suggestion.appName, color: TF.violet)
+                        Text(suggestion.rule.kind.rawValue)
+                            .font(TFFont.mono(9))
+                            .foregroundStyle(TF.textTertiary)
+                        Text(suggestion.rationale)
+                            .font(.system(size: 10))
+                            .foregroundStyle(TF.textTertiary)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
                         Text("\(Int(suggestion.confidence * 100))%")
-                            .font(.caption2.monospaced()).foregroundStyle(.secondary)
+                            .font(TFFont.num(10, weight: .semibold))
+                            .foregroundStyle(TF.mint)
                     }
                 }
                 .toggleStyle(.checkbox)
             }
-            HStack {
-                Text("已选 \(selected.count) 条").font(.caption).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Text("已选 \(selected.count) 条")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(TF.textTertiary)
                 Spacer()
                 Button("全选") { selected = Set(suggestions.map(\.id)) }
+                    .buttonStyle(TFGhostButtonStyle())
                 Button("应用所选规则") { apply() }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(TFPrimaryButtonStyle())
                     .disabled(selected.isEmpty)
             }
         }

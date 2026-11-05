@@ -24,11 +24,16 @@ struct RulesView: View {
         VStack(spacing: 0) {
             toolbar
             Divider()
-            HStack(spacing: 0) {
+            HStack(spacing: 16) {
                 ruleList
-                Divider()
-                sidePanel.frame(width: 280)
+                    .background(TF.panel, in: RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: TF.radius, style: .continuous).strokeBorder(TF.stroke, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
+                sidePanel.frame(width: 286)
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 14)
+            .padding(.bottom, 18)
         }
         .navigationTitle("分流规则")
         .sheet(isPresented: $showAdd) {
@@ -42,23 +47,43 @@ struct RulesView: View {
     private var toolbar: some View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("搜索域名 / 策略 / 原始规则", text: $search).textFieldStyle(.plain)
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 10))
+                    .foregroundStyle(TF.textTertiary)
+                TextField("搜索域名 / 策略 / 原始规则", text: $search)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11.5))
             }
-            .padding(6)
-            .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 7))
-            .frame(maxWidth: 340)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 6)
+            .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .frame(maxWidth: 330)
 
-            Text("\(filtered.count) / \(engine.profile.rules.count) 条").font(.caption).foregroundStyle(.secondary)
+            Text("\(filtered.count) / \(engine.profile.rules.count)")
+                .font(TFFont.num(10.5, weight: .medium))
+                .foregroundStyle(TF.textTertiary)
             Spacer()
             Button {
-                showAdd = true
-            } label: { Label("添加规则", systemImage: "plus") }
-            Button {
                 Task { await engine.reloadProfile() }
-            } label: { Label("重载", systemImage: "arrow.clockwise") }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.clockwise").font(.system(size: 9, weight: .bold))
+                    Text("重载").font(.system(size: 11, weight: .medium))
+                }
+            }
+            .buttonStyle(TFGhostButtonStyle())
+
+            Button {
+                showAdd = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "plus").font(.system(size: 9, weight: .bold))
+                    Text("添加规则").font(.system(size: 11, weight: .semibold))
+                }
+            }
+            .buttonStyle(TFPrimaryButtonStyle())
         }
-        .padding(.horizontal, 16).padding(.vertical, 10)
+        .padding(.horizontal, 20).padding(.vertical, 11)
     }
 
     private var ruleList: some View {
@@ -76,13 +101,15 @@ struct RulesView: View {
                     }
                 }
                 .listStyle(.inset)
+                .scrollContentBackground(.hidden)
+                .padding(.vertical, 6)
             }
         }
     }
 
     private var sidePanel: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 Card(title: "策略组", icon: "square.stack.3d.up") {
                     if engine.profile.groups.isEmpty {
                         Text("当前配置没有策略组").font(.caption).foregroundStyle(.secondary)
@@ -134,15 +161,15 @@ struct RulesView: View {
             }
             .padding(14)
         }
-        .background(.background.opacity(0.35))
+        .background(TF.panel.opacity(0.35))
     }
 
     private func color(for type: OutboundType) -> Color {
         switch type {
-        case .direct: return .green
-        case .reject: return .red
-        case .http, .socks5: return .blue
-        case .shadowsocks, .trojan: return .purple
+        case .direct: return TF.mint
+        case .reject: return TF.danger
+        case .http, .socks5: return TF.accent
+        case .shadowsocks, .trojan: return TF.violet
         }
     }
 }
@@ -152,14 +179,24 @@ struct RuleRow: View {
     var rule: Rule
     var body: some View {
         HStack(spacing: 10) {
-            Text("\(index)").font(.caption2.monospaced()).foregroundStyle(.tertiary).frame(width: 30, alignment: .trailing)
+            Text("\(index)")
+                .font(TFFont.mono(9.5))
+                .foregroundStyle(TF.textTertiary)
+                .frame(width: 34, alignment: .trailing)
             Badge(text: label, color: color)
-            Text(rule.value).font(.callout.monospaced()).lineLimit(1)
-            if rule.noResolve { Badge(text: "no-resolve", color: .gray) }
+            Text(rule.value)
+                .font(TFFont.mono(11))
+                .foregroundStyle(TF.text)
+                .lineLimit(1)
+            if rule.noResolve { Badge(text: "no-resolve", color: TF.textTertiary) }
             Spacer()
-            Text(rule.policy).font(.caption.weight(.medium)).foregroundStyle(policyColor)
+            Text(rule.policy)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(policyColor)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 5)
+        .padding(.horizontal, 4)
+        .contentShape(Rectangle())
     }
 
     private var label: String {
@@ -182,18 +219,18 @@ struct RuleRow: View {
     }
     private var color: Color {
         switch rule.kind {
-        case .match: return .orange
-        case .ruleSet: return .purple
-        case .processName: return .teal
-        case .geoIP, .ipCIDR, .ipCIDR6, .srcIPCIDR: return .indigo
-        default: return .blue
+        case .match: return TF.amber
+        case .ruleSet: return TF.violet
+        case .processName: return TF.mint
+        case .geoIP, .ipCIDR, .ipCIDR6, .srcIPCIDR: return TF.accent
+        default: return TF.accent
         }
     }
     private var policyColor: Color {
         let p = rule.policy.uppercased()
-        if p == "REJECT" { return .red }
-        if p == "DIRECT" { return .green }
-        return .accentColor
+        if p == "REJECT" { return TF.danger }
+        if p == "DIRECT" { return TF.mint }
+        return TF.violet
     }
 }
 
@@ -217,7 +254,14 @@ struct AddRuleSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("添加分流规则").font(.title3.weight(.semibold))
+            HStack(spacing: 8) {
+                Image(systemName: "plus.square.on.square")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(TF.accent)
+                Text("添加分流规则")
+                    .font(TFFont.display(15, weight: .bold))
+                    .foregroundStyle(TF.text)
+            }
             LabeledField(label: "类型") {
                 Picker("", selection: $kind) {
                     ForEach(RuleKind.allCases, id: \.self) { k in
@@ -239,18 +283,21 @@ struct AddRuleSheet: View {
             HStack {
                 Spacer()
                 Button("取消", action: onCancel).keyboardShortcut(.cancelAction)
+                    .buttonStyle(TFGhostButtonStyle())
                 Button("添加") {
                     let raw = "\(kind.rawValue.uppercased()),\(value),\(policy)" + (noResolve ? ",no-resolve" : "")
                     let rule = Rule(kind: kind, value: value, policy: policy,
                                     modifiers: noResolve ? ["no-resolve"] : [], raw: raw)
                     onAdd(rule)
                 }
+                .buttonStyle(TFPrimaryButtonStyle())
                 .keyboardShortcut(.defaultAction)
                 .disabled(value.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
-        .padding(20)
-        .frame(width: 460)
+        .padding(22)
+        .frame(width: 470)
+        .background(TF.panelSolid)
     }
 
     private var placeholder: String {

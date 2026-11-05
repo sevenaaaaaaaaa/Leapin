@@ -18,59 +18,94 @@ struct AdBlockView: View {
             VStack(spacing: 16) {
                 HStack(spacing: 12) {
                     StatTile(icon: "hand.raised.fill", title: "过滤规则",
-                             value: "\(engine.adblockRuleCount)", tint: .red)
+                             value: "\(engine.adblockRuleCount)", tint: TF.danger,
+                             caption: "ABP / hosts 规则总数")
                     StatTile(icon: "nosign", title: "已拦截请求",
-                             value: "\(engine.stats.blocked)", tint: .orange)
+                             value: "\(engine.stats.blocked)", tint: TF.amber,
+                             caption: "本次会话累计")
                     StatTile(icon: "eye.slash", title: "元素隐藏",
-                             value: engine.profile.adblock.cosmeticFiltering ? "开" : "关", tint: .purple)
+                             value: engine.profile.adblock.cosmeticFiltering ? "已开启" : "关闭", tint: TF.violet,
+                             caption: "注入 CSS 隐藏规则")
                 }
 
                 Card(title: "去广告引擎", subtitle: engine.adblockActive ? "运行中" : "未加载", icon: "hand.raised") {
-                    Toggle(isOn: Binding(
-                        get: { engine.profile.adblock.enabled },
-                        set: { engine.setAdBlockEnabled($0) }
-                    )) {
-                        Text("启用广告与跟踪器拦截").font(.callout)
+                    HStack(spacing: 12) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                .fill(engine.profile.adblock.enabled ? TF.danger.opacity(0.14) : TF.stroke.opacity(0.6))
+                            Image(systemName: engine.profile.adblock.enabled ? "hand.raised.fill" : "hand.raised.slash")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(engine.profile.adblock.enabled ? TF.danger : TF.textTertiary)
+                        }
+                        .frame(width: 34, height: 34)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("启用广告与跟踪器拦截")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(TF.text)
+                            Text("关闭后所有域名直接放行，规则分流仍然生效")
+                                .font(.system(size: 10))
+                                .foregroundStyle(TF.textTertiary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: Binding(
+                            get: { engine.profile.adblock.enabled },
+                            set: { engine.setAdBlockEnabled($0) }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
                     }
-                    .toggleStyle(.switch)
 
-                    HStack(spacing: 16) {
-                        Toggle("跟踪器名单", isOn: Binding(
-                            get: { engine.profile.adblock.blockTrackers },
-                            set: { v in engine.updateProfile(restart: true) { $0.adblock.blockTrackers = v } }
-                        ))
-                        Toggle("hosts 语法", isOn: Binding(
-                            get: { engine.profile.adblock.hostsBlocking },
-                            set: { v in engine.updateProfile(restart: true) { $0.adblock.hostsBlocking = v } }
-                        ))
-                        Toggle("元素隐藏", isOn: Binding(
-                            get: { engine.profile.adblock.cosmeticFiltering },
-                            set: { v in engine.updateProfile(restart: false) { $0.adblock.cosmeticFiltering = v } }
-                        ))
-                    }
-                    .toggleStyle(.switch).controlSize(.small).font(.caption)
+                    TFDivider().opacity(0.6)
 
-                    if !engine.profile.adblock.enabled {
-                        Text("关闭后所有域名直接放行，规则分流仍然生效。").font(.caption).foregroundStyle(.secondary)
+                    HStack(spacing: 18) {
+                        subToggle("跟踪器名单", engine.profile.adblock.blockTrackers) { v in
+                            engine.updateProfile(restart: true) { $0.adblock.blockTrackers = v }
+                        }
+                        subToggle("hosts 语法", engine.profile.adblock.hostsBlocking) { v in
+                            engine.updateProfile(restart: true) { $0.adblock.hostsBlocking = v }
+                        }
+                        subToggle("元素隐藏", engine.profile.adblock.cosmeticFiltering) { v in
+                            engine.updateProfile(restart: false) { $0.adblock.cosmeticFiltering = v }
+                        }
+                        Spacer(minLength: 0)
                     }
                 }
 
                 Card(title: "拦截测试", subtitle: "输入域名验证是否命中广告规则", icon: "testtube.2") {
-                    HStack {
-                        TextField("doubleclick.net", text: $probe)
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit(run)
-                        Button("检查", action: run).disabled(probe.isEmpty)
+                    HStack(spacing: 8) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 10))
+                                .foregroundStyle(TF.textTertiary)
+                            TextField("doubleclick.net", text: $probe)
+                                .textFieldStyle(.plain)
+                                .font(TFFont.mono(11))
+                                .onSubmit(run)
+                        }
+                        .padding(.horizontal, 9).padding(.vertical, 6)
+                        .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+
+                        Button("检查", action: run)
+                            .buttonStyle(TFPrimaryButtonStyle())
+                            .disabled(probe.isEmpty)
                     }
                     if let result {
                         HStack(spacing: 8) {
                             Image(systemName: result.blocked ? "xmark.octagon.fill" : "checkmark.seal.fill")
-                                .foregroundStyle(result.blocked ? .red : .green)
-                            Text(result.blocked ? "已拦截" : "放行").font(.callout.weight(.medium))
+                                .foregroundStyle(result.blocked ? TF.danger : TF.mint)
+                            Text(result.blocked ? "已拦截" : "放行")
+                                .font(.system(size: 11.5, weight: .semibold))
+                                .foregroundStyle(TF.text)
                             if let reason = result.reason {
-                                Text(reason).font(.caption.monospaced()).foregroundStyle(.secondary)
+                                Text(reason)
+                                    .font(TFFont.mono(10))
+                                    .foregroundStyle(TF.textSecondary)
                             }
                         }
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(TF.stroke.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                     }
                 }
 
@@ -96,16 +131,24 @@ struct AdBlockView: View {
                     .font(.caption).foregroundStyle(.secondary)
             } else {
                 ForEach(engine.profile.adblock.blockLists, id: \.self) { item in
-                    HStack {
-                        Image(systemName: item.hasPrefix("http") ? "link" : "doc")
-                            .font(.caption).foregroundStyle(.secondary)
-                        Text(item).font(.caption.monospaced()).lineLimit(1).truncationMode(.middle)
-                        Spacer()
+                    HStack(spacing: 8) {
+                        Image(systemName: item.hasPrefix("http") ? "link" : "doc.text")
+                            .font(.system(size: 10))
+                            .foregroundStyle(TF.accent)
+                        Text(item)
+                            .font(TFFont.mono(10))
+                            .foregroundStyle(TF.text)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: 8)
                         Button {
                             engine.updateProfile(restart: true) { $0.adblock.blockLists.removeAll { $0 == item } }
-                        } label: { Image(systemName: "minus.circle") }
-                            .buttonStyle(.borderless)
+                        } label: { Image(systemName: "minus.circle.fill") }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(TF.textTertiary)
                     }
+                    .padding(.vertical, 4)
+                    TFDivider().opacity(0.5)
                 }
             }
             Text("支持 ABP（||domain^、@@ 例外、$third-party）与 hosts 行。规则集/名单在启动时加载，10 万条以内可秒级完成。")
@@ -117,10 +160,11 @@ struct AdBlockView: View {
     private var allowList: some View {
         Card(title: "白名单", subtitle: "每行一个域名，优先级最高", icon: "checkmark.shield") {
             TextEditor(text: $allowText)
-                .font(.caption.monospaced())
-                .frame(height: 150)
+                .font(TFFont.mono(10.5))
+                .frame(height: 156)
                 .scrollContentBackground(.hidden)
-                .background(.quaternary.opacity(0.2), in: RoundedRectangle(cornerRadius: 8))
+                .padding(8)
+                .background(TF.stroke.opacity(0.4), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             HStack {
                 Spacer()
                 Button("保存白名单") {
@@ -129,11 +173,22 @@ struct AdBlockView: View {
                         .filter { !$0.isEmpty }
                     engine.updateProfile(restart: true) { $0.adblock.allowList = list }
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
+                .buttonStyle(TFPrimaryButtonStyle())
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func subToggle(_ label: String, _ isOn: Bool, set: @escaping (Bool) -> Void) -> some View {
+        HStack(spacing: 6) {
+            Toggle("", isOn: Binding(get: { isOn }, set: set))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+            Text(label)
+                .font(.system(size: 10.5))
+                .foregroundStyle(isOn ? TF.textSecondary : TF.textTertiary)
+        }
     }
 
     private func run() {

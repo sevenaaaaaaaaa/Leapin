@@ -27,11 +27,24 @@ struct CaptureView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbar
-            Divider()
+            Rectangle().fill(TF.stroke).frame(height: 1)
             HSplitView {
-                list.frame(minWidth: 380)
-                detail.frame(minWidth: 380)
+                list
+                    .frame(minWidth: 380)
+                    .background(TF.panel, in: RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: TF.radius, style: .continuous).strokeBorder(TF.stroke, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
+                    .padding(7)
+                detail
+                    .frame(minWidth: 380)
+                    .background(TF.panel, in: RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: TF.radius, style: .continuous).strokeBorder(TF.stroke, lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
+                    .padding(7)
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 14)
+            .padding(.bottom, 18)
         }
         .navigationTitle("抓包")
         .alert("HTTPS 解密需要信任证书", isPresented: $showMITMWarning) {
@@ -45,31 +58,53 @@ struct CaptureView: View {
     private var toolbar: some View {
         HStack(spacing: 10) {
             HStack(spacing: 6) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("过滤 URL / 主机", text: $search).textFieldStyle(.plain)
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 10))
+                    .foregroundStyle(TF.textTertiary)
+                TextField("过滤 URL / 主机", text: $search)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 11.5))
             }
-            .padding(6)
-            .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 7))
+            .padding(.horizontal, 9).padding(.vertical, 6)
+            .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .frame(maxWidth: 300)
 
-            Text("\(engine.captures.count) 条").font(.caption).foregroundStyle(.secondary)
+            Text("\(engine.captures.count) 条")
+                .font(TFFont.num(10.5, weight: .medium))
+                .foregroundStyle(TF.textTertiary)
             Spacer()
 
-            Toggle("HTTPS 解密", isOn: Binding(
+            Toggle(isOn: Binding(
                 get: { engine.profile.general.mitmEnabled },
                 set: { enabled in
                     if enabled { showMITMWarning = true }
                     engine.setMITMEnabled(enabled)
                 }
-            ))
-            .toggleStyle(.switch).controlSize(.small)
+            )) {
+                Text("HTTPS 解密").font(.system(size: 11))
+            }
+            .toggleStyle(.switch)
+            .controlSize(.mini)
 
-            Button { exportHAR() } label: { Label("导出 HAR", systemImage: "square.and.arrow.up") }
-                .disabled(engine.captures.isEmpty)
-            Button(role: .destructive) { engine.clearFlows() } label: { Label("清空", systemImage: "trash") }
-                .disabled(engine.captures.isEmpty && engine.flows.isEmpty)
+            Button { exportHAR() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "square.and.arrow.up").font(.system(size: 9, weight: .bold))
+                    Text("导出 HAR").font(.system(size: 11, weight: .medium))
+                }
+            }
+            .buttonStyle(TFGhostButtonStyle())
+            .disabled(engine.captures.isEmpty)
+
+            Button { engine.clearFlows() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "trash").font(.system(size: 9, weight: .bold))
+                    Text("清空").font(.system(size: 11, weight: .medium))
+                }
+            }
+            .buttonStyle(TFGhostButtonStyle())
+            .disabled(engine.captures.isEmpty && engine.flows.isEmpty)
         }
-        .padding(.horizontal, 16).padding(.vertical, 10)
+        .padding(.horizontal, 20).padding(.vertical, 11)
     }
 
     private var list: some View {

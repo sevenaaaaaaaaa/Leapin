@@ -25,74 +25,146 @@ struct SSHView: View {
     var body: some View {
         VStack(spacing: 0) {
             form
-            Divider()
             terminal
         }
-        .navigationTitle("SSH")
         .onDisappear {
             Task { await session.disconnect() }
         }
     }
 
     private var form: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                TextField("主机名或 IP", text: $host)
-                    .textFieldStyle(.roundedBorder).frame(width: 200)
-                TextField("端口", text: $port)
-                    .textFieldStyle(.roundedBorder).frame(width: 70)
-                TextField("用户名", text: $user)
-                    .textFieldStyle(.roundedBorder).frame(width: 130)
-
-                Picker("", selection: $useKey) {
-                    Text("密码").tag(false)
-                    Text("密钥").tag(true)
+        Card(title: "连接", subtitle: "支持密码或私钥，密码经 SSH_ASKPASS 传入，不上命令行", icon: "terminal") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    fieldLabel("主机")
+                    TextField("主机名或 IP", text: $host)
+                        .textFieldStyle(.plain)
+                        .font(TFFont.mono(11.5))
+                        .padding(.horizontal, 9).padding(.vertical, 6)
+                        .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .frame(minWidth: 180)
+                    fieldLabel("端口")
+                    TextField("22", text: $port)
+                        .textFieldStyle(.plain)
+                        .font(TFFont.mono(11.5))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 9).padding(.vertical, 6)
+                        .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .frame(width: 62)
+                    fieldLabel("用户")
+                    TextField("用户名", text: $user)
+                        .textFieldStyle(.plain)
+                        .font(TFFont.mono(11.5))
+                        .padding(.horizontal, 9).padding(.vertical, 6)
+                        .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .frame(width: 130)
                 }
-                .pickerStyle(.segmented).labelsHidden().frame(width: 120)
 
-                if useKey {
-                    TextField("私钥路径", text: $keyPath).textFieldStyle(.roundedBorder)
-                    Button("选择") { pickKey() }
-                } else {
-                    SecureField("密码", text: $password).textFieldStyle(.roundedBorder).frame(width: 160)
-                    Toggle("记住", isOn: $remember).toggleStyle(.checkbox).font(.caption)
-                }
+                HStack(spacing: 10) {
+                    Picker("", selection: $useKey) {
+                        Text("密码").tag(false)
+                        Text("密钥").tag(true)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 120)
 
-                if connected {
-                    Button(role: .destructive) {
-                        Task {
-                            await session.disconnect()
-                            connected = false
-                            output += "\n[已断开]\n"
+                    if useKey {
+                        TextField("私钥路径", text: $keyPath)
+                            .textFieldStyle(.plain)
+                            .font(TFFont.mono(11))
+                            .padding(.horizontal, 9).padding(.vertical, 6)
+                            .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        Button("选择…") { pickKey() }
+                            .buttonStyle(TFGhostButtonStyle())
+                    } else {
+                        SecureField("密码", text: $password)
+                            .textFieldStyle(.plain)
+                            .font(TFFont.mono(11))
+                            .padding(.horizontal, 9).padding(.vertical, 6)
+                            .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                            .frame(width: 180)
+                        Toggle("记住密码", isOn: $remember)
+                            .toggleStyle(.checkbox)
+                            .font(.system(size: 11))
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if connected {
+                        Button {
+                            Task {
+                                await session.disconnect()
+                                connected = false
+                                output += "\n[已断开]\n"
+                            }
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "bolt.slash").font(.system(size: 9, weight: .bold))
+                                Text("断开").font(.system(size: 11, weight: .semibold))
+                            }
                         }
-                    } label: { Label("断开", systemImage: "bolt.slash") }
-                } else {
-                    Button {
-                        connect()
-                    } label: { Label(connecting ? "连接中" : "连接", systemImage: "bolt.fill") }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(TFPrimaryButtonStyle(tint: TF.danger))
+                    } else {
+                        Button {
+                            connect()
+                        } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "bolt.fill").font(.system(size: 9, weight: .bold))
+                                Text(connecting ? "连接中…" : "连接").font(.system(size: 11, weight: .semibold))
+                            }
+                        }
+                        .buttonStyle(TFPrimaryButtonStyle())
                         .disabled(connecting || host.isEmpty)
+                    }
                 }
-            }
-            if let errorText {
-                Text(errorText).font(.caption).foregroundStyle(.red).lineLimit(2)
+
+                if let errorText {
+                    Text(errorText)
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(TF.danger)
+                        .lineLimit(2)
+                }
             }
         }
-        .padding(16)
+        .padding(.horizontal, 26)
+        .padding(.top, 16)
+    }
+
+    private func fieldLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10.5))
+            .foregroundStyle(TF.textTertiary)
     }
 
     private var terminal: some View {
         VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Circle().fill(Color(red: 1, green: 0.37, blue: 0.34)).frame(width: 9, height: 9)
+                Circle().fill(Color(red: 1, green: 0.74, blue: 0.18)).frame(width: 9, height: 9)
+                Circle().fill(Color(red: 0.16, green: 0.79, blue: 0.42)).frame(width: 9, height: 9)
+                Text(connected ? "\(user)@\(host):\(port)" : "ssh — 未连接")
+                    .font(TFFont.mono(10.5, weight: .medium))
+                    .foregroundStyle(Color(red: 0.62, green: 0.68, blue: 0.78))
+                    .padding(.leading, 6)
+                Spacer()
+                Text(connected ? "LIVE" : "IDLE")
+                    .font(TFFont.mono(8.5, weight: .bold))
+                    .tracking(1)
+                    .foregroundStyle(connected ? Color(red: 0.22, green: 0.88, blue: 0.62) : Color(red: 0.45, green: 0.50, blue: 0.58))
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .background(Color(red: 0.07, green: 0.09, blue: 0.13))
+
             ScrollViewReader { proxy in
                 ScrollView {
                     Text(clean(output.isEmpty ? "连接后在此显示终端输出。支持交互式 shell（ssh -tt）。\n" : output))
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(TFFont.mono(11.5))
+                        .foregroundStyle(Color(red: 0.78, green: 0.86, blue: 0.95))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(12)
+                        .padding(14)
                         .id("bottom")
                 }
-                .background(Color(nsColor: .textBackgroundColor))
+                .background(Color(red: 0.04, green: 0.055, blue: 0.08))
                 .onChange(of: output) { _, _ in
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
@@ -100,16 +172,25 @@ struct SSHView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             HStack(spacing: 8) {
-                Text("$").font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(.green)
-                TextField("输入命令，回车发送", text: $command)
+                Text("$")
+                    .font(TFFont.mono(12, weight: .bold))
+                    .foregroundStyle(Color(red: 0.22, green: 0.88, blue: 0.62))
+                TextField("", text: $command, prompt: Text("输入命令，回车发送").foregroundColor(Color(red: 0.42, green: 0.50, blue: 0.60)))
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(TFFont.mono(11.5))
+                    .foregroundStyle(Color(red: 0.85, green: 0.90, blue: 0.97))
                     .onSubmit(send)
                     .disabled(!connected)
             }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(.quaternary.opacity(0.25))
+            .padding(.horizontal, 14).padding(.vertical, 9)
+            .background(Color(red: 0.06, green: 0.075, blue: 0.11))
         }
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(TF.strokeStrong, lineWidth: 1))
+        .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
+        .padding(.horizontal, 26)
+        .padding(.top, 14)
+        .padding(.bottom, 20)
     }
 
     private func connect() {

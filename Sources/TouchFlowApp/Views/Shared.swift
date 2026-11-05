@@ -27,6 +27,7 @@ enum Fmt {
     }
 }
 
+/// Standard content panel with an optional header.
 struct Card<Content: View>: View {
     var title: String
     var subtitle: String? = nil
@@ -34,52 +35,78 @@ struct Card<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                if let icon { Image(systemName: icon).foregroundStyle(.tint) }
-                Text(title).font(.headline)
-                if let subtitle {
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
+        VStack(alignment: .leading, spacing: 14) {
+            if !title.isEmpty {
+                SectionHeader(title: title, subtitle: subtitle, icon: icon)
             }
             content()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.quaternary.opacity(0.25)))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.quaternary.opacity(0.45)))
+        .tfPanel()
     }
 }
 
+/// Compact KPI tile used across the dashboard and module pages.
 struct StatTile: View {
     var icon: String
     var title: String
     var value: String
-    var tint: Color = .accentColor
+    var tint: Color = TF.accent
+    var caption: String? = nil
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: icon).font(.caption).foregroundStyle(tint)
-                Text(title).font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(tint)
+                    .frame(width: 20, height: 20)
+                    .background(tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                Text(title)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(TF.textSecondary)
+                Spacer(minLength: 0)
             }
-            Text(value).font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
+            Text(value)
+                .font(TFFont.num(24, weight: .bold))
+                .foregroundStyle(TF.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            if let caption {
+                Text(caption)
+                    .font(.system(size: 10))
+                    .foregroundStyle(TF.textTertiary)
+                    .lineLimit(1)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.quaternary.opacity(0.22)))
+        .padding(.horizontal, 13)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(TF.panel)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(TF.stroke, lineWidth: 1)
+        )
     }
 }
 
 struct Badge: View {
     var text: String
-    var color: Color = .secondary
+    var color: Color = TF.textSecondary
     var body: some View {
         Text(text)
-            .font(.system(size: 10, weight: .medium))
-            .padding(.horizontal, 6).padding(.vertical, 2)
-            .background(color.opacity(0.16), in: Capsule())
+            .font(.system(size: 9.5, weight: .semibold))
+            .tracking(0.2)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2.5)
+            .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .strokeBorder(color.opacity(0.18), lineWidth: 0.5)
+            )
             .foregroundStyle(color)
     }
 }
@@ -88,12 +115,17 @@ struct EmptyHint: View {
     var icon: String
     var text: String
     var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon).font(.system(size: 26)).foregroundStyle(.tertiary)
-            Text(text).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        VStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 24, weight: .light))
+                .foregroundStyle(TF.textTertiary)
+            Text(text)
+                .font(.system(size: 11.5))
+                .foregroundStyle(TF.textTertiary)
+                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(24)
+        .padding(26)
     }
 }
 
@@ -101,29 +133,49 @@ struct FlowRow: View {
     var flow: FlowEvent
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: flow.blockedBy != nil ? "nosign" : (flow.phase == .closed ? "arrow.left.arrow.right" : "bolt.horizontal"))
-                .foregroundStyle(flow.blockedBy != nil ? .red : .green)
-                .frame(width: 16)
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(accent.opacity(0.12))
+                Image(systemName: flow.blockedBy != nil ? "nosign" : (flow.phase == .closed ? "arrow.left.arrow.right" : "bolt.horizontal.fill"))
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(accent)
+            }
+            .frame(width: 22, height: 22)
+
             VStack(alignment: .leading, spacing: 2) {
-                Text(flow.host).font(.callout).lineLimit(1)
+                Text(flow.host)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(TF.text)
+                    .lineLimit(1)
                 HStack(spacing: 6) {
-                    Text(Fmt.clock(flow.timestamp)).font(.caption2).foregroundStyle(.tertiary)
+                    Text(Fmt.clock(flow.timestamp))
+                        .font(TFFont.mono(9.5))
+                        .foregroundStyle(TF.textTertiary)
                     if !flow.policy.isEmpty { Badge(text: flow.policy) }
                     if let rule = flow.matchedRule, !rule.isEmpty {
-                        Text(rule).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                        Text(rule)
+                            .font(TFFont.mono(9.5))
+                            .foregroundStyle(TF.textTertiary)
+                            .lineLimit(1)
                     }
                 }
             }
-            Spacer()
+            Spacer(minLength: 8)
             if flow.bytesIn + flow.bytesOut > 0 {
-                Text("\(Fmt.bytes(flow.bytesOut)) ↑ \(Fmt.bytes(flow.bytesIn)) ↓")
-                    .font(.caption2).foregroundStyle(.secondary).monospacedDigit()
+                Text("\(Fmt.bytes(flow.bytesOut)) ↑  \(Fmt.bytes(flow.bytesIn)) ↓")
+                    .font(TFFont.num(10, weight: .medium))
+                    .foregroundStyle(TF.textSecondary)
             }
             if let blocked = flow.blockedBy {
-                Badge(text: blocked == "adblock" ? "去广告" : "规则拦截", color: .red)
+                Badge(text: blocked == "adblock" ? "去广告" : "规则拦截", color: TF.danger)
             }
         }
-        .padding(.vertical, 3)
+        .padding(.vertical, 5)
+    }
+
+    private var accent: Color {
+        if flow.blockedBy != nil { return TF.danger }
+        return flow.phase == .closed ? TF.textTertiary : TF.mint
     }
 }
 
@@ -131,13 +183,16 @@ struct LabeledField<Content: View>: View {
     var label: String
     @ViewBuilder var content: () -> Content
     var body: some View {
-        HStack {
-            Text(label).font(.callout).foregroundStyle(.secondary).frame(width: 96, alignment: .leading)
+        HStack(alignment: .firstTextBaseline) {
+            Text(label)
+                .font(.system(size: 11.5))
+                .foregroundStyle(TF.textSecondary)
+                .frame(width: 104, alignment: .leading)
             content()
         }
     }
 }
 
 extension View {
-    func pagePadding() -> some View { padding(20) }
+    func pagePadding() -> some View { tfPage() }
 }

@@ -27,59 +27,158 @@ struct SettingsView: View {
     @State private var loaded = false
 
     var body: some View {
-        Form {
-            Section("代理端口") {
-                TextField("混合端口", text: $mixedPort)
-                TextField("HTTP 端口", text: $httpPort)
-                TextField("SOCKS5 端口", text: $socksPort)
-                Toggle("允许局域网设备连接（0.0.0.0）", isOn: $allowLAN)
-            }
-            Section("DNS") {
-                Picker("模式", selection: $dnsMode) {
-                    Text("系统 DNS").tag(DNSMode.system)
-                    Text("DNS over HTTPS").tag(DNSMode.doh)
-                    Text("DNS over TLS").tag(DNSMode.dot)
-                    Text("Fake-IP").tag(DNSMode.fakeIP)
+        ScrollView {
+            VStack(spacing: 16) {
+                HStack(alignment: .top, spacing: 16) {
+                    VStack(spacing: 16) {
+                        proxySection
+                        dnsSection
+                    }
+                    VStack(spacing: 16) {
+                        captureSection
+                        advancedSection
+                    }
                 }
-                TextField("监听端口", text: $dnsPort)
-                TextField("上游（逗号分隔）", text: $upstreams)
-                TextField("缓存 TTL（秒）", text: $cacheTTL)
-                Toggle("劫持 53 端口查询到本地 DNS", isOn: $dnsHijack)
+                saveBar
             }
-            Section("抓包与解密") {
-                Toggle("启用 HTTP 抓包", isOn: $captureEnabled)
-                TextField("MITM 主机（逗号分隔，* 为全部）", text: $mitmHosts)
-                HStack {
-                    Text("CA 证书：\(engine.store.root.appendingPathComponent("ca/touchflow-ca.pem").path)")
-                        .font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
-                    Spacer()
-                    Button("打开 CA") { app.installCA() }.controlSize(.small)
-                }
-            }
-            Section("高级") {
-                Picker("日志级别", selection: $logLevel) {
-                    ForEach(LogLevel.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                TextField("系统代理绕过（逗号分隔）", text: $bypass)
-                HStack {
-                    Text("数据目录：\(engine.store.root.path)").font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(1)
-                    Spacer()
-                    Button("打开") { NSWorkspace.shared.open(engine.store.root) }.controlSize(.small)
-                }
-            }
-            Section {
-                HStack {
-                    Spacer()
-                    Button("保存并重启代理") { save() }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!loaded)
-                }
-            }
+            .pagePadding()
         }
-        .formStyle(.grouped)
-        .navigationTitle("设置")
         .onAppear(perform: load)
     }
+
+    // MARK: Sections
+
+    private var proxySection: some View {
+        Card(title: "代理端口", subtitle: "本地监听，修改后需重启代理", icon: "network") {
+            VStack(spacing: 8) {
+                FieldRow(label: "混合端口", hint: "HTTP + SOCKS5") {
+                    NumField(text: $mixedPort, placeholder: "7890")
+                }
+                FieldRow(label: "HTTP 端口", hint: "仅 HTTP") {
+                    NumField(text: $httpPort, placeholder: "7891")
+                }
+                FieldRow(label: "SOCKS5 端口", hint: "仅 SOCKS5") {
+                    NumField(text: $socksPort, placeholder: "7892")
+                }
+                ToggleRow(label: "允许局域网设备连接", subtitle: "绑定 0.0.0.0，其他设备可显式指向本机", isOn: $allowLAN)
+                    .padding(.top, 2)
+            }
+        }
+    }
+
+    private var dnsSection: some View {
+        Card(title: "DNS", subtitle: "解析策略与缓存", icon: "globe.asia.australia") {
+            VStack(spacing: 8) {
+                FieldRow(label: "模式") {
+                    Picker("", selection: $dnsMode) {
+                        Text("系统 DNS").tag(DNSMode.system)
+                        Text("DoH").tag(DNSMode.doh)
+                        Text("DoT").tag(DNSMode.dot)
+                        Text("Fake-IP").tag(DNSMode.fakeIP)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .controlSize(.small)
+                    .fixedSize()
+                }
+                FieldRow(label: "监听端口") { NumField(text: $dnsPort, placeholder: "5354") }
+                FieldRow(label: "上游", hint: "逗号分隔") {
+                    PlainField(text: $upstreams, placeholder: "https://1.1.1.1/dns-query")
+                }
+                FieldRow(label: "缓存 TTL", hint: "秒") { NumField(text: $cacheTTL, placeholder: "300") }
+                ToggleRow(label: "劫持 53 端口查询", subtitle: "拦截发往本地 53 的明文查询", isOn: $dnsHijack)
+                    .padding(.top, 2)
+            }
+        }
+    }
+
+    private var captureSection: some View {
+        Card(title: "抓包与解密", subtitle: "MITM 仅对匹配主机生效", icon: "waveform.path.ecg") {
+            VStack(spacing: 8) {
+                ToggleRow(label: "启用 HTTP 抓包", subtitle: "记录请求/响应头与可读 body", isOn: $captureEnabled)
+                FieldRow(label: "MITM 主机", hint: "* 表示全部") {
+                    PlainField(text: $mitmHosts, placeholder: "*.example.com, api.test.com")
+                }
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "key.horizontal")
+                            .font(.system(size: 10))
+                            .foregroundStyle(TF.amber)
+                        Text("根证书位置")
+                            .font(.system(size: 11))
+                            .foregroundStyle(TF.textSecondary)
+                        Spacer()
+                        Button("打开 CA") { app.installCA() }
+                            .buttonStyle(TFGhostButtonStyle())
+                    }
+                    Text(engine.store.root.appendingPathComponent("ca/touchflow-ca.pem").path)
+                        .font(TFFont.mono(9.5))
+                        .foregroundStyle(TF.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
+                .padding(10)
+                .background(TF.stroke.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+        }
+    }
+
+    private var advancedSection: some View {
+        Card(title: "高级", subtitle: "日志与系统代理", icon: "slider.horizontal.3") {
+            VStack(spacing: 8) {
+                FieldRow(label: "日志级别") {
+                    Picker("", selection: $logLevel) {
+                        ForEach(LogLevel.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .controlSize(.small)
+                    .fixedSize()
+                }
+                FieldRow(label: "代理绕过", hint: "逗号分隔") {
+                    PlainField(text: $bypass, placeholder: "*.local, 169.254/16")
+                }
+                HStack(spacing: 6) {
+                    Text("数据目录")
+                        .font(.system(size: 11))
+                        .foregroundStyle(TF.textSecondary)
+                    Spacer()
+                    Button("在 Finder 中打开") {
+                        NSWorkspace.shared.open(engine.store.root)
+                    }
+                    .buttonStyle(TFGhostButtonStyle())
+                }
+                .padding(.top, 2)
+                Text(engine.store.root.path)
+                    .font(TFFont.mono(9.5))
+                    .foregroundStyle(TF.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    private var saveBar: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 11))
+                .foregroundStyle(TF.textTertiary)
+            Text("保存后如代理正在运行会自动重启以应用新设置。")
+                .font(.system(size: 10.5))
+                .foregroundStyle(TF.textTertiary)
+            Spacer()
+            Button("保存并重启代理") { save() }
+                .buttonStyle(TFPrimaryButtonStyle())
+                .disabled(!loaded)
+        }
+        .padding(.horizontal, 4)
+        .padding(.bottom, 6)
+    }
+
+    // MARK: Load / save
 
     private func load() {
         guard !loaded else { return }
@@ -130,5 +229,91 @@ struct SettingsView: View {
             Task { await engine.start() }
         }
         app.toast = "设置已保存"
+    }
+}
+
+// MARK: - Row primitives
+
+private struct FieldRow<Content: View>: View {
+    let label: String
+    var hint: String? = nil
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(TF.text)
+                if let hint {
+                    Text(hint)
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(TF.textTertiary)
+                }
+            }
+            Spacer(minLength: 12)
+            content()
+        }
+        .padding(.vertical, 3)
+    }
+}
+
+private struct ToggleRow: View {
+    let label: String
+    var subtitle: String? = nil
+    @Binding var isOn: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(TF.text)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(TF.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 12)
+            Toggle("", isOn: $isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+        }
+        .padding(.vertical, 3)
+    }
+}
+
+private struct NumField: View {
+    @Binding var text: String
+    var placeholder: String
+
+    var body: some View {
+        TextField("", text: $text, prompt: Text(placeholder).foregroundColor(TF.textTertiary))
+            .textFieldStyle(.plain)
+            .font(TFFont.mono(11.5, weight: .medium))
+            .multilineTextAlignment(.trailing)
+            .frame(width: 86)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+    }
+}
+
+private struct PlainField: View {
+    @Binding var text: String
+    var placeholder: String
+
+    var body: some View {
+        TextField("", text: $text, prompt: Text(placeholder).foregroundColor(TF.textTertiary))
+            .textFieldStyle(.plain)
+            .font(TFFont.mono(10.5))
+            .multilineTextAlignment(.trailing)
+            .frame(minWidth: 160, maxWidth: 260)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
     }
 }

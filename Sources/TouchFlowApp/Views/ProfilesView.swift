@@ -17,19 +17,46 @@ struct ProfilesView: View {
         ScrollView {
             VStack(spacing: 16) {
                 Card(title: "配置管理", subtitle: "Clash YAML / Surge conf / TouchFlow JSON", icon: "doc.on.doc") {
-                    HStack(spacing: 10) {
-                        Button { app.showImporter = true } label: { Label("导入配置", systemImage: "square.and.arrow.down") }
-                            .buttonStyle(.borderedProminent)
+                    HStack(spacing: 8) {
+                        Button { app.showImporter = true } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "square.and.arrow.down").font(.system(size: 9, weight: .bold))
+                                Text("导入配置").font(.system(size: 11, weight: .semibold))
+                            }
+                        }
+                        .buttonStyle(TFPrimaryButtonStyle())
+
                         Menu {
                             Button("Clash YAML") { app.exportProfile(format: .clash) }
                             Button("Surge conf") { app.exportProfile(format: .surge) }
                             Button("TouchFlow JSON") { app.exportProfile(format: .json) }
-                        } label: { Label("导出当前配置", systemImage: "square.and.arrow.up") }
-                        Button {
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.and.arrow.up").font(.system(size: 9, weight: .bold))
+                                Text("导出").font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundStyle(TF.text)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(TF.stroke.opacity(0.55), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .fixedSize()
+
+                        Button("打开目录") {
                             NSWorkspace.shared.open(engine.store.root)
-                        } label: { Label("打开配置目录", systemImage: "folder") }
+                        }
+                        .buttonStyle(TFGhostButtonStyle())
+
                         Spacer()
-                        Text("当前：\(engine.profile.name)").font(.caption).foregroundStyle(.secondary)
+                        HStack(spacing: 5) {
+                            Circle().fill(TF.mint).frame(width: 5, height: 5)
+                            Text("当前：\(engine.profile.name)")
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(TF.textSecondary)
+                        }
+                        .padding(.horizontal, 9).padding(.vertical, 5)
+                        .background(TF.stroke.opacity(0.35), in: Capsule())
                     }
                     Text("导入会自动识别格式并转换为内部模型；策略组、规则、DNS、去广告列表都会保留。导出支持 round-trip，便于在其他工具中使用。")
                         .font(.caption2).foregroundStyle(.tertiary)
@@ -40,14 +67,24 @@ struct ProfilesView: View {
                         EmptyHint(icon: "doc", text: "还没有配置").frame(height: 120)
                     } else {
                         ForEach(metas) { meta in
-                            HStack(spacing: 10) {
-                                Image(systemName: meta.id == engine.profile.id ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(meta.id == engine.profile.id ? Color.accentColor : .secondary)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(meta.name).font(.callout.weight(.medium))
-                                    Text("\(meta.ruleCount) 条规则 · \(Fmt.day(meta.updatedAt))").font(.caption2).foregroundStyle(.secondary)
+                            HStack(spacing: 11) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                        .fill(meta.id == engine.profile.id ? TF.accent.opacity(0.15) : TF.stroke.opacity(0.45))
+                                    Image(systemName: meta.id == engine.profile.id ? "checkmark" : "doc.text")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundStyle(meta.id == engine.profile.id ? TF.accent : TF.textTertiary)
                                 }
-                                Spacer()
+                                .frame(width: 26, height: 26)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(meta.name)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(TF.text)
+                                    Text("\(meta.ruleCount) 条规则 · \(Fmt.day(meta.updatedAt))")
+                                        .font(TFFont.mono(9.5))
+                                        .foregroundStyle(TF.textTertiary)
+                                }
+                                Spacer(minLength: 8)
                                 if meta.id != engine.profile.id {
                                     Button("启用") {
                                         Task {
@@ -55,17 +92,21 @@ struct ProfilesView: View {
                                             refresh()
                                         }
                                     }
-                                    .buttonStyle(.bordered).controlSize(.small)
+                                    .buttonStyle(TFGhostButtonStyle())
                                 } else {
-                                    Badge(text: "使用中", color: .accentColor)
+                                    Badge(text: "使用中", color: TF.mint)
                                 }
                                 Button(role: .destructive) {
                                     pendingDelete = meta
-                                } label: { Image(systemName: "trash") }
-                                    .buttonStyle(.borderless)
+                                } label: {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(TF.textTertiary)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .padding(.vertical, 4)
-                            Divider().opacity(0.4)
+                            .padding(.vertical, 6)
+                            TFDivider().opacity(0.5)
                         }
                     }
                 }

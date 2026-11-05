@@ -89,7 +89,20 @@ tfctl proxy status  # 系统代理：关闭
 | 长时间稳定性（数小时/大流量） | 未验证 | 需要真实使用 |
 | 分流命中真实 App | 部分验证 | `tfctl rules` 已验证域名→策略链路；进程名（PROCESS-NAME）需真实进程流量 |
 
-## 7. 复现
+## 7. 界面（视觉重构后）
+
+| 检查 | 结果 |
+| --- | --- |
+| `swift build --product TouchFlowApp` | 0 error |
+| 逐页截图（10 页） | 全部渲染正常：总览 / 分流规则 / 去广告 / 抓包 / SSH / NAS / 智能学习 / 隐私 / 配置 / 设置 |
+| 浅色 / 深色 | 两套配色均检查（深色通过 `TF_APPEARANCE=dark` 启动验证） |
+| 视觉回归修复 | 主按钮渐变遮住文字、端口千分位、NAS 输入框图标重叠、抓包双栏无间隔、规则列表满出血 |
+| Release 包 | `dist/TouchFlow.app` 8.5MB，启动与页面切换正常 |
+
+界面结构：`Sources/TouchFlowApp/Design/Theme.swift`（令牌/背景/按钮/标题）+ `Views/Shared.swift`（Card/StatTile/Badge/FlowRow）
++ 各页面 View；调试可直接跳页：`defaults write com.touchflow.app startSection -string privacy`。
+
+## 8. 复现
 
 ```bash
 swift test                 # 95 个用例
