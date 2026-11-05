@@ -28,7 +28,20 @@ struct WindowAutosave: NSViewRepresentable {
             // 标题栏并入纸面：不显示标题文字，底色跟随内容，而不是系统的灰。
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
-            window.backgroundColor = NSColor(TF.bg)
+            // Liquid Glass 的窗口是材质，不是白纸：清掉底色让 behind-window
+            // 模糊采样桌面，再由 TFBackground 铺一层很薄的色相洗色保证对比度。
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            // SwiftUI 里放的 NSVisualEffectView 拿不到 behindWindow 采样（它不在
+            // 窗口根层），所以把材质装到窗口的 frame view 上，作为最底层。
+            if let frameView = window.contentView?.superview {
+                let fx = NSVisualEffectView(frame: frameView.bounds)
+                fx.material = .underWindowBackground
+                fx.blendingMode = .behindWindow
+                fx.state = .active
+                fx.autoresizingMask = [.width, .height]
+                frameView.addSubview(fx, positioned: .below, relativeTo: nil)
+            }
         }
         return view
     }

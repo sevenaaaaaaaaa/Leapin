@@ -145,14 +145,9 @@ struct DashboardView: View {
         }
         .padding(.horizontal, 26)
         .padding(.vertical, 20)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(TF.panel)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(TF.stroke, lineWidth: 1)
-        )
+        .tfGlass(radius: TFGlass.panelRadius,
+                 fallbackFill: TF.panel,
+                 shadow: 0.08)
         .overlay(alignment: .topLeading) {
             // A 2pt signal rule instead of a glow: the brand appears once, quietly.
             Capsule()

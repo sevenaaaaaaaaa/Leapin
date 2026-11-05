@@ -72,13 +72,11 @@ struct NASView: View {
                             .font(TFFont.mono(12))
                             .onSubmit(addManual)
                     }
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 12)
                     .frame(height: 30)
-                    .background(TF.panelSolid, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(TF.stroke, lineWidth: 1)
-                    )
+                    .tfGlass(in: Capsule(style: .continuous),
+                             fallbackFill: TF.panelSolid,
+                             fallbackMaterial: .thinMaterial)
                     .frame(width: 250)
 
                     Button("添加", action: addManual)
@@ -192,13 +190,11 @@ struct NASView: View {
                                 SecureField("密码", text: $password)
                                     .textFieldStyle(.plain)
                                     .font(.system(size: 13))
-                                    .padding(.horizontal, 10)
+                                    .padding(.horizontal, 12)
                                     .frame(width: 220, height: 30)
-                                    .background(TF.panelSolid, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                            .strokeBorder(TF.stroke, lineWidth: 1)
-                                    )
+                                    .tfGlass(in: Capsule(style: .continuous),
+                                             fallbackFill: TF.panelSolid,
+                                             fallbackMaterial: .thinMaterial)
                                 Toggle("记住（钥匙串）", isOn: $remember)
                                     .toggleStyle(.checkbox)
                                     .font(.system(size: 12))
@@ -312,13 +308,11 @@ struct NASView: View {
         TextField("", text: text, prompt: Text(placeholder).foregroundColor(TF.textTertiary))
             .textFieldStyle(.plain)
             .font(mono ? TFFont.mono(12) : .system(size: 13))
-            .padding(.horizontal, 10)
+            .padding(.horizontal, 12)
             .frame(width: 260, height: 30)
-            .background(TF.panelSolid, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(TF.stroke, lineWidth: 1)
-            )
+            .tfGlass(in: Capsule(style: .continuous),
+                     fallbackFill: TF.panelSolid,
+                     fallbackMaterial: .thinMaterial)
     }
 
     // MARK: Actions

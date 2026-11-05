@@ -65,9 +65,10 @@ struct RulesView: View {
             toolbar
             HStack(alignment: .top, spacing: 22) {
                 ruleList
-                    .background(TF.panel, in: RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: TF.radius, style: .continuous).strokeBorder(TF.stroke, lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: TFGlass.panelRadius, style: .continuous))
+                    .tfGlass(radius: TFGlass.panelRadius,
+                             fallbackFill: TF.panel,
+                             shadow: 0.06)
                 sidePanel.frame(width: 292)
             }
             .padding(.horizontal, 32)
@@ -143,7 +144,6 @@ struct RulesView: View {
             .buttonStyle(TFPrimaryButtonStyle())
         }
         .padding(.horizontal, 32).padding(.vertical, 13)
-        .background(TF.bg)
     }
 
     private var ruleList: some View {
@@ -561,7 +561,6 @@ struct AddRuleSheet: View {
         }
         .padding(24)
         .frame(width: 500)
-        .background(TF.panelSolid)
         .onAppear { DispatchQueue.main.async { valueFocused = true } }
     }
 

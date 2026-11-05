@@ -154,13 +154,11 @@ struct ProfilesView: View {
                                 .fixedSize()
                         }
                         .foregroundStyle(TF.text)
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 12)
                         .padding(.vertical, 6)
-                        .background(TF.panelSolid, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(TF.stroke, lineWidth: 1)
-                        )
+                        .tfGlass(in: Capsule(style: .continuous),
+                                 fallbackFill: TF.panelSolid,
+                                 fallbackMaterial: .thinMaterial)
                     }
                     .menuStyle(.borderlessButton)
                     .menuIndicator(.hidden)

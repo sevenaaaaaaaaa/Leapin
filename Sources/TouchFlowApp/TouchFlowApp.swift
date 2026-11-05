@@ -378,17 +378,12 @@ struct RootView: View {
                 TFBackground()
                 HStack(spacing: 0) {
                     SidebarView(compact: compact)
-                    Rectangle().fill(TF.stroke).frame(width: 1)
+                        .padding(.leading, 10)
+                        .padding(.top, 36)
+                        .padding(.bottom, 10)
                     VStack(spacing: 0) {
                         PageHeaderBar(compact: compact)
-                        Rectangle().fill(TF.stroke).frame(height: 1)
-                        ZStack {
-                            sectionContent
-                                .id(app.section ?? .dashboard)
-                                .transition(.opacity.combined(with: .offset(y: 6)))
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .tfAnimation(TFMotion.standard, value: app.section)
+                        pageContent
                     }
                 }
             }
@@ -441,6 +436,27 @@ struct RootView: View {
                 app.importProfile(url: url)
             }
         }
+    }
+
+    /// One glass container per page: panels blend with each other instead of
+    /// each spawning an independent material, which is both cheaper and the
+    /// behaviour Apple's guidance asks for.
+    @ViewBuilder private var pageContent: some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: 12) { loadedSection }
+        } else {
+            loadedSection
+        }
+    }
+
+    private var loadedSection: some View {
+        ZStack {
+            sectionContent
+                .id(app.section ?? .dashboard)
+                .transition(.opacity.combined(with: .offset(y: 6)))
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .tfAnimation(TFMotion.standard, value: app.section)
     }
 
     @ViewBuilder private var sectionContent: some View {
@@ -499,49 +515,57 @@ private struct SidebarView: View {
                 .padding(.horizontal, 14)
                 .padding(.bottom, 20)
 
-            // 按「域」分组而不是十个平铺页：工作区 → 代理 → 观测 → 工具 → 系统。
-            ForEach(Array(Self.groups.enumerated()), id: \.offset) { groupIndex, group in
-                if groupIndex > 0 {
-                    if compact {
-                        Rectangle().fill(TF.stroke).frame(height: 1)
-                            .padding(.horizontal, 16).padding(.vertical, 8)
-                    } else {
-                        Text(group.title)
-                            .font(TFFont.mono(10, weight: .medium))
-                            .tracking(1.7)
-                            .foregroundStyle(TF.textTertiary)
-                            .padding(.horizontal, 20)
-                            .padding(.top, 20)
-                            .padding(.bottom, 7)
-                    }
-                } else if !compact {
-                    Text(group.title)
-                        .font(TFFont.mono(10, weight: .medium))
-                        .tracking(1.7)
-                        .foregroundStyle(TF.textTertiary)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 7)
-                }
-
-                VStack(spacing: 2) {
-                    ForEach(group.sections) { section in
-                        let index = AppModel.Section.allCases.firstIndex(of: section) ?? 0
-                        SidebarRow(section: section,
-                                   selected: app.section == section,
-                                   hint: index < 9 ? "\(index + 1)" : "0",
-                                   compact: compact) {
-                            app.go(to: section)
+            // 分组导航放在可滚动区里：窗口高度不足时只压缩导航，状态卡始终可见。
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(Self.groups.enumerated()), id: \.offset) { groupIndex, group in
+                        if groupIndex > 0 {
+                            if compact {
+                                Rectangle().fill(TF.stroke).frame(height: 1)
+                                    .padding(.horizontal, 16).padding(.vertical, 6)
+                            } else {
+                                Text(group.title)
+                                    .font(TFFont.mono(10, weight: .medium))
+                                    .tracking(1.7)
+                                    .foregroundStyle(TF.textTertiary)
+                                    .padding(.horizontal, 18)
+                                    .padding(.top, 10)
+                                    .padding(.bottom, 4)
+                            }
+                        } else if !compact {
+                            Text(group.title)
+                                .font(TFFont.mono(10, weight: .medium))
+                                .tracking(1.7)
+                                .foregroundStyle(TF.textTertiary)
+                                .padding(.horizontal, 18)
+                                .padding(.bottom, 6)
                         }
+
+                        VStack(spacing: 2) {
+                            ForEach(group.sections) { section in
+                                let index = AppModel.Section.allCases.firstIndex(of: section) ?? 0
+                                SidebarRow(section: section,
+                                           selected: app.section == section,
+                                           hint: index < 9 ? "\(index + 1)" : "0",
+                                           compact: compact) {
+                                    app.go(to: section)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 10)
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.bottom, 4)
             }
 
-            Spacer(minLength: 8)
-            StatusCard(compact: compact).padding(compact ? 8 : 10)
+            StatusCard(compact: compact).padding(compact ? 6 : 8)
         }
-        .frame(width: compact ? 68 : 216)
-        .background(TF.bg.opacity(0.55))
+        .padding(.vertical, 6)
+        .frame(width: compact ? 64 : 208)
+        .tfGlass(radius: 26,
+                 fallbackFill: TF.panel,
+                 fallbackMaterial: .ultraThinMaterial,
+                 shadow: 0.10)
     }
 
     private static let groups: [(title: String, sections: [AppModel.Section])] = [
@@ -562,8 +586,9 @@ private struct SidebarView: View {
                     .foregroundStyle(TF.textSecondary)
                     .frame(maxWidth: .infinity)
                     .frame(height: 30)
-                    .background(TF.panel, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(TF.stroke))
+                    .tfGlass(in: Capsule(style: .continuous),
+                             fallbackFill: TF.panel,
+                             fallbackMaterial: .thinMaterial)
             } else {
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass")
@@ -577,11 +602,9 @@ private struct SidebarView: View {
                 }
                 .padding(.horizontal, 9)
                 .padding(.vertical, 6)
-                .background(TF.panel, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(TF.stroke, lineWidth: 1)
-                )
+                .tfGlass(in: Capsule(style: .continuous),
+                         fallbackFill: TF.panel,
+                         fallbackMaterial: .thinMaterial)
             }
         }
         .buttonStyle(.plain)
@@ -652,18 +675,19 @@ private struct SidebarRow: View {
                 }
             }
             .padding(.horizontal, compact ? 0 : 10)
-            .padding(.vertical, compact ? 9 : 7)
+            .padding(.vertical, compact ? 8 : 5)
             .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
             .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(selected ? TF.panel : (hover ? TF.stroke.opacity(0.45) : Color.clear))
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(selected ? TF.accent.opacity(0.13) : (hover ? TF.text.opacity(0.05) : Color.clear))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(selected ? TF.stroke : Color.clear, lineWidth: 1)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(selected ? TF.accent.opacity(0.22) : Color.clear, lineWidth: 1)
             )
             .overlay(alignment: .leading) {
-                if selected {
+                // 紧凑栏里图标居中，左侧胶囊会压到图标；选中态由底色和强调色图标表达。
+                if selected, !compact {
                     Capsule()
                         .fill(TF.accent)
                         .frame(width: 2, height: 14)
@@ -710,8 +734,7 @@ private struct StatusCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 11)
-            .background(TF.panel, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(TF.stroke))
+            .tfGlass(radius: 16, fallbackFill: TF.panel, fallbackMaterial: .thinMaterial)
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 7) {
@@ -747,8 +770,7 @@ private struct StatusCard: View {
                 .accessibilityLabel(engine.state == .running ? "停止代理" : "启动代理")
             }
             .padding(12)
-            .background(TF.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(TF.stroke))
+            .tfGlass(radius: 18, fallbackFill: TF.panel, fallbackMaterial: .thinMaterial)
         }
     }
 
@@ -818,8 +840,9 @@ private struct PageHeaderBar: View {
                     .padding(.horizontal, 10)
             }
             .frame(height: 30)
-            .background(TF.panelSolid, in: Capsule())
-            .overlay(Capsule().strokeBorder(TF.stroke))
+            .tfGlass(in: Capsule(style: .continuous),
+                     fallbackFill: TF.panelSolid,
+                     fallbackMaterial: .regularMaterial)
         }
     }
 
@@ -833,19 +856,26 @@ struct StatusChip: View {
     var plain: Bool = false
 
     var body: some View {
+        Group {
+            if plain {
+                label
+            } else {
+                label
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .tfGlass(in: Capsule(style: .continuous),
+                             fallbackFill: TF.panel,
+                             fallbackMaterial: .thinMaterial)
+            }
+        }
+    }
+
+    private var label: some View {
         HStack(spacing: 6) {
             StatusDot(color: color, pulsing: state == .running)
             Text(state.label)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(TF.textSecondary)
-        }
-        .padding(.horizontal, plain ? 0 : 10)
-        .padding(.vertical, plain ? 0 : 6)
-        .background {
-            if !plain { Capsule().fill(TF.panel) }
-        }
-        .overlay {
-            if !plain { Capsule().strokeBorder(TF.stroke) }
         }
     }
 

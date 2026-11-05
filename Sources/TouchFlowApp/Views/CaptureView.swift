@@ -71,12 +71,10 @@ struct CaptureView: View {
                 Group {
                     if current == nil {
                         list
-                            .background(TF.panel)
                     } else if geo.size.width < 820 {
                         // 窄窗不再永久分栏（会留半屏空详情），改为选中后从右侧推出的检视层。
                         ZStack(alignment: .trailing) {
                             list
-                                .background(TF.panel)
                             VStack(spacing: 0) {
                                 HStack(spacing: 8) {
                                     TFEyebrow(text: "请求详情 / REQUEST")
@@ -100,31 +98,26 @@ struct CaptureView: View {
                                 detail
                             }
                             .frame(width: max(330, geo.size.width * 0.56))
-                            .background(TF.bg)
-                            .overlay(alignment: .leading) {
-                                Rectangle().fill(TF.stroke).frame(width: 1)
-                            }
+                            .tfGlass(radius: 14,
+                                     fallbackFill: TF.panel,
+                                     fallbackMaterial: .regularMaterial,
+                                     shadow: 0.18)
                             .transition(.move(edge: .trailing).combined(with: .opacity))
-                                .shadow(color: .black.opacity(0.10), radius: 14, x: -5)
                         }
                         .tfAnimation(TFMotion.standard, value: current?.id)
                     } else {
                         HSplitView {
                             list
                                 .frame(minWidth: 336)
-                                .background(TF.panel)
                             detail
                                 .frame(minWidth: 336)
-                                .background(TF.bg)
                         }
                     }
                 }
             }
-            .clipShape(RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: TF.radius, style: .continuous)
-                    .strokeBorder(TF.stroke, lineWidth: 1)
-            )
+            .tfGlass(radius: TFGlass.panelRadius,
+                     fallbackFill: TF.panel,
+                     shadow: 0.06)
             .padding(.horizontal, 32)
             .padding(.top, 16)
             .padding(.bottom, 24)

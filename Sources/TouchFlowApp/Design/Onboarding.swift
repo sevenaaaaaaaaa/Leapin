@@ -82,7 +82,6 @@ struct OnboardingView: View {
         }
         .padding(24)
         .frame(width: 520)
-        .background(TF.panelSolid)
         .preferredColorScheme(ProcessInfo.processInfo.environment["TF_APPEARANCE"] == "dark" ? .dark : nil)
     }
 

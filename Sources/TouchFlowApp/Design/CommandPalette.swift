@@ -179,12 +179,10 @@ struct CommandPalette: View {
                 .padding(.vertical, 8)
             }
             .frame(width: 520)
-            .background(TF.panelSolid, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(TF.strokeStrong, lineWidth: 1)
-            )
-            .shadow(color: .black.opacity(0.30), radius: 40, y: 18)
+            .tfGlass(radius: 22,
+                     fallbackFill: TF.panelSolid,
+                     fallbackMaterial: .regularMaterial,
+                     shadow: 0.30)
             .padding(.top, 90)
             .frame(maxHeight: .infinity, alignment: .top)
         }

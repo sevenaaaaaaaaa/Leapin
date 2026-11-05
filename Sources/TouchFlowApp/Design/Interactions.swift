@@ -74,17 +74,17 @@ struct TFSearchField: View {
                 .accessibilityLabel("清除搜索")
             }
         }
-        .padding(.horizontal, 9)
+        .padding(.horizontal, 11)
         .padding(.vertical, 6)
-        .background(TF.stroke.opacity(0.5), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay(alignment: .bottom) {
-            // 焦点用下划线而不是描边：与设置页输入框、解释器输入统一。
-            Rectangle()
-                .fill(focus.wrappedValue ? TF.accent : Color.clear)
-                .frame(height: 1.5)
-                .padding(.horizontal, 8)
+        .tfGlass(in: Capsule(style: .continuous),
+                 fallbackFill: TF.stroke.opacity(0.5),
+                 fallbackMaterial: .thinMaterial)
+        .overlay(
+            Capsule(style: .continuous)
+                .strokeBorder(focus.wrappedValue ? TF.accent.opacity(0.75) : Color.clear, lineWidth: 1.2)
+                .padding(-1)
                 .tfAnimation(TFMotion.quick, value: focus.wrappedValue)
-        }
+        )
         .frame(maxWidth: width)
         .accessibilityLabel(placeholder)
     }

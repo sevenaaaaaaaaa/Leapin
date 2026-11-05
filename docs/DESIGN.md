@@ -5,7 +5,9 @@
 
 ## 1. 设计原则
 
-1. **纸与墨**：界面底色是纸（暖灰白 / 近黑），内容用发丝线分区，不用漂浮卡片、投影或玻璃。
+1. **纸与墨，浮于材质之上**（v1.4 起）：窗口本身是一层 macOS 26 的 behind-window 材质，
+   内容卡片是薄薄一层可透光的纸（clear glass + 白色 tint），导航、工具栏、弹层等「功能层」才是液态玻璃。
+   玻璃只用于会浮起、会被按下的东西；正文永远留在可读的纸面上。
 2. **一个信号色**：朱红 `accent` 只用于「主操作 / 选中 / 关键状态」。其余状态色（good / warn / danger）只出现在点、线、窄条和文字上，不做大面积填充。
 3. **数字是主角**：所有指标用 SF Mono 等宽数字，标签用 8.5–10pt 全大写 mono，带 1.1–1.7 字距。数字不做逐块缩放，统一字号。
 4. **一句话人话**：每页最多一处衬线（New York）斜体，用于解释当前状态的短句；其余一律 SF Pro。
@@ -16,12 +18,14 @@
 
 | Token | Light | Dark |
 | --- | --- | --- |
-| `bg` | `#F6F4EF` | `#0A0A0B` |
+| `bg`（窗口洗色） | `#EDE7DB` | `#0A0A0B` |
 | `bgDeep` | `#EFEBE3` | `#050506` |
 | `panel` | `#FCFBF8` | `#151517` |
 | `panelSolid` | `#FFFFFF` | `#171719` |
 | `panelRaised` | `#FFFFFF` | `#1F1F22` |
 | `stroke` / `strokeStrong` | 墨色 10% / 17% | 白色 12% / 20% |
+| `cardTint`（clear glass 叠加） | 白色 34% | 白色 5% |
+| `bloomCool` / `bloomWarm` / `bloomViolet` | `#CBDFF6` / `#F2DADD` / `#D9D9F2` | `#14243C` / `#2E1A20` / `#1F1E3E` |
 | `text` / `textSecondary` / `textTertiary` | `#16150F` / `#5F5C53` / `#6F6B60` | `#F3F1EA` / `#A6A39A` / `#87847B` |
 | `accent` | `#C63A12` | `#FF7A4D` |
 | `accentFill`（按钮底） | `#B83510` | `#C2410F` |
@@ -131,7 +135,25 @@
 | 第五轮收尾（账页线改 1pt 全量 stroke 确保 1× 可见；配置页四个头部按钮固定单行；900/暗色截图补拍） | 未再评分 | 见 `docs/design-critique-round5.md`；剩余为动效语言统一与按钮焦点环（结构性投入，未做） |
 | 第六轮（动效收敛为 `TFMotion` 六条令牌 + 全量 reduceMotion；按钮焦点环；设置页 <1000 单列 620pt） | 待复评 | 直接消解第五轮 Motion 7.4 / Micro 7.4 / Responsive 7.4 三条短板：33 处裸动画归零为令牌调用，焦点态对所有按钮可见，900 宽不再挤压 |
 
-## 9. 已知取舍
+## 9. Liquid Glass（v1.4）
+
+macOS 26 Tahoe 的材质语言，落在这套排版上而不是替换它。
+
+| 层 | 做法 | 代码 |
+| --- | --- | --- |
+| 窗口 | 透明 NSWindow + frame view 上的 NSVisualEffectView(.underWindowBackground, .behindWindow)，再叠 40% bg 洗色与三团低饱和光晕 | Platform.swift WindowAutosave、TFBackground |
+| 功能层（侧栏 / 页头胶囊 / 搜索框 / 开关 / 幽灵按钮 / 命令面板 / Toast / 弹层 / 抽屉） | glassEffect(_:in:)，1pt 四段式高光描边（白 92% → 34% → 黑 5% → 白 26%） | .tfGlass(radius:in:tint:interactive:clear:shadows:) |
+| 内容层（页面卡片） | Glass.clear + cardTint，让窗口洗色透上来但文字仍有纸面 | .tfPanel() → .tfGlass(clear: true, tint: TF.cardTint) |
+| 主操作按钮 | **保持不透明实色**：tint 玻璃在浅底把朱红洗成灰、白字对比掉到 2:1 以下，可读性优先 | TFPrimaryButtonStyle |
+| 系统开关 | 轨道即玻璃：开态 .tint(accent) + interactive()，关态加 10% 墨色 veil 保证可见 | TFSwitch |
+
+- 半径阶梯：卡片 20 / 磁贴 16 / 控件胶囊，随尺寸增大。
+- 降级：macOS 14–15 无 glassEffect，TFGlassSurface 回落到 Material + 实色填充 + 发丝描边，布局与层级不变。
+- 无障碍：accessibilityReduceTransparency 打开时去掉窗口材质，直接铺 TF.bg（不再让壁纸干扰文字）；accessibilityReduceMotion 时玻璃的入场/按压动效走原有零动画分支。
+- 分栏容器（抓包、规则表）只保留一枚玻璃外壳，内部两栏透明，避免玻璃套玻璃造成的浑浊。
+- 取舍：玻璃卡片一律不加显式背景色（否则不采样）；必须压暗文字底时用 tint，而不是 background。
+
+## 10. 已知取舍
 
 - 规则引擎仍为线性扫描（10 万规则 28ms），后缀 Trie 未做——视觉层不隐藏此事实，性能文档见 `docs/audit-runtime.md`。
 - 导入报告、Onboarding、菜单栏面板沿用同一 token，但未做窄窗专项适配（它们不是常驻主界面）。

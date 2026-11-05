@@ -84,14 +84,9 @@ struct StatTile: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
         .padding(.vertical, 13)
-        .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(TF.panel)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(TF.stroke, lineWidth: 1)
-        )
+        .tfGlass(radius: 12,
+                 fallbackFill: TF.panel,
+                 shadow: 0.04)
         .tfHoverLift()
     }
 }
@@ -176,7 +171,6 @@ struct TFSelectField<Value: Hashable>: View {
             }
             .padding(.vertical, 5)
             .frame(minWidth: 158)
-            .background(TF.panel)
         }
     }
 }

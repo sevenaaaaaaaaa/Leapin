@@ -23,7 +23,10 @@ enum TF {
     }
 
     // Surfaces — warm paper in light, warm ink in dark.
-    static let bg = dyn(hex(0xF6F4EF), hex(0x0A0A0B))
+    static let bg = dyn(hex(0xEDE7DB), hex(0x0A0A0B))
+    /// Tint laid over a clear glass card so content surfaces sit a step above the
+    /// window material instead of dissolving into it.
+    static let cardTint = dyn(hex(0xFFFFFF, 0.34), hex(0xFFFFFF, 0.05))
     static let bgDeep = dyn(hex(0xEFEBE3), hex(0x050506))
     static let panel = dyn(hex(0xFCFBF8), hex(0x151517))
     static let panelSolid = dyn(hex(0xFFFFFF), hex(0x171719))
@@ -56,6 +59,12 @@ enum TF {
         LinearGradient(colors: [accent, dyn(hex(0x8E2606), hex(0xD9502A))],
                        startPoint: .topLeading, endPoint: .bottomTrailing)
     }
+    // Ambient light behind the glass. Very low chroma: enough for the material to
+    // refract and for edges to read, never enough to become decoration.
+    static let bloomCool = dyn(hex(0xCBDFF6), hex(0x14243C))
+    static let bloomWarm = dyn(hex(0xF2DADD), hex(0x2E1A20))
+    static let bloomViolet = dyn(hex(0xD9D9F2), hex(0x1F1E3E))
+
     // Metrics — 8pt rhythm.
     static let radius: CGFloat = 10
     static let radiusSmall: CGFloat = 6
@@ -88,8 +97,121 @@ enum TFFont {
 // MARK: - Background
 
 struct TFBackground: View {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
     var body: some View {
-        TF.bg.ignoresSafeArea()
+        ZStack {
+            if reduceTransparency {
+                TF.bg
+            } else {
+                // The blur itself lives on the window's frame view (Platform.swift);
+                // this wash is the only thing between the wallpaper and the text.
+                TF.bg.opacity(0.40)
+            }
+            RadialGradient(colors: [TF.bloomCool.opacity(0.55), .clear],
+                           center: UnitPoint(x: 0.08, y: 0.0),
+                           startRadius: 40, endRadius: 720)
+            RadialGradient(colors: [TF.bloomWarm.opacity(0.32), .clear],
+                           center: UnitPoint(x: 0.98, y: 0.06),
+                           startRadius: 20, endRadius: 520)
+            RadialGradient(colors: [TF.bloomViolet.opacity(0.38), .clear],
+                           center: UnitPoint(x: 0.45, y: 1.08),
+                           startRadius: 40, endRadius: 760)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+// MARK: - Liquid Glass
+
+/// Liquid Glass (macOS 26) with a materials fallback for macOS 14-15.
+///
+/// Rules encoded here rather than at every call site:
+/// - glass is a surface material, not a fill: never layer an opaque colour behind it;
+/// - corner radii grow with the surface (panels 20, tiles 16, controls capsule);
+/// - interactive is only passed for elements the user can actually press.
+enum TFGlass {
+    static var isAvailable: Bool {
+        if #available(macOS 26.0, *) { return true }
+        return false
+    }
+    static let panelRadius: CGFloat = 20
+    static let tileRadius: CGFloat = 16
+    static let controlRadius: CGFloat = 11
+}
+
+private struct TFGlassSurface<S: InsettableShape>: ViewModifier {
+    var shape: S
+    var tint: Color?
+    var interactive: Bool
+    var clear: Bool
+    var fallbackFill: Color
+    var fallbackMaterial: Material
+    var shadow: Double
+
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content
+                .glassEffect(glass, in: shape)
+                .overlay(
+                    shape.strokeBorder(
+                        LinearGradient(colors: [.white.opacity(0.92), .white.opacity(0.34),
+                                                .black.opacity(0.05), .white.opacity(0.26)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        lineWidth: 1
+                    )
+                    .allowsHitTesting(false)
+                )
+                .shadow(color: .black.opacity(shadow), radius: 20, x: 0, y: 9)
+        } else {
+            content
+                .background(fallbackFill, in: shape)
+                .background(fallbackMaterial, in: shape)
+                .overlay(shape.strokeBorder(TF.stroke, lineWidth: 1))
+                .shadow(color: .black.opacity(shadow * 0.6), radius: 18, x: 0, y: 8)
+        }
+    }
+
+    @available(macOS 26.0, *)
+    private var glass: Glass {
+        var g: Glass = clear ? .clear : .regular
+        if let tint { g = g.tint(tint) }
+        if interactive { g = g.interactive() }
+        return g
+    }
+}
+
+extension View {
+    func tfGlass<S: InsettableShape>(in shape: S,
+                           tint: Color? = nil,
+                           interactive: Bool = false,
+                           clear: Bool = false,
+                           fallbackFill: Color = TF.panel,
+                           fallbackMaterial: Material = .ultraThinMaterial,
+                           shadow: Double = 0.0) -> some View {
+        modifier(TFGlassSurface(shape: shape,
+                                tint: tint,
+                                interactive: interactive,
+                                clear: clear,
+                                fallbackFill: fallbackFill,
+                                fallbackMaterial: fallbackMaterial,
+                                shadow: shadow))
+    }
+
+    func tfGlass(radius: CGFloat = TFGlass.panelRadius,
+                 tint: Color? = nil,
+                 interactive: Bool = false,
+                 clear: Bool = false,
+                 fallbackFill: Color = TF.panel,
+                 fallbackMaterial: Material = .ultraThinMaterial,
+                 shadow: Double = 0.0) -> some View {
+        tfGlass(in: RoundedRectangle(cornerRadius: radius, style: .continuous),
+                tint: tint,
+                interactive: interactive,
+                clear: clear,
+                fallbackFill: fallbackFill,
+                fallbackMaterial: fallbackMaterial,
+                shadow: shadow)
     }
 }
 
@@ -103,15 +225,11 @@ struct TF_PanelModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(padding)
-            .background(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(raised ? TF.panelRaised : TF.panel)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .strokeBorder(TF.stroke, lineWidth: TF.hairline)
-            )
-            .shadow(color: Color.black.opacity(raised ? 0.05 : 0), radius: 22, x: 0, y: 10)
+            .tfGlass(radius: max(TFGlass.panelRadius, radius + 6),
+                     tint: TF.cardTint,
+                     clear: true,
+                     fallbackFill: raised ? TF.panelRaised : TF.panel,
+                     shadow: raised ? 0.10 : 0.07)
     }
 }
 
@@ -251,40 +369,44 @@ struct TFEyebrow: View {
 struct TFPrimaryButtonStyle: ButtonStyle {
     var tint: Color? = nil
     func makeBody(configuration: Configuration) -> some View {
-        TFButtonFocusRing {
+        let fill = tint ?? TF.accentFill
+        TFButtonFocusRing(shape: Capsule()) {
+            // 主操作保持不透明实色：tint 玻璃在浅底上会把朱红洗成灰，
+            // 白字对比掉到 2:1 以下——可读性优先于材质一致性。
             configuration.label
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 14)
+                .padding(.horizontal, 15)
                 .padding(.vertical, 7)
-                .background(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(tint ?? TF.accentFill)
-                )
+                .background(Capsule(style: .continuous).fill(fill))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+                    Capsule(style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(colors: [.white.opacity(0.34), .white.opacity(0.06)],
+                                           startPoint: .top, endPoint: .bottom),
+                            lineWidth: 1
+                        )
                 )
-                .scaleEffect(configuration.isPressed ? 0.985 : 1)
-                .opacity(configuration.isPressed ? 0.86 : 1)
-                .tfAnimation(TFMotion.press, value: configuration.isPressed)
+                .shadow(color: .black.opacity(0.10), radius: 8, y: 3)
+            .scaleEffect(configuration.isPressed ? 0.985 : 1)
+            .opacity(configuration.isPressed ? 0.86 : 1)
+            .tfAnimation(TFMotion.press, value: configuration.isPressed)
         }
     }
 }
 
 struct TFGhostButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        TFButtonFocusRing {
+        TFButtonFocusRing(shape: Capsule()) {
             configuration.label
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(TF.text)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 13)
                 .padding(.vertical, 6)
-                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
-                )
+                .tfGlass(in: Capsule(style: .continuous),
+                         interactive: true,
+                         fallbackFill: TF.panel,
+                         fallbackMaterial: .thinMaterial)
                 .opacity(configuration.isPressed ? 0.7 : 1)
         }
     }
@@ -292,14 +414,15 @@ struct TFGhostButtonStyle: ButtonStyle {
 
 /// 键盘焦点环：读到最近可聚焦祖先（Button）的焦点态，在按钮外描 2pt 朱红。
 /// 放在 ButtonStyle 内部，因此所有用这两套样式的按钮自动获得焦点提示，无需逐处接 @FocusState。
-private struct TFButtonFocusRing<Content: View>: View {
+private struct TFButtonFocusRing<S: InsettableShape, Content: View>: View {
     @Environment(\.isFocused) private var isFocused
+    var shape: S
     @ViewBuilder var content: () -> Content
 
     var body: some View {
         content()
             .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                shape
                     .strokeBorder(TF.accent, lineWidth: 2)
                     .padding(-3)
                     .opacity(isFocused ? 1 : 0)
@@ -418,13 +541,12 @@ struct TFSwitch: View {
         Button {
             isOn.toggle()
         } label: {
-            Capsule(style: .continuous)
-                .fill(isOn ? tint : TF.text.opacity(0.22))
+            track(width: width, height: h)
                 .frame(width: width, height: h)
                 .overlay(alignment: .leading) {
                     Circle()
                         .fill(.white)
-                        .shadow(color: .black.opacity(0.18), radius: 1.4, y: 0.6)
+                        .shadow(color: .black.opacity(0.22), radius: 1.6, y: 0.8)
                         .frame(width: knob, height: knob)
                         .padding(2.5)
                         .offset(x: isOn ? width - knob - 5 : 0)
@@ -440,6 +562,25 @@ struct TFSwitch: View {
         .accessibilityRepresentation { Toggle(isOn: $isOn) { EmptyView() } }
         .accessibilityValue(isOn ? "开启" : "关闭")
         .focusEffectDisabled()
+    }
+
+    /// macOS 26: the track IS the glass — tinted when on, clear when off.
+    /// Older systems keep the solid track so the on/off contrast never relies on blur.
+    @ViewBuilder
+    private func track(width: CGFloat, height: CGFloat) -> some View {
+        if #available(macOS 26.0, *) {
+            Color.clear
+                .glassEffect(isOn ? .regular.tint(tint).interactive() : .regular.interactive(),
+                             in: Capsule())
+                .overlay(
+                    Capsule()
+                        .fill(isOn ? Color.white.opacity(0.0) : TF.text.opacity(0.10))
+                        .allowsHitTesting(false)
+                )
+        } else {
+            Capsule(style: .continuous)
+                .fill(isOn ? tint : TF.text.opacity(0.22))
+        }
     }
 }
 

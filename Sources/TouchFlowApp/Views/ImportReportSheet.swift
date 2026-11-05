@@ -25,7 +25,6 @@ struct ImportReportSheet: View {
             footer
         }
         .frame(width: 580)
-        .background(TF.panelSolid)
     }
 
     private var header: some View {

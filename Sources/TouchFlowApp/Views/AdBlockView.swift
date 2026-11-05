@@ -183,10 +183,12 @@ struct AdBlockView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .background(TF.panelSolid, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .tfGlass(in: Capsule(style: .continuous),
+                         fallbackFill: TF.panelSolid,
+                         fallbackMaterial: .thinMaterial)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(probeFocused ? TF.accent.opacity(0.55) : TF.stroke, lineWidth: 1)
+                    Capsule(style: .continuous)
+                        .strokeBorder(probeFocused ? TF.accent.opacity(0.55) : .clear, lineWidth: 1.2)
                 )
 
                 Button("检查", action: run)
@@ -291,13 +293,11 @@ struct AdBlockView: View {
                             .textFieldStyle(.plain)
                             .font(TFFont.mono(12))
                     }
-                    .padding(.horizontal, 9)
+                    .padding(.horizontal, 11)
                     .padding(.vertical, 6)
-                    .background(TF.panelSolid, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(TF.stroke, lineWidth: 1)
-                    )
+                    .tfGlass(radius: 10,
+                             fallbackFill: TF.panelSolid,
+                             fallbackMaterial: .thinMaterial)
 
                     Button("添加", action: addList)
                         .buttonStyle(TFGhostButtonStyle())
@@ -328,11 +328,9 @@ struct AdBlockView: View {
                         .frame(height: 148)
                         .scrollContentBackground(.hidden)
                         .padding(8)
-                        .background(TF.panelSolid)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7, style: .continuous)
-                                .strokeBorder(TF.stroke, lineWidth: 1)
-                        )
+                        .tfGlass(radius: 14,
+                                 fallbackFill: TF.panelSolid,
+                                 fallbackMaterial: .thinMaterial)
                     if allowText.isEmpty {
                         Text("还没有白名单。每行写一个域名，这些域名将跳过所有拦截规则。")
                             .font(.system(size: 12))

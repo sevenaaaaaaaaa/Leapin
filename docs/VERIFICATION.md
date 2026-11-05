@@ -1,7 +1,8 @@
-# TouchFlow 验收记录（v1.3，macOS 27.3 / arm64）
+# TouchFlow 验收记录（v1.4，macOS 27.3 / arm64）
 
 本文件只记录**真实跑过**的命令与结果，以及明确未验证的部分。所有结论都可用下方命令复现。
 v1.3 在 v1.2 视觉基础上只动 App 层：动效令牌化 + 全量 reduceMotion、按钮焦点环、设置页窄窗单列；网络/策略/Runtime 行为未变。
+v1.4 把视觉层迁到 macOS 26 Liquid Glass（窗口 behind-window 材质 + 功能层玻璃 + 内容层 clear glass），仍是纯 App 层改动，网络与策略行为未变。
 
 ## 0. 视觉重构验证（v1.2）
 
@@ -27,6 +28,20 @@ v1.3 在 v1.2 视觉基础上只动 App 层：动效令牌化 + 全量 reduceMot
   实测 900×700 单列（浅色 `/tmp/tfm3/settings-900c.png`、深色 `/tmp/tfm3/settings-900-dark.png`）、1040×700 仍两列（`/tmp/tfm3/settings-1040.png`），均无中间截断、无横向溢出。
 - 构建 / 测试 / 端到端：`./scripts/build-app.sh debug` 成功；`swift test --scratch-path .build-app` 122 条全绿（Core 1 / Policy 41 / Net 69 / Integrations 11）；`./scripts/smoke.sh` pass=7 fail=0。
 - 未验证：真实键盘 Tab 走查（本机 `AppleKeyboardUIMode=0`，无辅助功能权限模拟按键）；焦点环的 `\.isFocused` 检测依赖该按钮成为 key view，属 SwiftUI 标准语义。
+
+## 0.2 Liquid Glass 改造验证（v1.4，2026-11-05）
+
+- 环境：macOS 27.3（26.0+ API 可用）/ Swift 6.4.2 / SDK MacOSX27.2；全部玻璃分支包在 if #available(macOS 26.0, *)，macOS 14–15 回落到 Material + 实色。
+- 构建：./scripts/build-app.sh debug 成功；swift build --scratch-path .build-app 零 error / warning。
+- 测试：swift test --scratch-path .build-app → 122 条全绿（Core 1 / Policy 41 / Net 69 / Integrations 11）。
+- 端到端：./scripts/smoke.sh → pass=7 fail=0（明文 HTTP / CONNECT / SOCKS5 / 独立 socks 端口 / 规则解释 / 去广告 / DNS）。
+- 窗口材质：Platform.swift WindowAutosave 里 window.isOpaque=false + backgroundColor=.clear，frame view 下插入 NSVisualEffectView(material: .underWindowBackground, blendingMode: .behindWindow)；验证方式为把窗口拖到彩色壁纸上截图，确认 40% 洗色后能看到壁纸色彩而非纯色。
+- 截图核对（2026-11-05 最新一轮）：
+  · 1040×752 浅色 10 页：/tmp/glass5/light-*.png；深色：/tmp/glass5/dark-*.png；
+  · 900×700 窄窗：/tmp/glass5/narrow-settings.png、narrow-rules.png、dark-dashboard.png、dark-settings.png。
+- 本轮修掉的可见缺陷：① 分流规则工具栏下方一条纯色白带（toolbar 的 background(TF.bg) 叠在玻璃页面上）→ 删除该背景；② 752 高时侧栏底部「配置 / 设置」被状态卡压住 → 组间距 16/6→10/4、行高 7→5；③ 900 宽 compact 侧栏选中行的左侧 accent 胶囊压在居中图标上 → overlay 仅在非 compact 时渲染；④ 面板偏白偏粉 → 卡片改 clear glass + cardTint，窗口洗色 62%→40%；⑤ 主按钮 tint 玻璃导致朱红发灰 → 回退不透明 accentFill（注释记录取舍）。
+- 验证取舍：主操作按钮不使用 tint 玻璃（Glass.tint(accentFill) 在浅底把朱红洗成灰、白字对比 <2:1），代码注释写明“可读性优先于材质一致性”。
+- 未验证：真实 macOS 26 硬件上的玻璃折射观感（本机系统版本高于 26，但截图无法反映动态折射）；reduceTransparency 关闭材质后的完整 10 页走查只抽查了总览与设置两页；真机 Tab 走查未做（无辅助功能权限，同 v1.3）。
 
 ## 1. 构建
 

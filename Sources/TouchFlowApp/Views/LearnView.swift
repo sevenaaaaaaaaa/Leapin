@@ -67,11 +67,9 @@ struct LearnView: View {
                         }
                     }
                     .frame(height: 150)
-                    .background(TF.panelSolid)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .strokeBorder(TF.stroke, lineWidth: 1)
-                    )
+                    .tfGlass(radius: 14,
+                             fallbackFill: TF.panelSolid,
+                             fallbackMaterial: .thinMaterial)
 
                     HStack(spacing: 8) {
                         if rawText.isEmpty {

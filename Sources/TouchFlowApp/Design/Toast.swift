@@ -66,9 +66,11 @@ struct ToastOverlay: View {
         .padding(.leading, 14)
         .padding(.trailing, 10)
         .padding(.vertical, 9)
-        .background(TF.panelSolid, in: Capsule())
-        .overlay(Capsule().strokeBorder(kind.tint.opacity(0.28), lineWidth: 1))
-        .shadow(color: .black.opacity(0.16), radius: 18, y: 8)
+        .tfGlass(in: Capsule(style: .continuous),
+                 fallbackFill: TF.panelSolid,
+                 fallbackMaterial: .regularMaterial,
+                 shadow: 0.16)
+        .overlay(Capsule(style: .continuous).strokeBorder(kind.tint.opacity(0.28), lineWidth: 1))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(kind.rawValue)：\(text)")
     }
