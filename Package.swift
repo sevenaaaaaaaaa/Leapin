@@ -14,9 +14,12 @@ let package = Package(
         .executable(name: "TouchFlowApp", targets: ["TouchFlowApp"]),
     ],
     targets: [
+        // libproc shim: which process owns a given TCP connection. Only macOS links it,
+        // so it is kept out of the Swift targets that also build for other platforms.
+        .target(name: "CTouchFlowProc"),
         .target(name: "TouchFlowCore", swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(name: "TouchFlowPolicy", dependencies: ["TouchFlowCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
-        .target(name: "TouchFlowNet", dependencies: ["TouchFlowCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "TouchFlowNet", dependencies: ["TouchFlowCore", "CTouchFlowProc"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(name: "TouchFlowIntegrations", dependencies: ["TouchFlowCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(name: "TouchFlowRuntime", dependencies: ["TouchFlowCore", "TouchFlowPolicy", "TouchFlowNet", "TouchFlowIntegrations"], resources: [.copy("Resources")], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "tfctl", dependencies: ["TouchFlowRuntime"], swiftSettings: [.swiftLanguageMode(.v5)]),

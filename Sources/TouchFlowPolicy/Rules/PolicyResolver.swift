@@ -12,6 +12,9 @@ public final class PolicyResolver: @unchecked Sendable {
     private let lock = NSLock()
     private var selectionOverrides: [String: String]
     private var rotation = 0
+    /// Last automatic winner per group; used for url-test hysteresis so a 3 ms blip
+    /// does not flip the whole machine between two nodes every probe round.
+    private var autoWinners: [String: String] = [:]
 
     public init(profile: Profile, selections: [String: String] = [:]) {
         self.profile = profile
@@ -76,6 +79,10 @@ public final class PolicyResolver: @unchecked Sendable {
             }
         }
         issues.append(contentsOf: cycleDiagnostics())
+        for outbound in profile.outbounds where !outbound.type.isDialable {
+            let token = outbound.rawType ?? outbound.type.rawValue
+            issues.append("outbound '\(outbound.name)' uses protocol '\(token)', which cannot be dialed yet")
+        }
         for rule in profile.rules where !rule.policy.isEmpty && memberKind(rule.policy) == nil {
             let label = rule.raw.isEmpty ? "\(rule.kind.rawValue) \(rule.value)" : rule.raw
             issues.append("rule '\(label)' references unknown policy '\(rule.policy)'")
@@ -128,6 +135,14 @@ public final class PolicyResolver: @unchecked Sendable {
         }
     }
 
+    /// Which member the group would use right now, without resolving it further.
+    /// Manual selection wins; url-test and fallback consult the probe health store.
+    public func effectiveMember(group name: String) -> String? {
+        let key = name.trimmingCharacters(in: .whitespaces).lowercased()
+        guard let group = groupsByKey[key], group.type != .reject else { return nil }
+        return chosenMember(group)
+    }
+
     private func currentSelection(for group: PolicyGroup) -> String? {
         lock.withLock { selectionOverrides[group.name.lowercased()] } ?? group.selected
     }
@@ -139,8 +154,15 @@ public final class PolicyResolver: @unchecked Sendable {
         }
         guard !group.proxies.isEmpty else { return nil }
         switch group.type {
-        case .select, .fallback, .urlTest:
+        case .select:
             return group.proxies.first
+        case .urlTest:
+            // Honest url-test: pick the lowest fresh latency, keep the previous winner
+            // while it stays within tolerance, fall back to the first member while no
+            // probe has reported yet.
+            return bestByLatency(group) ?? group.proxies.first
+        case .fallback:
+            return firstAlive(group) ?? group.proxies.first
         case .loadBalance:
             let index = lock.withLock { () -> Int in
                 let value = rotation
@@ -151,6 +173,40 @@ public final class PolicyResolver: @unchecked Sendable {
         case .reject:
             return nil
         }
+    }
+
+    /// Members with a fresh, successful probe, fastest first.
+    private func measured(_ group: PolicyGroup) -> [(name: String, ms: Int)] {
+        var scored: [(String, Int)] = []
+        for member in group.proxies {
+            guard let health = TFHealth.shared.freshHealth(for: member, maxAge: 180),
+                  let ms = health.latencyMs else { continue }
+            scored.append((member, ms))
+        }
+        return scored.map { (name: $0.0, ms: $0.1) }.sorted { $0.ms < $1.ms }
+    }
+
+    private func bestByLatency(_ group: PolicyGroup) -> String? {
+        let scored = measured(group)
+        guard let fastest = scored.first else { return nil }
+        let tolerance = max(group.tolerance ?? 50, 0)
+        let key = group.name.lowercased()
+        if let previous = lock.withLock({ autoWinners[key] }),
+           let kept = scored.first(where: { $0.name.caseInsensitiveCompare(previous) == .orderedSame }),
+           kept.ms <= fastest.ms + tolerance {
+            return kept.name
+        }
+        lock.withLock { autoWinners[key] = fastest.name }
+        return fastest.name
+    }
+
+    private func firstAlive(_ group: PolicyGroup) -> String? {
+        for member in group.proxies {
+            if let health = TFHealth.shared.freshHealth(for: member, maxAge: 180), health.isAlive {
+                return member
+            }
+        }
+        return nil
     }
 
     private func cycleDiagnostics() -> [String] {

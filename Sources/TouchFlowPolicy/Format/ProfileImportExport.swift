@@ -57,15 +57,39 @@ public struct ImportReport: Sendable, Hashable, Codable {
     public var ruleCount: Int
     public var skippedOutbounds: Int
     public var issues: [ImportIssue]
+    /// Outbounds that imported fine but whose protocol this build cannot dial yet.
+    /// Kept separate from `issues` so the UI can say "these nodes will fail" up front
+    /// instead of letting the user discover it on the first connection.
+    public var notDialable: [String]
 
     public init(format: String, outboundCount: Int = 0, groupCount: Int = 0,
-                ruleCount: Int = 0, skippedOutbounds: Int = 0, issues: [ImportIssue] = []) {
+                ruleCount: Int = 0, skippedOutbounds: Int = 0, issues: [ImportIssue] = [],
+                notDialable: [String] = []) {
         self.format = format
         self.outboundCount = outboundCount
         self.groupCount = groupCount
         self.ruleCount = ruleCount
         self.skippedOutbounds = skippedOutbounds
         self.issues = issues
+        self.notDialable = notDialable
+    }
+
+    /// Fills `notDialable` from the imported profile and records one aggregated
+    /// issue per protocol, so the report is honest about what will not work.
+    public mutating func annotateDialability(of profile: Profile) {
+        notDialable = profile.outbounds.filter { !$0.type.isDialable }.map { $0.name }
+        var seen = Set<String>()
+        for outbound in profile.outbounds where !outbound.type.isDialable {
+            let token = (outbound.rawType ?? outbound.type.rawValue).lowercased()
+            guard seen.insert(token).inserted else { continue }
+            let affected = profile.outbounds.filter {
+                !$0.type.isDialable && ($0.rawType ?? $0.type.rawValue).lowercased() == token
+            }.count
+            issues.append(ImportIssue(
+                kind: .unknownProtocol,
+                item: token,
+                message: "协议 \(token) 已保留但暂不可拨号（\(affected) 个出站）；选用它的规则会在连接时失败"))
+        }
     }
 
     public var isClean: Bool { issues.isEmpty }
@@ -83,6 +107,7 @@ public struct ImportReport: Sendable, Hashable, Codable {
     public var summary: String {
         var text = "\(format)：\(outboundCount) 个出站 / \(groupCount) 个策略组 / \(ruleCount) 条规则"
         if skippedOutbounds > 0 { text += "，跳过 \(skippedOutbounds) 项" }
+        if !notDialable.isEmpty { text += "，\(notDialable.count) 个出站暂不可拨号" }
         if !issues.isEmpty { text += "，\(issues.count) 条提示" }
         return text
     }
@@ -170,10 +195,11 @@ public enum ProfileImporter {
     public static func json(_ data: Data, name: String) throws -> ProfileImportOutcome {
         var profile = try JSONDecoder().decode(Profile.self, from: data)
         if !name.isEmpty { profile.name = name }
-        let report = ImportReport(format: "TouchFlow JSON",
+        var report = ImportReport(format: "TouchFlow JSON",
                                   outboundCount: profile.outbounds.count,
                                   groupCount: profile.groups.count,
                                   ruleCount: profile.rules.count)
+        report.annotateDialability(of: profile)
         return ProfileImportOutcome(profile: profile, report: report)
     }
 
@@ -215,6 +241,7 @@ public enum ProfileImporter {
         report.outboundCount = profile.outbounds.count
         report.groupCount = profile.groups.count
         report.ruleCount = profile.rules.count
+        report.annotateDialability(of: profile)
         return ProfileImportOutcome(profile: profile, report: report)
     }
 
@@ -477,6 +504,7 @@ public enum ProfileImporter {
         report.outboundCount = outbounds.count
         report.groupCount = groups.count
         report.ruleCount = rules.count
+        report.annotateDialability(of: profile)
         return ProfileImportOutcome(profile: profile, report: report)
     }
 
@@ -633,6 +661,7 @@ public enum ProfileImporter {
                                   ruleCount: profile.rules.count,
                                   skippedOutbounds: result.skipped)
         report.issues = result.issues
+        report.annotateDialability(of: profile)
         return ProfileImportOutcome(profile: profile, report: report)
     }
 

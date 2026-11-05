@@ -183,9 +183,25 @@ public final class ProxyServer: @unchecked Sendable {
 
     // MARK: - Accept loop
 
+    /// Who opened this client connection: address, port and — when libproc lets us
+    /// look — the owning process. Threaded through every handler so SRC-IP-CIDR and
+    /// per-process rules see real values instead of nil.
+    private struct ClientOrigin {
+        var ip: String?
+        var port: UInt16?
+        var process: ClientProcess?
+    }
+
     private func accept(_ connection: NWConnection) {
         let id = UUID()
-        let remote = Self.hostString(connection.endpoint)
+        let endpoint = Self.endpointParts(connection.endpoint)
+        let remote = endpoint.host
+        let listener = UInt16(clamping: listeningPort)
+        let origin = ClientOrigin(ip: endpoint.host, port: endpoint.port,
+                                  process: endpoint.port.flatMap { clientPort in
+                                      ProcessAttributor.shared.process(localPort: clientPort,
+                                                                       remotePort: listener)
+                                  })
         let socket = NetSocket(connection: connection,
                                description: "client \(remote ?? "unknown")")
         lock.withLock {
@@ -197,7 +213,7 @@ public final class ProxyServer: @unchecked Sendable {
                 socket.close()
                 return
             }
-            await self.handleClient(id: id, socket: socket, remote: remote)
+            await self.handleClient(id: id, socket: socket, remote: remote, origin: origin)
         }
         lock.withLock { clientTasks[id] = task }
     }
@@ -234,7 +250,7 @@ public final class ProxyServer: @unchecked Sendable {
 
     // MARK: - Client dispatch
 
-    private func handleClient(id: UUID, socket: NetSocket, remote: String?) async {
+    private func handleClient(id: UUID, socket: NetSocket, remote: String?, origin: ClientOrigin) async {
         defer { release(id: id) }
 
         if !options.allowLAN, let remote, !Self.isLocalAddress(remote) {
@@ -268,7 +284,7 @@ public final class ProxyServer: @unchecked Sendable {
                 }
                 // handleSOCKS5 re-reads the version byte, so hand it back first.
                 stream.pushBack(Data([first]))
-                try await handleSOCKS5(id: id, stream: stream, socket: socket, remote: remote)
+                try await handleSOCKS5(id: id, stream: stream, socket: socket, remote: remote, origin: origin)
             } else {
                 stream.pushBack(Data([first]))
                 guard options.enableHTTP else {
@@ -280,7 +296,7 @@ public final class ProxyServer: @unchecked Sendable {
                     socket.close()
                     return
                 }
-                try await handleHTTP(id: id, stream: stream, socket: socket, remote: remote)
+                try await handleHTTP(id: id, stream: stream, socket: socket, remote: remote, origin: origin)
             }
         } catch {
             TFLog.shared.warn("net.proxy", "client session ended: \(error.localizedDescription)")
@@ -290,29 +306,29 @@ public final class ProxyServer: @unchecked Sendable {
 
     // MARK: - HTTP
 
-    private func handleHTTP(id: UUID, stream: BufferedStream, socket: NetSocket, remote: String?) async throws {
+    private func handleHTTP(id: UUID, stream: BufferedStream, socket: NetSocket, remote: String?,
+                            origin: ClientOrigin) async throws {
         while true {
             guard let request = try await HTTPCodec.readRequestHead(stream) else { return }
             if request.isConnect {
-                await handleCONNECT(id: id, request: request, stream: stream, socket: socket, remote: remote)
+                await handleCONNECT(id: id, request: request, stream: stream, socket: socket,
+                                    remote: remote, origin: origin)
                 return
             }
-            let keepAlive = try await forwardPlainHTTP(id: id, request: request, stream: stream, socket: socket)
+            let keepAlive = try await forwardPlainHTTP(id: id, request: request, stream: stream,
+                                                       socket: socket, origin: origin)
             if !keepAlive { return }
         }
     }
 
-    private func handleCONNECT(id: UUID, request: HTTPRequestHead, stream: BufferedStream, socket: NetSocket, remote: String?) async {
+    private func handleCONNECT(id: UUID, request: HTTPRequestHead, stream: BufferedStream, socket: NetSocket,
+                               remote: String?, origin: ClientOrigin) async {
         guard let authority = request.targetAuthority(defaultPort: 443) else {
             try? await writePlainHTTP(socket, status: 400, reason: "Bad Request",
                                       message: "TouchFlow could not parse CONNECT target \(request.target)")
             return
         }
-        let meta = ConnectionMeta(host: authority.host,
-                                  port: authority.port,
-                                  network: "tcp",
-                                  sourceApp: nil,
-                                  sourcePID: nil)
+        let meta = makeMeta(host: authority.host, port: authority.port, origin: origin)
         let decision = router.decide(meta)
 
         if decision.isBlocked || decision.outbound.type == .reject {
@@ -351,6 +367,8 @@ public final class ProxyServer: @unchecked Sendable {
                                       outbound: decision.outbound,
                                       sourceApp: meta.sourceApp,
                                       sourcePID: meta.sourcePID,
+                                      sourceIP: meta.sourceIP,
+                                      chain: decision.chain,
                                       idleTimeout: Self.idleTimeout)
             await handler.run(client: socket)
             return
@@ -398,7 +416,8 @@ public final class ProxyServer: @unchecked Sendable {
     private func forwardPlainHTTP(id: UUID,
                                   request: HTTPRequestHead,
                                   stream: BufferedStream,
-                                  socket: NetSocket) async throws -> Bool {
+                                  socket: NetSocket,
+                                  origin: ClientOrigin) async throws -> Bool {
         let framing = try HTTPCodec.framing(for: request.headers, isRequest: true)
         let body = try await HTTPCodec.readBody(stream, framing: framing)
 
@@ -407,14 +426,15 @@ public final class ProxyServer: @unchecked Sendable {
                                      message: "TouchFlow could not parse request target \(request.target)")
             return false
         }
-        let meta = ConnectionMeta(host: authority.host, port: authority.port, network: "tcp")
+        let meta = makeMeta(host: authority.host, port: authority.port, origin: origin)
         let decision = router.decide(meta)
         let started = Date()
 
         if decision.isBlocked || decision.outbound.type == .reject {
             recordRejected(meta, decision: decision, blockedBy: "rule")
             recordBlockedCapture(host: authority.host, url: request.target,
-                                 method: request.method.uppercased(), request: request)
+                                 method: request.method.uppercased(), request: request,
+                                 meta: meta, decision: decision)
             try await writePlainHTTP(socket, status: 403, reason: "Forbidden",
                                      message: "TouchFlow blocked \(authority.host)")
             return false
@@ -422,7 +442,8 @@ public final class ProxyServer: @unchecked Sendable {
         if let blocker, blocker.verdict(for: authority.host, path: request.target, thirdParty: false).blocked {
             recordRejected(meta, decision: decision, blockedBy: "adblock")
             recordBlockedCapture(host: authority.host, url: request.target,
-                                 method: request.method.uppercased(), request: request)
+                                 method: request.method.uppercased(), request: request,
+                                 meta: meta, decision: decision)
             try await writePlainHTTP(socket, status: 403, reason: "Forbidden",
                                      message: "TouchFlow blocked \(authority.host)")
             return false
@@ -469,6 +490,7 @@ public final class ProxyServer: @unchecked Sendable {
             let responseBody = try await readResponseBody(response, request: request, stream: upstreamStream)
             recordPlainCapture(host: authority.host, request: request, requestBody: body,
                                response: response, responseBody: responseBody,
+                               meta: meta, decision: decision,
                                durationMs: elapsedMs(since: started))
 
             var responseHeaders = HTTPCodec.stripHopByHop(response.headers)
@@ -506,6 +528,8 @@ public final class ProxyServer: @unchecked Sendable {
                                     requestBody: Data,
                                     response: HTTPResponseHead,
                                     responseBody: Data,
+                                    meta: ConnectionMeta,
+                                    decision: RouteDecision,
                                     durationMs: Int) {
         guard let capture else { return }
         capture.capture(CapturedRequest(
@@ -518,16 +542,24 @@ public final class ProxyServer: @unchecked Sendable {
             responseHeaders: Self.headerDictionary(response.headers),
             responseBody: Self.captureBody(responseBody),
             mimeType: response.headers.first("Content-Type"),
-            durationMs: durationMs))
+            durationMs: durationMs,
+            sourceApp: meta.sourceApp,
+            sourceIP: meta.sourceIP,
+            chain: decision.chain))
     }
 
-    private func recordBlockedCapture(host: String, url: String, method: String, request: HTTPRequestHead) {
+    private func recordBlockedCapture(host: String, url: String, method: String,
+                                      request: HTTPRequestHead, meta: ConnectionMeta,
+                                      decision: RouteDecision) {
         guard let capture else { return }
         capture.capture(CapturedRequest(method: method,
                                         url: url,
                                         host: host,
                                         requestHeaders: Self.headerDictionary(request.headers),
                                         statusCode: 403,
+                                        sourceApp: meta.sourceApp,
+                                        sourceIP: meta.sourceIP,
+                                        chain: decision.chain,
                                         blocked: true))
     }
 
@@ -542,7 +574,8 @@ public final class ProxyServer: @unchecked Sendable {
 
     // MARK: - SOCKS5
 
-    private func handleSOCKS5(id: UUID, stream: BufferedStream, socket: NetSocket, remote: String?) async throws {
+    private func handleSOCKS5(id: UUID, stream: BufferedStream, socket: NetSocket, remote: String?,
+                              origin: ClientOrigin) async throws {
         guard let greeting = try await stream.readExactly(2).nilIfEmpty else {
             throw TouchFlowError.protocolError("socks5: client closed during method negotiation")
         }
@@ -578,7 +611,7 @@ public final class ProxyServer: @unchecked Sendable {
             return
         }
 
-        let meta = ConnectionMeta(host: host, port: port, network: "tcp")
+        let meta = makeMeta(host: host, port: port, origin: origin)
         let decision = router.decide(meta)
         if decision.isBlocked || decision.outbound.type == .reject {
             recordRejected(meta, decision: decision, blockedBy: "rule")
@@ -641,6 +674,14 @@ public final class ProxyServer: @unchecked Sendable {
         return try await HTTPCodec.readBody(stream, framing: try HTTPCodec.framing(for: response.headers, isRequest: false))
     }
 
+    private func makeMeta(host: String, port: UInt16, origin: ClientOrigin) -> ConnectionMeta {
+        ConnectionMeta(host: host, port: port, network: "tcp",
+                       sourceApp: origin.process?.displayName,
+                       sourcePID: origin.process?.pid,
+                       sourceBundleID: origin.process?.bundleID,
+                       sourceIP: origin.ip)
+    }
+
     private func makeEvent(phase: FlowPhase,
                            meta: ConnectionMeta,
                            decision: RouteDecision,
@@ -660,7 +701,8 @@ public final class ProxyServer: @unchecked Sendable {
                   bytesIn: bytesIn,
                   bytesOut: bytesOut,
                   durationMs: durationMs,
-                  blockedBy: blockedBy)
+                  blockedBy: blockedBy,
+                   chain: decision.chain)
     }
 
     private func recordRejected(_ meta: ConnectionMeta, decision: RouteDecision, blockedBy: String) {
@@ -688,6 +730,16 @@ public final class ProxyServer: @unchecked Sendable {
     }
 
     // MARK: - Address helpers
+
+    /// Host and port of an accepted connection; the port is the client's ephemeral
+    /// port, which is what libproc keys on.
+    private static func endpointParts(_ endpoint: NWEndpoint) -> (host: String?, port: UInt16?) {
+        let host = hostString(endpoint)
+        if case .hostPort(_, let port) = endpoint, let value = UInt16(exactly: port.rawValue) {
+            return (host, value)
+        }
+        return (host, nil)
+    }
 
     private static func hostString(_ endpoint: NWEndpoint) -> String? {
         switch endpoint {

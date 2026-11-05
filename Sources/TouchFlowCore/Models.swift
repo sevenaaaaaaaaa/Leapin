@@ -442,15 +442,54 @@ public struct ConnectionMeta: Sendable, Hashable {
     public var sourcePID: Int32?
     public var sourceBundleID: String?
     public var destinationIP: String?
+    /// Address of the client that opened this connection (loopback IP, or the LAN
+    /// address when allowLAN is on). Drives SRC-IP-CIDR; nil for synthetic probes.
+    public var sourceIP: String?
     public var ruleHint: String?
 
     public init(host: String, port: UInt16, network: String = "tcp", sourceApp: String? = nil,
                 sourcePID: Int32? = nil, sourceBundleID: String? = nil,
-                destinationIP: String? = nil, ruleHint: String? = nil) {
+                destinationIP: String? = nil, ruleHint: String? = nil,
+                sourceIP: String? = nil) {
         self.host = host; self.port = port; self.network = network
         self.sourceApp = sourceApp; self.sourcePID = sourcePID
         self.sourceBundleID = sourceBundleID; self.destinationIP = destinationIP
-        self.ruleHint = ruleHint
+        self.ruleHint = ruleHint; self.sourceIP = sourceIP
+    }
+}
+
+/// Why a connection was routed the way it was: the top-level rule that matched plus
+/// the rule-set member that actually fired (outer to inner). Cheap enough to build on
+/// every decided connection, unlike the full per-rule trace of RuleEngine.explain.
+public struct RuleChain: Sendable, Hashable, Codable {
+    public struct Step: Sendable, Hashable, Codable {
+        /// Surge/Clash line, e.g. RULE-SET,ChinaMax,DIRECT.
+        public var label: String
+        /// Extra context, e.g. set "ChinaMax" member DOMAIN-SUFFIX,baidu.com.
+        public var detail: String?
+        public init(label: String, detail: String? = nil) {
+            self.label = label; self.detail = detail
+        }
+    }
+
+    public var steps: [Step]
+    /// 1-based index of the matched top-level rule.
+    public var index: Int?
+    /// Number of top-level rules that were evaluated against this connection.
+    public var total: Int
+    public var policy: String
+    /// True when the decision came from a MATCH / FINAL fallback rather than a real hit.
+    public var isFinal: Bool
+
+    public init(steps: [Step] = [], index: Int? = nil, total: Int = 0,
+                policy: String = "DIRECT", isFinal: Bool = false) {
+        self.steps = steps; self.index = index; self.total = total
+        self.policy = policy; self.isFinal = isFinal
+    }
+
+    /// RULE-SET,ChinaMax,DIRECT  >  DOMAIN-SUFFIX,baidu.com
+    public var summary: String {
+        steps.map { $0.label }.joined(separator: "  >  ")
     }
 }
 
@@ -459,10 +498,13 @@ public struct RouteDecision: Sendable, Hashable {
     public var outbound: OutboundConfig
     public var matchedRule: String?
     public var isBlocked: Bool
+    public var chain: RuleChain?
 
-    public init(policy: String, outbound: OutboundConfig, matchedRule: String? = nil, isBlocked: Bool = false) {
+    public init(policy: String, outbound: OutboundConfig, matchedRule: String? = nil,
+                isBlocked: Bool = false, chain: RuleChain? = nil) {
         self.policy = policy; self.outbound = outbound
         self.matchedRule = matchedRule; self.isBlocked = isBlocked
+        self.chain = chain
     }
 }
 
@@ -486,16 +528,19 @@ public struct FlowEvent: Sendable, Identifiable, Codable {
     public var bytesOut: Int
     public var durationMs: Int
     public var blockedBy: String?     // "adblock" / "rule" / nil
+    /// Rule chain that produced policy; nil for events recorded before v1.5.
+    public var chain: RuleChain?
 
     public init(id: UUID = UUID(), timestamp: Date = Date(), phase: FlowPhase, host: String, port: UInt16,
                 network: String = "tcp", policy: String = "", matchedRule: String? = nil,
                 outbound: String = "", sourceApp: String? = nil, sourcePID: Int32? = nil,
-                bytesIn: Int = 0, bytesOut: Int = 0, durationMs: Int = 0, blockedBy: String? = nil) {
+                bytesIn: Int = 0, bytesOut: Int = 0, durationMs: Int = 0, blockedBy: String? = nil,
+                chain: RuleChain? = nil) {
         self.id = id; self.timestamp = timestamp; self.phase = phase; self.host = host
         self.port = port; self.network = network; self.policy = policy
         self.matchedRule = matchedRule; self.outbound = outbound; self.sourceApp = sourceApp
         self.sourcePID = sourcePID; self.bytesIn = bytesIn; self.bytesOut = bytesOut
-        self.durationMs = durationMs; self.blockedBy = blockedBy
+        self.durationMs = durationMs; self.blockedBy = blockedBy; self.chain = chain
     }
 }
 
@@ -526,18 +571,24 @@ public struct CapturedRequest: Sendable, Codable, Identifiable {
     public var mimeType: String?
     public var durationMs: Int
     public var sourceApp: String?
+    /// Client address the request arrived from (nil for traffic captured before v1.5).
+    public var sourceIP: String?
+    /// Rule chain that routed this request; nil when capture predates the chain field.
+    public var chain: RuleChain?
     public var blocked: Bool
 
     public init(id: UUID = UUID(), timestamp: Date = Date(), method: String, url: String, host: String,
                 requestHeaders: [String: String] = [:], requestBody: Data? = nil,
                 statusCode: Int? = nil, responseHeaders: [String: String] = [:],
                 responseBody: Data? = nil, mimeType: String? = nil, durationMs: Int = 0,
-                sourceApp: String? = nil, blocked: Bool = false) {
+                sourceApp: String? = nil, sourceIP: String? = nil, chain: RuleChain? = nil,
+                blocked: Bool = false) {
         self.id = id; self.timestamp = timestamp; self.method = method; self.url = url
         self.host = host; self.requestHeaders = requestHeaders; self.requestBody = requestBody
         self.statusCode = statusCode; self.responseHeaders = responseHeaders
         self.responseBody = responseBody; self.mimeType = mimeType; self.durationMs = durationMs
-        self.sourceApp = sourceApp; self.blocked = blocked
+        self.sourceApp = sourceApp; self.sourceIP = sourceIP; self.chain = chain
+        self.blocked = blocked
     }
 }
 

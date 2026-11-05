@@ -19,6 +19,10 @@ struct ImportReportSheet: View {
             header
             TFDivider()
             counters
+            if !report.notDialable.isEmpty {
+                TFDivider()
+                notDialableBand
+            }
             TFDivider()
             issueList
             TFDivider()
@@ -77,6 +81,34 @@ struct ImportReportSheet: View {
                 .foregroundStyle(tint)
         }
         .frame(minWidth: 54, alignment: .leading)
+    }
+
+    /// Kept separate from the issue list on purpose: an outbound that was imported
+    /// but cannot be dialed is the single most expensive silent failure on import.
+    private var notDialableBand: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "bolt.slash")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(TF.amber)
+                Text("\(report.notDialable.count) 个出站暂不可拨号")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(TF.text)
+                Spacer(minLength: 0)
+            }
+            Text(report.notDialable.joined(separator: "  ·  "))
+                .font(TFFont.mono(10))
+                .foregroundStyle(TF.textSecondary)
+                .lineLimit(3)
+                .textSelection(.enabled)
+            Text("节点与协议都已保留（导出不会丢），但当前版本拨不出去；规则选到它们时连接会失败，可在策略组里换一个成员。")
+                .font(.system(size: 11))
+                .foregroundStyle(TF.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .accessibilityElement(children: .combine)
     }
 
     private var counterDivider: some View {
@@ -194,6 +226,9 @@ struct ImportReportSheet: View {
 
     private var plainText: String {
         var lines = ["TouchFlow 导入报告", report.summary]
+        if !report.notDialable.isEmpty {
+            lines.append("- 暂不可拨号：\(report.notDialable.joined(separator: "、"))")
+        }
         for issue in report.issues {
             lines.append("- [\(kindLabel(issue.kind))] \(issue.display)")
         }

@@ -172,13 +172,15 @@ final class FormatTests: XCTestCase {
         XCTAssertEqual(p.rules[1].value, "cn")
         XCTAssertEqual(p.rules[2].kind, .match)
 
-        // The fixture deliberately uses a provider-based group and a Clash relay:
-        // both must be reported instead of silently degraded.
+        // The fixture deliberately uses a provider-based group, a Clash relay and two
+        // protocols this build cannot dial: all three must be reported instead of
+        // silently degraded.
         XCTAssertFalse(outcome.report.isClean)
-        XCTAssertEqual(outcome.report.issues.count, 2, "\(outcome.report.issues.map(\.display))")
         XCTAssertTrue(outcome.report.issues.contains { $0.item == "AUTO" })
         XCTAssertTrue(outcome.report.issues.contains { $0.item == "relay" && $0.kind == .unknownGroupType })
-        XCTAssertFalse(outcome.report.summary.isEmpty)
+        XCTAssertEqual(Set(outcome.report.notDialable), ["vless-01", "hy2-01"])
+        XCTAssertEqual(outcome.report.issues.filter { $0.kind == .unknownProtocol }.count, 2)
+        XCTAssertTrue(outcome.report.summary.contains("暂不可拨号"), outcome.report.summary)
     }
 
     // MARK: - 2. Unknown protocols are kept verbatim, not dropped

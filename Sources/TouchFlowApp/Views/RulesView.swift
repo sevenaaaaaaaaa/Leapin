@@ -14,6 +14,9 @@ struct RulesView: View {
     @State private var selection: String?
     @State private var pendingDelete: Rule?
     @State private var filter: PolicyFilter = .all
+    /// Bumped by the probe refresh timer so measured latency re-renders even though
+    /// TFHealth itself is not observable.
+    @State private var healthTick = 0
     @FocusState private var searchFocused: Bool
     @FocusState private var listFocused: Bool
 
@@ -95,6 +98,10 @@ struct RulesView: View {
             if selection == rule.id { selection = nil }
             pendingDelete = nil
             app.showToast("已删除 \(rule.value)", kind: .info)
+        }
+        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in
+            // Probe results land in TFHealth, not in an observable object.
+            healthTick &+= 1
         }
         .onChange(of: app.searchFocusRequest) { _, _ in
             searchFocused = true
@@ -282,6 +289,21 @@ struct RulesView: View {
                                     get: { group.selected ?? group.proxies.first ?? "DIRECT" },
                                     set: { engine.selectOutbound(group: group.name, outbound: $0) }
                                 ), options: group.proxies.map { ($0, $0) })
+                                if group.type == .urlTest || group.type == .fallback || group.type == .loadBalance {
+                                    HStack(spacing: 6) {
+                                        Text("当前")
+                                            .font(TFFont.mono(9))
+                                            .foregroundStyle(TF.textTertiary)
+                                        Text(engine.state == .running
+                                             ? (engine.effectiveMember(group: group.name) ?? "—")
+                                             : "未运行")
+                                            .font(TFFont.mono(10))
+                                            .foregroundStyle(TF.textSecondary)
+                                            .lineLimit(1)
+                                        Spacer(minLength: 4)
+                                        groupHealthNote(group)
+                                    }
+                                }
                             }
                             .padding(.vertical, 4)
                         }
@@ -298,6 +320,11 @@ struct RulesView: View {
                                 .font(.system(size: 12))
                                 .foregroundStyle(TF.text)
                             Spacer()
+                            if let ms = engine.latency(for: outbound.name) {
+                                Text("\(ms) ms")
+                                    .font(TFFont.num(9.5))
+                                    .foregroundStyle(TF.textTertiary)
+                            }
                             Text(outbound.type.rawValue)
                                 .font(TFFont.mono(10))
                                 .foregroundStyle(TF.textTertiary)
@@ -338,6 +365,22 @@ struct RulesView: View {
             .padding(.trailing, 4)
         }
         .scrollIndicators(.never)
+    }
+
+    /// Fastest measured member of a group, or an honest "not probed yet".
+    @ViewBuilder
+    private func groupHealthNote(_ group: PolicyGroup) -> some View {
+        let scored = group.proxies.compactMap { name in engine.latency(for: name).map { (name, $0) } }
+        if let fastest = scored.min(by: { $0.1 < $1.1 }) {
+            Text("最快 \(fastest.0) \(fastest.1) ms")
+                .font(TFFont.mono(9))
+                .foregroundStyle(TF.textTertiary)
+                .lineLimit(1)
+        } else {
+            Text("尚未测速")
+                .font(TFFont.mono(9))
+                .foregroundStyle(TF.textTertiary)
+        }
     }
 
     private func railSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {

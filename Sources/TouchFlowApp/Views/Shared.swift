@@ -109,6 +109,71 @@ struct Badge: View {
     }
 }
 
+/// Why a connection went where it went: the outer rule plus the rule-set member
+/// that actually fired. Shared by capture detail and any surface that shows a
+/// routing decision, so the wording stays identical everywhere.
+struct RuleChainCard: View {
+    var chain: RuleChain
+    var title: String = "裁决链 / RULE CHAIN"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 8) {
+                TFEyebrow(text: title)
+                Spacer(minLength: 6)
+                if let index = chain.index {
+                    Text("第 \(index) / \(chain.total) 条")
+                        .font(TFFont.mono(9))
+                        .foregroundStyle(TF.textTertiary)
+                }
+                Text(chain.policy)
+                    .font(TFFont.mono(9.5, weight: .semibold))
+                    .foregroundStyle(TF.textSecondary)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 11)
+            .padding(.bottom, 9)
+            TFDivider()
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(chain.steps.enumerated()), id: \.offset) { offset, step in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(String(format: "%02d", offset + 1))
+                            .font(TFFont.mono(9))
+                            .foregroundStyle(TF.textTertiary)
+                            .frame(width: 15, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(step.label)
+                                .font(TFFont.mono(11, weight: offset == chain.steps.count - 1 ? .semibold : .regular))
+                                .foregroundStyle(offset == chain.steps.count - 1 ? TF.text : TF.textSecondary)
+                                .textSelection(.enabled)
+                            if let detail = step.detail, !detail.isEmpty {
+                                Text(detail)
+                                    .font(TFFont.mono(9.5))
+                                    .foregroundStyle(TF.textTertiary)
+                                    .textSelection(.enabled)
+                            }
+                        }
+                        Spacer(minLength: 4)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+            TFDivider()
+            Text(chain.isFinal ? "没有命中具体规则，由兜底 MATCH 裁决" : "按首次命中裁决，后面的规则不再求值")
+                .font(TFFont.mono(9))
+                .foregroundStyle(TF.textTertiary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+        }
+        .background(TF.panel, in: RoundedRectangle(cornerRadius: TF.radius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: TF.radius, style: .continuous)
+                .strokeBorder(TF.stroke, lineWidth: 0.5)
+        )
+    }
+}
+
 /// Menu-backed select that matches the ruled form line.
 struct TFSelectField<Value: Hashable>: View {
     @Binding var value: Value
@@ -242,8 +307,21 @@ struct FlowRow: View {
                     Text(Fmt.clock(flow.timestamp))
                         .font(TFFont.mono(10))
                         .foregroundStyle(TF.textTertiary)
+                    if let app = flow.sourceApp, !app.isEmpty {
+                        Text(app)
+                            .font(TFFont.mono(10))
+                            .foregroundStyle(TF.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
                     if !flow.policy.isEmpty { Badge(text: flow.policy) }
-                    if let rule = flow.matchedRule, !rule.isEmpty {
+                    if flow.chain?.isFinal == true {
+                        // "FINAL,PROXY" is the engine's兜底 rule; naming it plainly beats
+                        // repeating the outbound already shown by the badge.
+                        Text("兜底")
+                            .font(TFFont.mono(10))
+                            .foregroundStyle(TF.textTertiary)
+                    } else if let rule = flow.matchedRule, !rule.isEmpty {
                         Text(rule)
                             .font(TFFont.mono(10))
                             .foregroundStyle(TF.textTertiary)
@@ -262,11 +340,25 @@ struct FlowRow: View {
             }
         }
         .padding(.vertical, 6)
+        .modifier(OptionalHelp(text: flow.chain?.summary))
     }
 
     private var accent: Color {
         if flow.blockedBy != nil { return TF.danger }
         return flow.phase == .closed ? TF.textTertiary : TF.mint
+    }
+}
+
+/// On macOS .help("") still shows an empty tooltip box; only attach when there is text.
+struct OptionalHelp: ViewModifier {
+    var text: String?
+
+    func body(content: Content) -> some View {
+        if let text, !text.isEmpty {
+            content.help(text)
+        } else {
+            content
+        }
     }
 }
 

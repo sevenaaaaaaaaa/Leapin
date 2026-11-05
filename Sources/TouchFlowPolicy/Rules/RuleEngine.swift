@@ -6,11 +6,15 @@ public struct RuleMatch: Sendable {
     public var matchedRule: Rule?
     public var policy: String
     public var trace: [String]
+    /// Compact outer-to-inner explanation of the decision (nil when nothing matched).
+    public var chain: RuleChain?
 
-    public init(matchedRule: Rule? = nil, policy: String = "DIRECT", trace: [String] = []) {
+    public init(matchedRule: Rule? = nil, policy: String = "DIRECT", trace: [String] = [],
+                chain: RuleChain? = nil) {
         self.matchedRule = matchedRule
         self.policy = policy
         self.trace = trace
+        self.chain = chain
     }
 }
 
@@ -30,11 +34,17 @@ public final class RuleEngine: RouteDeciding {
         var matched: Bool
         var note: String
         var policyOverride: String?
+        /// Rule-set members that fired, outermost first (empty for plain rules).
+        var memberChain: [String] = []
     }
 
     private let rules: [Prepared]
     private let ruleSets: [String: [Prepared]]
     private let geoIP: GeoIPDatabase?
+    /// The resolver this engine decides with, exposed so the UI can show which
+    /// member an automatic group actually picked instead of guessing.
+    public var policies: PolicyResolver { resolver }
+
     private let resolver: PolicyResolver
     private let totalRuleCount: Int
     private let maxTraceLines: Int
@@ -70,7 +80,8 @@ public final class RuleEngine: RouteDeciding {
             matchedLabel = nil
         }
         return RouteDecision(policy: outcome.policy, outbound: outbound,
-                             matchedRule: matchedLabel, isBlocked: outbound.type == .reject)
+                             matchedRule: matchedLabel, isBlocked: outbound.type == .reject,
+                             chain: outcome.chain)
     }
 
     /// First-match evaluation without building a trace. `trace` is always empty; use
@@ -81,16 +92,29 @@ public final class RuleEngine: RouteDeciding {
         // returning, so the set is empty again after every rule. Hoisting it avoids a
         // fresh allocation per rule in the linear scan.
         var visitedSets: Set<String> = []
-        for prepared in rules {
+        for (index, prepared) in rules.enumerated() {
             let result = evaluate(prepared, meta: meta, host: host, depth: 0, visitedSets: &visitedSets)
             if result.matched {
                 let policy = result.policyOverride ?? prepared.rule.policy
+                let resolved = policy.isEmpty ? "DIRECT" : policy
                 return RuleMatch(matchedRule: prepared.rule,
-                                 policy: policy.isEmpty ? "DIRECT" : policy,
-                                 trace: [])
+                                 policy: resolved,
+                                 trace: [],
+                                 chain: makeChain(rule: prepared.rule, index: index + 1,
+                                                  result: result, policy: resolved))
             }
         }
         return RuleMatch(matchedRule: nil, policy: "DIRECT", trace: [])
+    }
+
+    /// Outer rule plus any rule-set members that decided it. Built only on a match,
+    /// so the hot path keeps paying nothing for connections that fall through.
+    private func makeChain(rule: Rule, index: Int, result: Evaluation, policy: String) -> RuleChain {
+        let outer = RuleChain.Step(label: describe(rule),
+                                   detail: result.note.isEmpty ? nil : result.note)
+        let members = result.memberChain.map { RuleChain.Step(label: $0, detail: "rule-set member") }
+        return RuleChain(steps: [outer] + members, index: index, total: rules.count,
+                         policy: policy, isFinal: rule.kind == .match)
     }
 
     public func explain(_ meta: ConnectionMeta) -> RuleMatch {
@@ -154,11 +178,18 @@ public final class RuleEngine: RouteDeciding {
             result = Evaluation(matched: box.regex.firstMatch(in: host, range: range) != nil,
                                 note: "", policyOverride: nil)
 
-        case .ipCIDR, .ipCIDR6, .srcIPCIDR:
-            guard rule.kind != .srcIPCIDR else {
-                result = Evaluation(matched: false, note: "source IP unavailable", policyOverride: nil)
+        case .srcIPCIDR:
+            guard let cidr = prepared.cidr else {
+                result = Evaluation(matched: false, note: "invalid CIDR", policyOverride: nil)
                 break
             }
+            guard let ip = meta.sourceIP, !ip.isEmpty else {
+                result = Evaluation(matched: false, note: "no client IP", policyOverride: nil)
+                break
+            }
+            result = Evaluation(matched: cidr.contains(address: ip), note: "", policyOverride: nil)
+
+        case .ipCIDR, .ipCIDR6:
             guard let cidr = prepared.cidr else {
                 result = Evaluation(matched: false, note: "invalid CIDR", policyOverride: nil)
                 break
@@ -241,7 +272,11 @@ public final class RuleEngine: RouteDeciding {
                 // A policy-less outer rule (imported sets) keeps the member rule's policy.
                 let outer = prepared.rule.policy
                 let policy = outer.isEmpty ? (entry.rule.policy.isEmpty ? "DIRECT" : entry.rule.policy) : outer
-                return Evaluation(matched: true, note: "set '\(prepared.value)'", policyOverride: policy)
+                let memberLabel = entry.rule.raw.isEmpty
+                    ? RuleParser.exportLine(entry.rule, matchToken: "FINAL")
+                    : entry.rule.raw
+                return Evaluation(matched: true, note: "set '\(prepared.value)'", policyOverride: policy,
+                                  memberChain: [memberLabel] + sub.memberChain)
             }
         }
         return Evaluation(matched: false, note: "set '\(prepared.value)'", policyOverride: nil)

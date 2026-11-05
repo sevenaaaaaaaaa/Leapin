@@ -57,6 +57,7 @@ public final class TouchFlowEngine: ObservableObject {
     private var ruleEngine: RuleEngine?
     private var adblock: AdBlockEngine?
     private var ca: CertificateAuthority?
+    private var healthProber: HealthProber?
     private let sink = EngineSink()
     private var logObserverInstalled = false
 
@@ -156,6 +157,12 @@ public final class TouchFlowEngine: ObservableObject {
                 do { try socks.start(); proxies.append(socks) }
                 catch { TFLog.shared.warn("engine", "SOCKS 端口 \(general.socksPort) 未启动：\(error.localizedDescription)") }
             }
+            let probes = Self.probeTargets(for: profile)
+            if !probes.isEmpty {
+                let prober = HealthProber(dialer: OutboundDialer(resolver: dnsResolver), probes: probes)
+                prober.start()
+                healthProber = prober
+            }
             stats.startedAt = Date()
             state = .running
             TFLog.shared.info("engine", "代理已启动 127.0.0.1:\(profile.general.mixedPort)，规则 \(profile.rules.count) 条")
@@ -197,7 +204,50 @@ public final class TouchFlowEngine: ObservableObject {
         }
     }
 
+    /// Members of url-test / fallback groups, one probe per distinct outbound.
+    /// The probe uses the group's own test URL when it has one, so latency matches
+    /// what the config author intended to measure.
+    private static func probeTargets(for profile: Profile) -> [HealthProber.Probe] {
+        var probes: [HealthProber.Probe] = []
+        var seen = Set<String>()
+        for group in profile.groups where group.type == .urlTest || group.type == .fallback {
+            let target = probeEndpoint(group.url)
+            for member in group.proxies {
+                guard let outbound = profile.outbound(named: member), outbound.type.isDialable else { continue }
+                let key = outbound.name.lowercased()
+                guard seen.insert(key).inserted else { continue }
+                probes.append(.init(name: outbound.name, outbound: outbound,
+                                    host: target.host, port: target.port))
+            }
+        }
+        return probes
+    }
+
+    /// host/port for a group test URL; 443 gstatic is the sane default when the
+    /// config has no url (or one we cannot parse).
+    private static func probeEndpoint(_ url: String?) -> (host: String, port: UInt16) {
+        if let url, let components = URLComponents(string: url), let host = components.host, !host.isEmpty {
+            let port = components.port.map { UInt16(clamping: $0) } ?? (components.scheme == "http" ? 80 : 443)
+            return (host, port)
+        }
+        return ("www.gstatic.com", 443)
+    }
+
+    /// Latest measured latency for an outbound, for the UI.
+    public func latency(for outbound: String) -> Int? {
+        TFHealth.shared.freshHealth(for: outbound, maxAge: 600)?.latencyMs
+    }
+
+    /// Member an automatic group (url-test / fallback) is using right now.
+    /// Nil for select groups (their selection is the answer) and while stopped.
+    public func effectiveMember(group: String) -> String? {
+        ruleEngine?.policies.effectiveMember(group: group)
+    }
+
     private func teardown() {
+        healthProber?.stop()
+        healthProber = nil
+        TFHealth.shared.reset()
         proxies.forEach { $0.stop() }
         proxies.removeAll()
         dnsServer?.stop(); dnsServer = nil

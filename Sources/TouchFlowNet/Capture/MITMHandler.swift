@@ -22,6 +22,8 @@ final class MITMHandler: @unchecked Sendable {
     private let outbound: OutboundConfig
     private let sourceApp: String?
     private let sourcePID: Int32?
+    private let sourceIP: String?
+    private let chain: RuleChain?
     private let idleTimeout: TimeInterval
 
     init(ca: CertificateAuthority,
@@ -33,6 +35,8 @@ final class MITMHandler: @unchecked Sendable {
          outbound: OutboundConfig,
          sourceApp: String?,
          sourcePID: Int32?,
+         sourceIP: String? = nil,
+         chain: RuleChain? = nil,
          idleTimeout: TimeInterval = 300) {
         self.ca = ca
         self.blocker = blocker
@@ -43,6 +47,8 @@ final class MITMHandler: @unchecked Sendable {
         self.outbound = outbound
         self.sourceApp = sourceApp
         self.sourcePID = sourcePID
+        self.sourceIP = sourceIP
+        self.chain = chain
         self.idleTimeout = idleTimeout
     }
 
@@ -199,6 +205,8 @@ final class MITMHandler: @unchecked Sendable {
                 mimeType: "text/plain",
                 durationMs: elapsedMs(since: started),
                 sourceApp: sourceApp,
+                sourceIP: sourceIP,
+                chain: chain,
                 blocked: true))
             return false
         }
@@ -276,6 +284,8 @@ final class MITMHandler: @unchecked Sendable {
             mimeType: mimeType,
             durationMs: elapsedMs(since: started),
             sourceApp: sourceApp,
+            sourceIP: sourceIP,
+            chain: chain,
             blocked: false))
         return true
     }

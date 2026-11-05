@@ -3,6 +3,7 @@
 本文件只记录**真实跑过**的命令与结果，以及明确未验证的部分。所有结论都可用下方命令复现。
 v1.3 在 v1.2 视觉基础上只动 App 层：动效令牌化 + 全量 reduceMotion、按钮焦点环、设置页窄窗单列；网络/策略/Runtime 行为未变。
 v1.4 把视觉层迁到 macOS 26 Liquid Glass（窗口 behind-window 材质 + 功能层玻璃 + 内容层 clear glass），仍是纯 App 层改动，网络与策略行为未变。
+v1.5 开始 v3 路线图的 P0（诚实性）：AUTO 真测速、PROCESS/SRC-IP 接上、每条连接带裁决链、导入报告单列不可拨协议。
 
 ## 0. 视觉重构验证（v1.2）
 
@@ -43,6 +44,35 @@ v1.4 把视觉层迁到 macOS 26 Liquid Glass（窗口 behind-window 材质 + �
 - 验证取舍：主操作按钮不使用 tint 玻璃（Glass.tint(accentFill) 在浅底把朱红洗成灰、白字对比 <2:1），代码注释写明“可读性优先于材质一致性”。
 - 未验证：真实 macOS 26 硬件上的玻璃折射观感（本机系统版本高于 26，但截图无法反映动态折射）；reduceTransparency 关闭材质后的完整 10 页走查只抽查了总览与设置两页；真机 Tab 走查未做（无辅助功能权限，同 v1.3）。
 
+## 0.3 P0 诚实性验证（v1.5，2026-11-05）
+
+P0 的目标不是加功能，而是把「界面上说了、引擎里没做」的地方要么做真、要么说清。
+本轮四项：AUTO 真测速 / PROCESS 与 SRC-IP 接上 / 规则链 / 导入报告标出不可拨协议。
+
+- 构建：`swift build --scratch-path .build-app` 零 error；`./scripts/build-app.sh debug` 成功。
+- 测试：`swift test --scratch-path .build-app` → **132 条全绿**（Core 1 / Policy 51 / Net 69 / Integrations 11）；
+  新增 `Tests/TouchFlowPolicyTests/HonestyTests.swift` 10 条：url-test 选最快 + 滞回不抖、fallback 跳过 dead、
+  SRC-IP-CIDR 命中、chain 含 RULE-SET 成员且 MATCH 为 final、vmess 标记不可拨、导入报告 notDialable 计数。
+- 端到端：`./scripts/smoke.sh` → **pass=7 fail=0**。
+- 工作态取证（`TF_AUTOSTART=1` 直接跑 `dist/TouchFlow.app/Contents/MacOS/TouchFlowApp`）：
+  · 归属：`curl -x http://127.0.0.1:7890 http://httpforever.com/` → 200；抓包详情显示 `curl`、`127.0.0.1`，
+    总览最近连接显示「23:23:32 curl PROXY 兜底」。进程归属走 libproc（C target `CTouchFlowProc`）+ 1 秒端口快照，
+    不再依赖「猜测」。（`/tmp/tfp0/capture-chain3.png`、`/tmp/tfp0/dashboard-attr.png`）
+  · 规则链：同一条请求的详情卡「裁决链 / RULE CHAIN」显示「第 9 / 9 条」「01 FINAL,PROXY」
+    与脚注「没有命中具体规则，由兜底 MATCH 裁决」——链路数据来自 `RouteDecision.chain`，不是 UI 事后拼的。
+  · 测速：启动代理 8 秒后规则页 AUTO 组显示「当前 DIRECT」「最快 DIRECT 698 ms」，出站行同步显示 `698 ms`；
+    数值来自 `HealthProber` 对 `www.gstatic.com:443` 的真实 TCP 握手（`TFHealth` 记录），停代理后立刻回落为「未运行 / 尚未测速」。
+    （`/tmp/tfp0/rules-latency3.png`）
+- 行为变更（写进导出/导入路径）：
+  · `ImportReport.notDialable`：导入含 vmess/vless/hysteria2/tuic 等协议的订阅时，报告单列「协议 X 已保留但暂不可拨号（N 个出站）」，
+    并在 summary 追加「N 个出站暂不可拨号」；`validate()` 同样对不可拨协议出 issue，不再让用户以为「导入成功＝能用」。
+  · `PROCESS-NAME` 规则与 `SRC-IP-CIDR` 规则现在真的参与裁决（前者用归属 PID 的可执行名，后者用客户端地址）。
+  · 自动策略组（url-test / fallback / load-balance）使用实测延迟，180 秒内有效、带 50ms 容差滞回，避免来回切换。
+- 已知未验证 / 边界：
+  1. 真实 ss/vmess/trojan 节点的 url-test 只做了单元级（TFHealth 注入）验证；本机没有可用服务器，未做真节点握手。
+  2. MITM 解密后的请求，chain 与 sourceIP 取的是 CONNECT 阶段的决策（主机级）；同一隧道内多个 URL 的链不重新计算。
+  3. 进程归属基于 TCP 端口快照，UDP/QUIC 与生命周期短于一秒的连接可能归不到进程（此时仍显示 IP）。
+
 ## 1. 构建
 
 ```
@@ -64,10 +94,10 @@ swift test
 | 测试 target | 用例数 | 结果 | 耗时 |
 | --- | --- | --- | --- |
 | TouchFlowCoreTests | 1 | 0 failures | 0.001s |
-| TouchFlowPolicyTests | 41 | 0 failures | 2.0s |
+| TouchFlowPolicyTests | 51 | 0 failures | 2.0s |
 | TouchFlowNetTests | 69 | 0 failures | 8.8s |
 | TouchFlowIntegrationsTests | 11 | 0 failures | 0.8s |
-| 合计 | **122** | **0 failures** | ~12s |
+| 合计 | **132** | **0 failures** | ~12s |
 
 新增覆盖（v1.1）：
 - `FormatTests`（20 条）：Clash / Surge / 订阅 / rule-set 往返等价、未知协议保留 `rawType`、`$domain` 作用域、诊断字段。

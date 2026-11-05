@@ -463,12 +463,43 @@ struct CaptureView: View {
                             .frame(width: 22)
                             .help("复制请求")
                         }
-                        HStack(spacing: 12) {
-                            if let code = req.statusCode { Badge(text: "\(code)", color: code < 400 ? .green : .red) }
-                            if let mime = req.mimeType { Badge(text: mime, color: .blue) }
-                            Badge(text: Fmt.clock(req.timestamp), color: .gray)
-                            Badge(text: Fmt.duration(req.durationMs), color: .gray)
-                            if req.blocked { Badge(text: "已拦截", color: .red) }
+                        HStack(spacing: 10) {
+                            if let code = req.statusCode {
+                                Text(String(code))
+                                    .font(TFFont.num(11, weight: .semibold))
+                                    .foregroundStyle(code < 400 ? TF.text : TF.danger)
+                            }
+                            if let mime = req.mimeType {
+                                Text(mime)
+                                    .font(TFFont.mono(9.5))
+                                    .foregroundStyle(TF.textTertiary)
+                                    .lineLimit(1)
+                            }
+                            Text(Fmt.clock(req.timestamp))
+                                .font(TFFont.mono(9.5))
+                                .foregroundStyle(TF.textTertiary)
+                            Text(Fmt.duration(req.durationMs))
+                                .font(TFFont.num(9.5))
+                                .foregroundStyle(TF.textTertiary)
+                            Spacer(minLength: 6)
+                            if req.blocked { Badge(text: "已拦截", color: TF.danger) }
+                        }
+                        HStack(spacing: 10) {
+                            if let app = req.sourceApp, !app.isEmpty {
+                                Label(app, systemImage: "app.dashed")
+                                    .font(TFFont.mono(10))
+                                    .foregroundStyle(TF.textSecondary)
+                                    .lineLimit(1)
+                            }
+                            if let ip = req.sourceIP, !ip.isEmpty {
+                                Label(ip, systemImage: "point.3.connected.trianglepath.dotted")
+                                    .font(TFFont.mono(10))
+                                    .foregroundStyle(TF.textTertiary)
+                            }
+                            Spacer(minLength: 4)
+                        }
+                        if let chain = req.chain {
+                            RuleChainCard(chain: chain)
                         }
                         headersCard("请求头", req.requestHeaders)
                         if let body = req.requestBody, !body.isEmpty {
