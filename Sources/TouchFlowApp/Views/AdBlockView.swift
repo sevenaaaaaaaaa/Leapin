@@ -73,7 +73,7 @@ struct AdBlockView: View {
                 .foregroundStyle(TF.text)
                 .lineLimit(1)
                 .contentTransition(.numericText())
-                .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: value)
+                .tfAnimation(TFMotion.emphasized, value: value)
             Text(caption)
                 .font(.system(size: 12))
                 .foregroundStyle(TF.textTertiary)

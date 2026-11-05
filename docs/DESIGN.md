@@ -52,7 +52,7 @@
 
 - **TFPanel（`.tfPanel(padding:)`）**：`panel` 底 + `stroke` 发丝边 + 10pt 圆角，无阴影。只在 `raised` 时用极浅阴影。
 - **Instrument strip**：单块面板内若干指标，用 1×44 竖发丝线分隔；标签 mono 9 全大写，数字 mono 26。
-- **TFPrimaryButtonStyle / TFGhostButtonStyle**：填充朱红（白字、白 14% 内描边、按压缩放 0.985）；幽灵为 `Color.primary.opacity(0.045)` 底 + 12% 描边（语义色，暗色下自动正确）。
+- **TFPrimaryButtonStyle / TFGhostButtonStyle**：填充朱红（白字、白 14% 内描边、按压缩放 0.985）；幽灵为 `Color.primary.opacity(0.045)` 底 + 12% 描边（语义色，暗色下自动正确）。两套样式都包 `TFButtonFocusRing`：读到最近可聚焦祖先的 `\.isFocused`，在按钮外 3pt 处描 2pt 朱红环（corner 10），键盘焦点因此对所有按钮自动可见，无需逐处接 `@FocusState`。
 - **TFSwitch**：34×18 胶囊（可传 width），on = accent 填充，off = `text` 22%，白色 knob + 极轻投影；弹簧 0.26 / 0.82；`.focusEffectDisabled()` 去掉系统蓝环。
 - **TFLineField / TFSelectField**：下划线式输入；聚焦时底线变 accent 1.5pt（0.14s 动画），选择器用 popover 列表（选中项 semibold + accent 勾）。
 - **TFSearchField**：圆角 7 的浅墨底，聚焦时不做整框描边，只在底部出现 1.5pt accent 下划线（与输入框同一套焦点语言）。
@@ -71,20 +71,31 @@
 - `geo.width < 960` → 侧栏折叠为 68pt 图标栏（保留选中左侧 2×14 accent 胶囊 + tooltip）；页面头部右侧三个控件合并为一个 30pt 胶囊工具栏。
 - 页面内边距 32（左右）/ 16（上）/ 24（下）。
 - 抓包：内容宽 ≥820 时分栏（列表 / 详情，各 `minWidth 336`）；<820 时只留列表，选中请求后从右侧推出 56% 宽的检视层（顶部「请求详情 / REQUEST」+ esc 提示 + 关闭按钮，esc 或关闭收起）。1040 与 900 宽均无溢出，且没有「空详情栏占半屏」。
-- 所有双列页面（设置、去广告、隐私）在 900 宽下保持两列不挤压，字段标签固定 88pt、值域最大 228pt 并做中段截断。
+- 设置页按**窗口宽度**而非内容宽度切栏：`windowWidth ≥ 1000` 两列（左 代理端口/DNS，右 启动与常驻/抓包与解密/高级）；`< 1000` 单列，卡片区限宽 620pt 居中，避免 900 宽时两列把端口值、DNS 上游挤成中间截断。窗口宽度经根视图 `GeometryReader` 写入 `EnvironmentValues.tfWindowWidth`（macOS 没有 compact size class）。
+- 去广告、隐私在 900 宽下仍为两列，字段标签固定 88pt、值域最大 228pt 并做尾部截断。
 
 ## 6. 动效与微交互
 
+动效只有一套令牌（`TFMotion`，定义在 Theme.swift），全 App 不再出现散落的裸 `.animation(.easeOut(duration:…))`：
+
+| Token | 曲线 | 用途 |
+| --- | --- | --- |
+| `TFMotion.press` | easeOut 0.12 | 按压、筛选切换、复制勾选 |
+| `TFMotion.quick` | easeOut 0.14 | 焦点下划线、hover、局部状态 |
+| `TFMotion.standard` | easeOut 0.18 | 页面切换、抽屉、命令面板 |
+| `TFMotion.emphasized` | snappy 0.28 | 指标变化、检视层推出 |
+| `TFMotion.spring` | spring 0.26 / 0.82 | 开关滑块 |
+| `TFMotion.enter` | easeOut 0.38 (+delay) | 首屏错峰入场 |
+
 | 场景 | 行为 |
 | --- | --- |
-| 页面切换 | ZStack + `.id(section)`，opacity + 6pt offset，0.18s easeOut |
-| 指标变化 | `.contentTransition(.numericText())` + snappy 0.28 |
-| 开关 | 弹簧 0.26 / 0.82 |
-| 按钮 | 按下 0.985 缩放 + 0.86 透明（0.12s） |
+| 页面切换 | ZStack + `.id(section)`，opacity + 6pt offset（standard） |
+| 指标变化 | `.contentTransition(.numericText())` + emphasized |
+| 按钮 | 按下 0.985 缩放 + 0.86 透明（press）；键盘焦点描 2pt 朱红环 |
 | 复制 | 图标切换 1.1s 后复原 |
 | 抓包新行 | 左侧 2×15 accent 条 1.2s 淡出（不整体动画，避免列表跳动） |
 | 入场 | TFAppear 阶梯 delay 0 / 0.04 / 0.08 / 0.12 / 0.16 |
-| 减少动态 | `accessibilityReduceMotion` 全局生效（TFAppear / 数值过渡 / 脉冲点） |
+| 减少动态 | 声明式用 `.tfAnimation(token, value:)`（内部读 `accessibilityReduceMotion` 置 nil）；命令式用 `TFMotion.run(token) { … }`（打开时直接落位）；持续动画（状态点脉冲、不确定进度条）单独 guard。覆盖所有 App 层动画。 |
 
 ## 7. 页面清单（10 页）
 
@@ -105,7 +116,7 @@
 - 测试：`swift test` 122 条全绿（Core 1 / Policy 41 / Net 69 / Integrations 11）。
 - 端到端：`./scripts/smoke.sh` 7/7。
 - 截图核对（1040×752，浅色 / 深色 / 900 宽三套，2026-11-05 最新一轮存 `/tmp/tffinal2/`）：10 页布局、分组导航、双向流量图、表头对齐、暗色 token、窄窗折叠侧栏均人工目视通过。
-- 无障碍：reduce-motion 全量生效；开关有 `accessibilityRepresentation(Toggle)` 与中文 value；隐私评分刻度尺有完整朗读标签；对比度实测均过 AA。
+- 无障碍：reduce-motion 全量生效（声明式 `.tfAnimation` + 命令式 `TFMotion.run` 自动降级，脉冲/进度 loop 单独 guard）；按钮键盘焦点环覆盖两套按钮样式；开关有 `accessibilityRepresentation(Toggle)` 与中文 value；隐私评分刻度尺有完整朗读标签；对比度实测均过 AA。
 
 ## 8.1 评审轨迹
 
@@ -118,6 +129,7 @@
 | 第四轮（借鉴 Surge/OpenSurge：分组导航、双向流量图、mono 字阶收敛到 10/12） | 7.48 / 10 | 比第三轮 +0.28；Color 8.0 / Originality 8.2 已过线，Whitespace 7.1 最短 |
 | 第五轮（去永久骨架屏改空白账页、隐私刻度可读、规则逐行线与表尾合计、窄窗详情检视层、字号收敛到 9/10/12/13/22/34） | 7.75 / 10 | +0.27；Typo 8.1 / Color 8.0 / Originality 8.5 过线，Motion·Micro·Responsive 7.4 未过 7.7 硬条款 |
 | 第五轮收尾（账页线改 1pt 全量 stroke 确保 1× 可见；配置页四个头部按钮固定单行；900/暗色截图补拍） | 未再评分 | 见 `docs/design-critique-round5.md`；剩余为动效语言统一与按钮焦点环（结构性投入，未做） |
+| 第六轮（动效收敛为 `TFMotion` 六条令牌 + 全量 reduceMotion；按钮焦点环；设置页 <1000 单列 620pt） | 待复评 | 直接消解第五轮 Motion 7.4 / Micro 7.4 / Responsive 7.4 三条短板：33 处裸动画归零为令牌调用，焦点态对所有按钮可见，900 宽不再挤压 |
 
 ## 9. 已知取舍
 

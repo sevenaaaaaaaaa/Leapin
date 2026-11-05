@@ -256,7 +256,7 @@ struct DashboardView: View {
                 Button(step.actionTitle, action: step.action)
                     .buttonStyle(TFGhostButtonStyle())
                 Button {
-                    withAnimation(.easeOut(duration: 0.15)) { _ = dismissedHints.insert(step.id) }
+                    TFMotion.run(TFMotion.quick) { _ = dismissedHints.insert(step.id) }
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 9, weight: .bold))
@@ -429,7 +429,7 @@ struct DashboardView: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .contentTransition(.numericText())
-                .animation(.snappy(duration: 0.28), value: value)
+                .tfAnimation(TFMotion.emphasized, value: value)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 18)
@@ -560,7 +560,7 @@ struct DashboardView: View {
                 Rectangle()
                     .fill(probeFocused ? TF.accent : TF.stroke)
                     .frame(height: 1)
-                    .animation(.easeOut(duration: 0.15), value: probeFocused)
+                    .tfAnimation(TFMotion.quick, value: probeFocused)
             }
 
             if probe == nil {
@@ -730,7 +730,7 @@ struct DashboardView: View {
     private func runProbe() {
         let host = probeHost.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !host.isEmpty else { return }
-        withAnimation(.easeOut(duration: 0.18)) {
+        TFMotion.run(TFMotion.standard) {
             probe = engine.explain(host: host, port: 443)
             probeVerdict = engine.adblockVerdict(domain: host)
         }

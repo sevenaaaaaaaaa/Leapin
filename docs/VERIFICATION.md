@@ -1,7 +1,7 @@
-# TouchFlow 验收记录（v1.2，macOS 27.3 / arm64）
+# TouchFlow 验收记录（v1.3，macOS 27.3 / arm64）
 
 本文件只记录**真实跑过**的命令与结果，以及明确未验证的部分。所有结论都可用下方命令复现。
-v1.2 只动视觉与交互（App 层 + 少量共享控件），网络/策略/Runtime 行为未变；第 0 节记录本轮视觉验证。
+v1.3 在 v1.2 视觉基础上只动 App 层：动效令牌化 + 全量 reduceMotion、按钮焦点环、设置页窄窗单列；网络/策略/Runtime 行为未变。
 
 ## 0. 视觉重构验证（v1.2）
 
@@ -15,6 +15,18 @@ v1.2 只动视觉与交互（App 层 + 少量共享控件），网络/策略/Run
 - 工作态取证：启动代理后经 127.0.0.1:7890 打真实请求（example.com / httpforever.com / doubleclick.net），
   截取总览（活动连接、拦截 2、抓包 9、34.0 KB、双向曲线有数据）、抓包列表（9 条含 403 拦截）与详情检视层（请求/响应头真实内容）。
 - 未验证：真机 120Hz 下动画逐帧（只能目视）、VoiceOver 逐页完整走查（只验证了控件标签与 reduce-motion）。
+
+## 0.1 交互一致性验证（v1.3，2026-11-05）
+
+- 动效收敛：全 App 动画调用统一到 `TFMotion` 六条令牌（press 0.12 / quick 0.14 / standard 0.18 / emphasized 0.28 / spring 0.26·0.82 / enter 0.38）。
+  声明式用 `.tfAnimation(token, value:)`，命令式用 `TFMotion.run(token) { … }`；两者内部读 `accessibilityReduceMotion`，打开时分别为 nil 与直接落位。
+  `grep -rn "withAnimation|.animation(" Sources/TouchFlowApp` 只剩 `tfAnimation` / `TFMotion.run` 的实现与两处持续动画（状态点脉冲、不确定进度条），后者各自 guard reduceMotion。
+- 按钮焦点环：`TFButtonFocusRing` 包在 `TFPrimaryButtonStyle` / `TFGhostButtonStyle` 内，读 `\.isFocused`，按钮外 3pt 处描 2pt 朱红（圆角 10）。
+  验证方式：临时 `TF_RING=1` 强制显示并截图（去广告页「检查」按钮，环贴合 7pt 圆角按钮且不遮挡文字），取证后移除该临时开关（`grep TF_RING` 为 0）。
+- 设置页单列：`EnvironmentValues.tfWindowWidth` 由根视图 GeometryReader 注入；`<1000` 单列（代理端口 → DNS → 启动与常驻 → 抓包与解密 → 高级，限宽 620 居中），`≥1000` 两列。
+  实测 900×700 单列（浅色 `/tmp/tfm3/settings-900c.png`、深色 `/tmp/tfm3/settings-900-dark.png`）、1040×700 仍两列（`/tmp/tfm3/settings-1040.png`），均无中间截断、无横向溢出。
+- 构建 / 测试 / 端到端：`./scripts/build-app.sh debug` 成功；`swift test --scratch-path .build-app` 122 条全绿（Core 1 / Policy 41 / Net 69 / Integrations 11）；`./scripts/smoke.sh` pass=7 fail=0。
+- 未验证：真实键盘 Tab 走查（本机 `AppleKeyboardUIMode=0`，无辅助功能权限模拟按键）；焦点环的 `\.isFocused` 检测依赖该按钮成为 key view，属 SwiftUI 标准语义。
 
 ## 1. 构建
 

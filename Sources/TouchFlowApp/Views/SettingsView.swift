@@ -10,6 +10,7 @@ import TouchFlowNet
 struct SettingsView: View {
     @ObservedObject private var engine = TouchFlowEngine.shared
     @EnvironmentObject private var app: AppModel
+    @Environment(\.tfWindowWidth) private var windowWidth
 
     @State private var mixedPort = ""
     @State private var httpPort = ""
@@ -30,19 +31,32 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 16) {
-                HStack(alignment: .top, spacing: 16) {
+                if windowWidth >= 1000 {
+                    HStack(alignment: .top, spacing: 16) {
+                        VStack(spacing: 16) {
+                            proxySection
+                            dnsSection
+                        }
+                        VStack(spacing: 16) {
+                            launchSection
+                            captureSection
+                            advancedSection
+                        }
+                    }
+                } else {
+                    // 窄窗（900pt 附近）单列：两列会把端口、DNS 上游挤成中间截断。
                     VStack(spacing: 16) {
                         proxySection
                         dnsSection
-                    }
-                    VStack(spacing: 16) {
                         launchSection
                         captureSection
                         advancedSection
                     }
+                    .frame(maxWidth: 620)
                 }
                 saveBar
             }
+            .frame(maxWidth: .infinity)
             .pagePadding()
             .navigationTitle("设置")
         }
@@ -418,7 +432,7 @@ private struct NumField: View {
                 Rectangle()
                     .fill(focused ? TF.accent : TF.strokeStrong.opacity(0.8))
                     .frame(height: focused ? 1.5 : 1)
-                    .animation(.easeOut(duration: 0.14), value: focused)
+                    .tfAnimation(TFMotion.quick, value: focused)
             }
     }
 }
@@ -442,7 +456,7 @@ private struct PlainField: View {
                 Rectangle()
                     .fill(focused ? TF.accent : TF.strokeStrong.opacity(0.8))
                     .frame(height: focused ? 1.5 : 1)
-                    .animation(.easeOut(duration: 0.14), value: focused)
+                    .tfAnimation(TFMotion.quick, value: focused)
             }
     }
 }

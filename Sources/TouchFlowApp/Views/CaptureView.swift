@@ -107,7 +107,7 @@ struct CaptureView: View {
                             .transition(.move(edge: .trailing).combined(with: .opacity))
                                 .shadow(color: .black.opacity(0.10), radius: 14, x: -5)
                         }
-                        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: current?.id)
+                        .tfAnimation(TFMotion.standard, value: current?.id)
                     } else {
                         HSplitView {
                             list
@@ -158,7 +158,7 @@ struct CaptureView: View {
             freshID = id
             Task {
                 try? await Task.sleep(nanoseconds: 1_200_000_000)
-                if freshID == id { withAnimation(.easeOut(duration: 0.3)) { freshID = nil } }
+                if freshID == id { TFMotion.run(TFMotion.emphasized) { freshID = nil } }
             }
         }
     }
@@ -229,7 +229,7 @@ struct CaptureView: View {
         HStack(spacing: 5) {
             ForEach(StatusFilter.allCases) { option in
                 TFChip(title: option.title, selected: statusFilter == option) {
-                    withAnimation(.easeOut(duration: 0.12)) { statusFilter = option }
+                    TFMotion.run(TFMotion.press) { statusFilter = option }
                 }
             }
             Spacer()
@@ -379,7 +379,7 @@ struct CaptureView: View {
             Rectangle()
                 .fill(request.id == freshID ? TF.accent : Color.clear)
                 .frame(width: 2, height: 15)
-                .animation(.easeOut(duration: 0.25), value: freshID)
+                .tfAnimation(TFMotion.emphasized, value: freshID)
             Text(request.method)
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                 .frame(width: 32)

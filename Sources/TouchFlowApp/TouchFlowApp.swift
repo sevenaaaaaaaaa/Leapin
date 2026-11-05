@@ -212,7 +212,7 @@ final class AppModel: ObservableObject {
     // MARK: Navigation
 
     func go(to section: Section) {
-        withAnimation(.easeOut(duration: 0.12)) { self.section = section }
+        TFMotion.run(TFMotion.press) { self.section = section }
         UserDefaults.standard.set(section.rawValue, forKey: "startSection")
     }
 
@@ -388,10 +388,11 @@ struct RootView: View {
                                 .transition(.opacity.combined(with: .offset(y: 6)))
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .animation(.easeOut(duration: 0.18), value: app.section)
+                        .tfAnimation(TFMotion.standard, value: app.section)
                     }
                 }
             }
+            .environment(\.tfWindowWidth, geo.size.width)
         }
         .background(WindowAutosave())
         .overlay(alignment: .bottom) { toastView }
@@ -403,7 +404,7 @@ struct RootView: View {
                     .zIndex(10)
             }
         }
-        .animation(.easeOut(duration: 0.14), value: app.showPalette)
+        .tfAnimation(TFMotion.quick, value: app.showPalette)
         .sheet(isPresented: $app.showOnboarding) {
             OnboardingView().environmentObject(app)
         }
@@ -469,7 +470,7 @@ struct RootView: View {
                 .task(id: message) {
                     try? await Task.sleep(nanoseconds: 3_200_000_000)
                     guard app.toast == message else { return }
-                    withAnimation(.easeOut(duration: 0.2)) {
+                    TFMotion.run(TFMotion.standard) {
                         app.toast = nil
                         app.toastAction = nil
                     }

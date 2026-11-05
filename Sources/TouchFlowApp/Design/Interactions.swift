@@ -37,8 +37,8 @@ struct TFRow<Content: View>: View {
         }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: selected)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.10), value: hovering)
+        .tfAnimation(TFMotion.press, value: selected)
+        .tfAnimation(TFMotion.press, value: hovering)
         .accessibilityLabel(accessibilityText ?? "")
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -83,7 +83,7 @@ struct TFSearchField: View {
                 .fill(focus.wrappedValue ? TF.accent : Color.clear)
                 .frame(height: 1.5)
                 .padding(.horizontal, 8)
-                .animation(.easeOut(duration: 0.14), value: focus.wrappedValue)
+                .tfAnimation(TFMotion.quick, value: focus.wrappedValue)
         }
         .frame(maxWidth: width)
         .accessibilityLabel(placeholder)
@@ -144,6 +144,7 @@ struct TFKeyCap: View {
 struct TFProgressLine: View {
     var value: Double? = nil
     @State private var phase: CGFloat = -0.3
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geo in
@@ -157,6 +158,7 @@ struct TFProgressLine: View {
                         .frame(width: geo.size.width * 0.3)
                         .offset(x: geo.size.width * phase)
                         .onAppear {
+                            guard !reduceMotion else { return }
                             withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: false)) {
                                 phase = 1.1
                             }

@@ -63,7 +63,7 @@ struct PrivacyView: View {
                                 .font(TFFont.num(48, weight: .medium))
                                 .foregroundStyle(TF.text)
                                 .contentTransition(.numericText())
-                                .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: r.score)
+                                .tfAnimation(TFMotion.emphasized, value: r.score)
                             Text("/100")
                                 .font(TFFont.mono(12))
                                 .foregroundStyle(TF.textTertiary)
@@ -160,7 +160,7 @@ struct PrivacyView: View {
                 .foregroundStyle(placeholder ? TF.textTertiary : TF.text)
                 .lineLimit(1)
                 .contentTransition(.numericText())
-                .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: value)
+                .tfAnimation(TFMotion.emphasized, value: value)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 18)

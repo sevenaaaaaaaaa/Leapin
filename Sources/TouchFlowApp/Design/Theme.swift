@@ -143,7 +143,7 @@ private struct TFHoverLift: ViewModifier {
             .offset(y: hovering ? -1 : 0)
             .shadow(color: .black.opacity(hovering ? 0.06 : 0), radius: 12, y: 6)
             .onHover { hovering = $0 }
-            .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: hovering)
+            .tfAnimation(TFMotion.quick, value: hovering)
     }
 }
 
@@ -251,38 +251,60 @@ struct TFEyebrow: View {
 struct TFPrimaryButtonStyle: ButtonStyle {
     var tint: Color? = nil
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .fill(tint ?? TF.accentFill)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
-            )
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .opacity(configuration.isPressed ? 0.86 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+        TFButtonFocusRing {
+            configuration.label
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
+                .background(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(tint ?? TF.accentFill)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+                )
+                .scaleEffect(configuration.isPressed ? 0.985 : 1)
+                .opacity(configuration.isPressed ? 0.86 : 1)
+                .tfAnimation(TFMotion.press, value: configuration.isPressed)
+        }
     }
 }
 
 struct TFGhostButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(TF.text)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        TFButtonFocusRing {
+            configuration.label
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(TF.text)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                )
+                .opacity(configuration.isPressed ? 0.7 : 1)
+        }
+    }
+}
+
+/// 键盘焦点环：读到最近可聚焦祖先（Button）的焦点态，在按钮外描 2pt 朱红。
+/// 放在 ButtonStyle 内部，因此所有用这两套样式的按钮自动获得焦点提示，无需逐处接 @FocusState。
+private struct TFButtonFocusRing<Content: View>: View {
+    @Environment(\.isFocused) private var isFocused
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        content()
             .overlay(
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(TF.accent, lineWidth: 2)
+                    .padding(-3)
+                    .opacity(isFocused ? 1 : 0)
+                    .allowsHitTesting(false)
             )
-            .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
 
@@ -292,6 +314,7 @@ struct StatusDot: View {
     var color: Color
     var pulsing: Bool = false
     @State private var on = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         ZStack {
@@ -301,7 +324,7 @@ struct StatusDot: View {
                     .frame(width: 12, height: 12)
                     .scaleEffect(on ? 1.35 : 0.7)
                     .opacity(on ? 0 : 1)
-                    .animation(.easeOut(duration: 1.8).repeatForever(autoreverses: false), value: on)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 1.8).repeatForever(autoreverses: false), value: on)
             }
             Circle().fill(color).frame(width: 6, height: 6)
         }
@@ -313,6 +336,53 @@ struct StatusDot: View {
 struct TFDivider: View {
     var body: some View {
         Rectangle().fill(TF.stroke).frame(height: TF.hairline)
+    }
+}
+
+// MARK: - Motion
+
+/// 动效令牌：全 App 只用这几条曲线，避免每个视图各写各的时长。
+/// reduceMotion 由 tfAnimation / run 统一处理，调用点不再重复判断。
+enum TFMotion {
+    /// 按压、勾选等需要“立刻”的反馈。
+    static let press = Animation.easeOut(duration: 0.12)
+    /// 焦点、hover 等小范围状态。
+    static let quick = Animation.easeOut(duration: 0.14)
+    /// 换页、抽屉等标准过渡。
+    static let standard = Animation.easeOut(duration: 0.18)
+    /// 强调：弹层、指标变化。
+    static let emphasized = Animation.snappy(duration: 0.28)
+    /// 开关滑块。
+    static let spring = Animation.spring(response: 0.26, dampingFraction: 0.82)
+    /// 首屏错峰入场。
+    static let enter = Animation.easeOut(duration: 0.38)
+
+    /// 命令式动画：reduceMotion 打开时直接落位。
+    @MainActor
+    static func run(_ animation: Animation = TFMotion.standard, _ body: () -> Void) {
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            body()
+        } else {
+            withAnimation(animation, body)
+        }
+    }
+}
+
+/// 声明式动画包装：reduceMotion 打开时禁用动画。
+struct TFAnimationModifier<V: Equatable>: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let animation: Animation
+    let value: V
+
+    func body(content: Content) -> some View {
+        content.animation(reduceMotion ? nil : animation, value: value)
+    }
+}
+
+extension View {
+    /// 用动效令牌做 .animation，且自动尊重「减弱动态效果」。
+    func tfAnimation<V: Equatable>(_ animation: Animation, value: V) -> some View {
+        modifier(TFAnimationModifier(animation: animation, value: value))
     }
 }
 
@@ -359,7 +429,7 @@ struct TFSwitch: View {
                         .padding(2.5)
                         .offset(x: isOn ? width - knob - 5 : 0)
                 }
-                .animation(.spring(response: 0.26, dampingFraction: 0.82), value: isOn)
+                .tfAnimation(TFMotion.spring, value: isOn)
                 .overlay(
                     Capsule(style: .continuous)
                         .strokeBorder(focused ? TF.accent : .clear, lineWidth: 2)
@@ -370,5 +440,20 @@ struct TFSwitch: View {
         .accessibilityRepresentation { Toggle(isOn: $isOn) { EmptyView() } }
         .accessibilityValue(isOn ? "开启" : "关闭")
         .focusEffectDisabled()
+    }
+}
+
+
+// MARK: - Window metrics
+
+/// 根视图测量的窗口宽度，供页面做单列/双列切换（macOS 没有 compact size class）。
+private struct TFWindowWidthKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1200
+}
+
+extension EnvironmentValues {
+    var tfWindowWidth: CGFloat {
+        get { self[TFWindowWidthKey.self] }
+        set { self[TFWindowWidthKey.self] = newValue }
     }
 }

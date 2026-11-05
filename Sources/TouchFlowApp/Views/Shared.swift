@@ -73,7 +73,7 @@ struct StatTile: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .contentTransition(.numericText())
-                .animation(.snappy(duration: 0.28), value: value)
+                .tfAnimation(TFMotion.emphasized, value: value)
             if let caption {
                 Text(caption)
                     .font(.system(size: 10))
@@ -202,7 +202,7 @@ struct TFLineField: View {
                 Rectangle()
                     .fill(focused ? TF.accent : TF.strokeStrong.opacity(0.8))
                     .frame(height: focused ? 1.5 : 1)
-                    .animation(.easeOut(duration: 0.14), value: focused)
+                    .tfAnimation(TFMotion.quick, value: focused)
             }
     }
 }
@@ -302,10 +302,10 @@ struct TFCopyButton: View {
     var body: some View {
         Button {
             TFClipboard.copy(value)
-            withAnimation(.snappy(duration: 0.22)) { copied = true }
+            TFMotion.run(TFMotion.emphasized) { copied = true }
             Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 1_100_000_000)
-                withAnimation(.easeOut(duration: 0.2)) { copied = false }
+                TFMotion.run(TFMotion.standard) { copied = false }
             }
         } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
@@ -337,7 +337,7 @@ struct TFAppear: ViewModifier {
                 if reduceMotion {
                     shown = true
                 } else {
-                    withAnimation(.easeOut(duration: 0.38).delay(delay)) { shown = true }
+                    TFMotion.run(TFMotion.enter.delay(delay)) { shown = true }
                 }
             }
     }

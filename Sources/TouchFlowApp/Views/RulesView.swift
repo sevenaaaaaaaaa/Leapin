@@ -112,7 +112,7 @@ struct RulesView: View {
             HStack(spacing: 5) {
                 ForEach(PolicyFilter.allCases) { option in
                     TFChip(title: option.title, count: count(for: option), selected: filter == option) {
-                        withAnimation(.easeOut(duration: 0.12)) { filter = option }
+                        TFMotion.run(TFMotion.press) { filter = option }
                     }
                 }
             }

@@ -160,7 +160,7 @@ struct CommandPalette: View {
                         }
                         .frame(maxHeight: 340)
                         .onChange(of: index) { _, newValue in
-                            withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(newValue, anchor: .center) }
+                            TFMotion.run(TFMotion.press) { proxy.scrollTo(newValue, anchor: .center) }
                         }
                     }
                 }

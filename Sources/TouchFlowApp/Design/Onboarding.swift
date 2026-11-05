@@ -69,12 +69,12 @@ struct OnboardingView: View {
                 }
                 Spacer()
                 if step > 0 {
-                    Button("上一步") { withAnimation(.easeOut(duration: 0.15)) { step -= 1 } }
+                    Button("上一步") { TFMotion.run(TFMotion.quick) { step -= 1 } }
                         .buttonStyle(TFGhostButtonStyle())
                 }
                 Button(step == steps.count - 1 ? "开始使用" : "下一步") {
                     if step == steps.count - 1 { finish() }
-                    else { withAnimation(.easeOut(duration: 0.15)) { step += 1 } }
+                    else { TFMotion.run(TFMotion.quick) { step += 1 } }
                 }
                 .buttonStyle(TFPrimaryButtonStyle())
                 .keyboardShortcut(.defaultAction)
