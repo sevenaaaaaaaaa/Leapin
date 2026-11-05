@@ -122,7 +122,7 @@ struct DashboardView: View {
                         Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
                             .font(.system(size: 9, weight: .bold))
                         Text(engine.state == .running ? "停止代理" : "启动代理")
-                            .font(.system(size: 12.5, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                     }
                     .frame(width: 112)
                     .padding(.vertical, 5)
@@ -186,7 +186,7 @@ struct DashboardView: View {
     private func toggleChip(_ label: String, isOn: Bool, set: @escaping (Bool) -> Void) -> some View {
         HStack(spacing: 6) {
             Text(label)
-                .font(.system(size: 10.5))
+                .font(.system(size: 10))
                 .foregroundStyle(isOn ? TF.textSecondary : TF.textTertiary)
             TFSwitch(isOn: Binding(get: { isOn }, set: set), width: 32)
         }
@@ -248,7 +248,7 @@ struct DashboardView: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(TF.text)
                     Text(step.message)
-                        .font(.system(size: 10.5))
+                        .font(.system(size: 10))
                         .foregroundStyle(TF.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -373,13 +373,13 @@ struct DashboardView: View {
                 .frame(height: 34)
 
                 HStack(spacing: 8) {
-                    Text("60 秒前").font(TFFont.mono(8.5)).foregroundStyle(TF.textTertiary)
+                    Text("60 秒前").font(TFFont.mono(10)).foregroundStyle(TF.textTertiary)
                     Spacer()
                     Text("峰值 \(Fmt.bytes(Int(rateCeiling)))/s")
-                        .font(TFFont.mono(8.5))
+                        .font(TFFont.mono(10))
                         .foregroundStyle(TF.textTertiary)
                     Spacer()
-                    Text("现在").font(TFFont.mono(8.5)).foregroundStyle(TF.textTertiary)
+                    Text("现在").font(TFFont.mono(10)).foregroundStyle(TF.textTertiary)
                 }
             }
             .accessibilityElement(children: .ignore)
@@ -444,7 +444,7 @@ struct DashboardView: View {
                 TFEyebrow(text: "本地端点 / ENDPOINTS")
                 Spacer()
                 Text("点击复制")
-                    .font(TFFont.mono(9))
+                    .font(TFFont.mono(10))
                     .foregroundStyle(TF.textTertiary)
             }
             .padding(.bottom, 10)
@@ -498,7 +498,7 @@ struct DashboardView: View {
                     .lineLimit(1)
                 Spacer(minLength: 6)
                 Text(value)
-                    .font(TFFont.mono(11, weight: .medium))
+                    .font(TFFont.mono(12, weight: .medium))
                     .foregroundStyle(copyable ? TF.text : TF.textTertiary)
                     .textSelection(.enabled)
                 if copyable {
@@ -528,7 +528,7 @@ struct DashboardView: View {
                     .foregroundStyle(probeFocused ? TF.accent : TF.textTertiary)
                 TextField("例如 api.spotify.com", text: $probeHost)
                     .textFieldStyle(.plain)
-                    .font(TFFont.mono(11))
+                    .font(TFFont.mono(12))
                     .focused($probeFocused)
                     .onSubmit(runProbe)
                 if !probeHost.isEmpty {
@@ -538,7 +538,7 @@ struct DashboardView: View {
                         probeVerdict = nil
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 9.5))
+                            .font(.system(size: 9))
                             .foregroundStyle(TF.textTertiary)
                     }
                     .buttonStyle(.plain)
@@ -591,7 +591,7 @@ struct DashboardView: View {
                         HStack(spacing: 5) {
                             Image(systemName: "nosign").font(.system(size: 9, weight: .bold))
                             Text("去广告拦截：\(verdict.reason ?? "")")
-                                .font(.system(size: 10.5, weight: .medium))
+                                .font(.system(size: 10, weight: .medium))
                         }
                         .foregroundStyle(TF.danger)
                     }
@@ -620,7 +620,7 @@ struct DashboardView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "info.circle").font(.system(size: 10))
                     Text("启动代理后可用；判断在本地完成，不会发出请求。")
-                        .font(.system(size: 10.5))
+                        .font(.system(size: 10))
                 }
                 .foregroundStyle(TF.textTertiary)
                 Spacer(minLength: 0)
@@ -628,7 +628,7 @@ struct DashboardView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "return").font(.system(size: 9))
                     Text("输入后按 ↩ 立即判断，只在本地计算。")
-                        .font(.system(size: 10.5))
+                        .font(.system(size: 10))
                 }
                 .foregroundStyle(TF.textTertiary)
                 Spacer(minLength: 0)
@@ -640,12 +640,12 @@ struct DashboardView: View {
 
             HStack(spacing: 6) {
                 Text("RULE → RULE-SET → GEOIP → MATCH")
-                    .font(TFFont.mono(8.5))
+                    .font(TFFont.mono(10))
                     .tracking(0.8)
                     .foregroundStyle(TF.textTertiary)
                 Spacer()
                 Text("按首次命中裁决")
-                    .font(.system(size: 9.5))
+                    .font(.system(size: 9))
                     .foregroundStyle(TF.textTertiary.opacity(0.9))
             }
         }
@@ -678,9 +678,9 @@ struct DashboardView: View {
                 TFEyebrow(text: "最近连接 / RECENT")
                 Spacer()
                 if !engine.flows.isEmpty {
-                    Button("查看全部 \(engine.flows.count) 条") { app.go(to: .capture) }
+                    Button("打开抓包") { app.go(to: .capture) }
                         .buttonStyle(.plain)
-                        .font(.system(size: 10.5))
+                        .font(.system(size: 10))
                         .foregroundStyle(TF.textSecondary)
                 }
             }
@@ -700,22 +700,6 @@ struct DashboardView: View {
             TFDivider()
 
             if engine.flows.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(0..<3, id: \.self) { i in
-                        HStack(spacing: 10) {
-                            skeleton(width: 34 + CGFloat(i % 2) * 8)
-                                .frame(width: 58, alignment: .leading)
-                            skeleton(width: 150 + CGFloat(i) * 46)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                            skeleton(width: 52)
-                                .frame(width: 120, alignment: .trailing)
-                        }
-                        .padding(.vertical, 12)
-                        if i < 2 { TFDivider().opacity(0.5) }
-                    }
-                }
-                .accessibilityHidden(true)
-
                 HStack(spacing: 10) {
                     Text(app.isRunning
                          ? "代理已接管，第一条请求出现后这里会逐条记录。"
@@ -728,7 +712,7 @@ struct DashboardView: View {
                             .buttonStyle(TFGhostButtonStyle())
                     }
                 }
-                .padding(.top, 12)
+                .padding(.vertical, 18)
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(engine.flows.suffix(10).reversed())) { flow in
@@ -741,12 +725,6 @@ struct DashboardView: View {
             }
         }
         .tfPanel(padding: 18)
-    }
-
-    private func skeleton(width: CGFloat) -> some View {
-        Capsule()
-            .fill(TF.text.opacity(0.07))
-            .frame(width: width, height: 8)
     }
 
     private func runProbe() {

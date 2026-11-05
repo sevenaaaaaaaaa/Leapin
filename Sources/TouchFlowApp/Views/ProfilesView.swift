@@ -82,20 +82,20 @@ struct ProfilesView: View {
 
                     HStack(spacing: 7) {
                         Text("\(engine.ruleCount) 条规则")
-                            .font(TFFont.mono(11))
+                            .font(TFFont.mono(12))
                             .foregroundStyle(TF.textSecondary)
                         Text("·")
-                            .font(TFFont.mono(11))
+                            .font(TFFont.mono(12))
                             .foregroundStyle(TF.textTertiary)
                         Text(currentMeta.map { Fmt.day($0.updatedAt) } ?? "本机配置")
-                            .font(TFFont.mono(11))
+                            .font(TFFont.mono(12))
                             .foregroundStyle(TF.textTertiary)
                         Circle()
                             .fill(TF.mint)
                             .frame(width: 5, height: 5)
                             .padding(.leading, 4)
                         Text("已启用")
-                            .font(.system(size: 10.5))
+                            .font(.system(size: 10))
                             .foregroundStyle(TF.textSecondary)
                     }
                     .accessibilityElement(children: .combine)
@@ -112,7 +112,7 @@ struct ProfilesView: View {
                             Image(systemName: "square.and.arrow.down")
                                 .font(.system(size: 9, weight: .bold))
                             Text("导入配置")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.system(size: 12, weight: .semibold))
                         }
                     }
                     .buttonStyle(TFPrimaryButtonStyle())
@@ -125,7 +125,7 @@ struct ProfilesView: View {
                             Image(systemName: "link")
                                 .font(.system(size: 9, weight: .bold))
                             Text("粘贴订阅链接")
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                         }
                     }
                     .buttonStyle(TFGhostButtonStyle())
@@ -145,7 +145,7 @@ struct ProfilesView: View {
                             Image(systemName: "square.and.arrow.up")
                                 .font(.system(size: 9, weight: .bold))
                             Text("导出")
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                         }
                         .foregroundStyle(TF.text)
                         .padding(.horizontal, 10)
@@ -198,7 +198,7 @@ struct ProfilesView: View {
                 }
                 Spacer(minLength: 8)
                 Text("本机存储 · 导入即启用")
-                    .font(TFFont.mono(9))
+                    .font(TFFont.mono(10))
                     .tracking(0.8)
                     .foregroundStyle(TF.textTertiary)
             }
@@ -229,7 +229,7 @@ struct ProfilesView: View {
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("还没有配置")
-                .font(.system(size: 12.5, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(TF.textSecondary)
             Text("导入 Clash YAML、Surge conf 或之前导出的 TouchFlow JSON 即可开始。")
                 .font(.system(size: 12))
@@ -248,7 +248,7 @@ struct ProfilesView: View {
                 .foregroundStyle(TF.textTertiary)
             Button("清除搜索") { search = "" }
                 .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(TF.accent)
                 .accessibilityLabel("清除搜索")
         }
@@ -267,7 +267,7 @@ struct ProfilesView: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(meta.name)
-                        .font(.system(size: 12.5, weight: active ? .semibold : .medium))
+                        .font(.system(size: 12, weight: active ? .semibold : .medium))
                         .foregroundStyle(TF.text)
                         .lineLimit(1)
                     if active {
@@ -366,7 +366,7 @@ struct ProfilesView: View {
     private func sourceRow(_ name: String, _ detail: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 14) {
             Text(name)
-                .font(TFFont.mono(11))
+                .font(TFFont.mono(12))
                 .foregroundStyle(TF.textSecondary)
                 .frame(width: 130, alignment: .leading)
             Text(detail)

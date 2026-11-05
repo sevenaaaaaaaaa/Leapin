@@ -41,7 +41,7 @@ struct ImportReportSheet: View {
                     .font(TFFont.display(15, weight: .semibold))
                     .foregroundStyle(TF.text)
                 Text(report.summary)
-                    .font(.system(size: 12.5))
+                    .font(.system(size: 12))
                     .foregroundStyle(TF.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -95,7 +95,7 @@ struct ImportReportSheet: View {
                         .font(.system(size: 12))
                         .foregroundStyle(TF.mint)
                     Text("所有字段都已识别，没有跳过任何内容。")
-                        .font(.system(size: 12.5))
+                        .font(.system(size: 12))
                         .foregroundStyle(TF.textSecondary)
                     Spacer()
                 }
@@ -130,12 +130,12 @@ struct ImportReportSheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 Badge(text: kindLabel(issue.kind), color: kindColor(issue.kind))
                 Text(issue.display)
-                    .font(.system(size: 12.5))
+                    .font(.system(size: 12))
                     .foregroundStyle(TF.text)
                     .fixedSize(horizontal: false, vertical: true)
                 if !issue.item.isEmpty, issue.item != issue.message {
                     Text(issue.item)
-                        .font(TFFont.mono(10.5))
+                        .font(TFFont.mono(10))
                         .foregroundStyle(TF.textTertiary)
                         .lineLimit(1)
                 }
@@ -158,7 +158,7 @@ struct ImportReportSheet: View {
                     Image(systemName: copied ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 9, weight: .bold))
                     Text(copied ? "已复制" : "复制报告")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                 }
             }
             .buttonStyle(TFGhostButtonStyle())

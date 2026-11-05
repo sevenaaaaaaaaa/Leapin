@@ -102,7 +102,7 @@ struct SettingsView: View {
                 }
                 .padding(.top, 4)
                 Text("关闭主窗口不会退出：App 常驻菜单栏，可随时从图标或 Dock 菜单操作。")
-                    .font(.system(size: 9.5))
+                    .font(.system(size: 9))
                     .foregroundStyle(TF.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 2)
@@ -231,7 +231,7 @@ struct SettingsView: View {
                 .font(.system(size: 12))
                 .foregroundStyle(validationError == nil ? TF.textTertiary : TF.amber)
             Text(validationError ?? "保存后如代理正在运行会自动重启以应用新设置。")
-                .font(.system(size: 10.5))
+                .font(.system(size: 10))
                 .foregroundStyle(validationError == nil ? TF.textTertiary : TF.amber)
                 .lineLimit(2)
             Spacer()
@@ -351,7 +351,7 @@ private struct FieldRow<Content: View>: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
-                    .font(.system(size: 12.5))
+                    .font(.system(size: 12))
                     .foregroundStyle(TF.text)
                     .lineLimit(1)
                     .frame(width: 88, alignment: .leading)
@@ -381,7 +381,7 @@ private struct ToggleRow: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
-                    .font(.system(size: 12.5))
+                    .font(.system(size: 12))
                     .foregroundStyle(TF.text)
                 if let subtitle {
                     Text(subtitle)
@@ -410,7 +410,7 @@ private struct NumField: View {
         TextField("", text: $text, prompt: Text(placeholder).foregroundColor(TF.textTertiary))
             .textFieldStyle(.plain)
             .focused($focused)
-            .font(TFFont.mono(12.5, weight: .medium))
+            .font(TFFont.mono(12, weight: .medium))
             .multilineTextAlignment(.trailing)
             .frame(width: 92)
             .padding(.vertical, 3)

@@ -216,7 +216,7 @@ struct CommandPalette: View {
                 }
                 Spacer(minLength: 8)
                 Text(command.group)
-                    .font(.system(size: 9.5))
+                    .font(.system(size: 9))
                     .foregroundStyle(TF.textTertiary)
                 if let shortcut = command.shortcut {
                     TFKeyCap(keys: shortcut)
@@ -237,7 +237,7 @@ struct CommandPalette: View {
     private func hint(_ key: String, _ label: String) -> some View {
         HStack(spacing: 4) {
             TFKeyCap(keys: key)
-            Text(label).font(.system(size: 9.5)).foregroundStyle(TF.textTertiary)
+            Text(label).font(.system(size: 9)).foregroundStyle(TF.textTertiary)
         }
     }
 

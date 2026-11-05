@@ -53,12 +53,12 @@ struct LearnView: View {
 
                     ZStack(alignment: .topLeading) {
                         TextEditor(text: $rawText)
-                            .font(TFFont.mono(12.5))
+                            .font(TFFont.mono(12))
                             .scrollContentBackground(.hidden)
                             .padding(8)
                         if rawText.isEmpty {
                             Text("例如：\nSpotify\ncom.spotify.client\napi.spotify.com")
-                                .font(TFFont.mono(12.5))
+                                .font(TFFont.mono(12))
                                 .foregroundStyle(TF.textTertiary.opacity(0.75))
                                 .padding(.horizontal, 13)
                                 .padding(.vertical, 16)
@@ -193,10 +193,10 @@ struct LearnView: View {
     private func step(_ index: String, _ title: String, _ detail: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(index)
-                .font(TFFont.mono(11, weight: .medium))
+                .font(TFFont.mono(12, weight: .medium))
                 .foregroundStyle(TF.textTertiary)
             Text(title)
-                .font(.system(size: 12.5, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(TF.text)
             Text(detail)
                 .font(.system(size: 12))
@@ -234,7 +234,7 @@ struct LearnView: View {
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(learned.name)
-                                .font(.system(size: 12.5, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(TF.text)
                             if let bid = learned.bundleID {
                                 Text(bid)
@@ -247,7 +247,7 @@ struct LearnView: View {
                         Spacer(minLength: 10)
 
                         Text(learned.domains.prefix(3).joined(separator: ", "))
-                            .font(TFFont.mono(10.5))
+                            .font(TFFont.mono(10))
                             .foregroundStyle(TF.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -300,7 +300,7 @@ struct LearnView: View {
                                 .foregroundStyle(TF.text)
                             Badge(text: suggestion.appName, color: TF.textSecondary)
                             Text(suggestion.rule.kind.rawValue)
-                                .font(TFFont.mono(9))
+                                .font(TFFont.mono(10))
                                 .foregroundStyle(TF.textTertiary)
                             Text(suggestion.rationale)
                                 .font(.system(size: 12))

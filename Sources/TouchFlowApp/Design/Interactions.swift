@@ -24,12 +24,17 @@ struct TFRow<Content: View>: View {
         .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(selected ? TF.accentSoft : (hovering ? TF.stroke.opacity(0.55) : Color.clear))
+                .fill(selected ? Color.primary.opacity(0.055) : (hovering ? TF.stroke.opacity(0.55) : Color.clear))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(selected ? TF.accent.opacity(0.30) : Color.clear, lineWidth: 1)
+                .strokeBorder(selected ? TF.strokeStrong.opacity(0.7) : Color.clear, lineWidth: 1)
         )
+        .overlay(alignment: .leading) {
+            if selected {
+                Capsule().fill(TF.accent).frame(width: 2, height: 15).padding(.leading, 2)
+            }
+        }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: selected)
@@ -97,7 +102,7 @@ struct TFChip: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Text(title).font(.system(size: 10.5, weight: selected ? .semibold : .regular))
+                Text(title).font(.system(size: 10, weight: selected ? .semibold : .regular))
                     .lineLimit(1)
                 if let count {
                     Text("\(count)").font(TFFont.num(9.5, weight: .medium)).opacity(0.75)
@@ -180,7 +185,7 @@ struct TFEmptyState: View {
                 .font(.system(size: 26, weight: .light))
                 .foregroundStyle(TF.textTertiary)
             Text(title)
-                .font(.system(size: 12.5, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(TF.textSecondary)
             if let message {
                 Text(message)

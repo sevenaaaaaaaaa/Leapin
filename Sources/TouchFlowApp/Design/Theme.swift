@@ -82,7 +82,7 @@ enum TFFont {
     static func serif(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .serif)
     }
-    static let overline = Font.system(size: 9.5, weight: .semibold)
+    static let overline = Font.system(size: 9, weight: .semibold)
 }
 
 // MARK: - Background
@@ -159,7 +159,7 @@ struct SectionHeader: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             if let icon {
                 Image(systemName: icon)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(TF.textTertiary)   // 图标恒定中性：颜色只留给数据信号
                     .baselineOffset(-1)
             }

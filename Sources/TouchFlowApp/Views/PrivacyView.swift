@@ -65,7 +65,7 @@ struct PrivacyView: View {
                                 .contentTransition(.numericText())
                                 .animation(reduceMotion ? nil : .snappy(duration: 0.28), value: r.score)
                             Text("/100")
-                                .font(TFFont.mono(13))
+                                .font(TFFont.mono(12))
                                 .foregroundStyle(TF.textTertiary)
                         } else {
                             // 读数位保持高度，但不伪造一个数字：34pt 的「无样本」比 48pt 破折号诚实也更好看。
@@ -76,7 +76,6 @@ struct PrivacyView: View {
                         }
                     }
                     scoreRuler(hasSample ? r.score : 0, tint: tint, insufficient: !hasSample)
-                        .opacity(hasSample ? 1 : 0.55)
                 }
 
                 Rectangle()
@@ -142,7 +141,7 @@ struct PrivacyView: View {
                     Text("80").position(x: w * 0.80, y: 15)
                     Text("100").position(x: w - 12, y: 15)
                 }
-                .font(TFFont.mono(9))
+                .font(TFFont.mono(10))
                 .foregroundStyle(TF.textTertiary)
             }
             .frame(width: w, height: 24)
@@ -157,7 +156,7 @@ struct PrivacyView: View {
         return VStack(alignment: .leading, spacing: 7) {
             TFEyebrow(text: label)
             Text(value)
-                .font(TFFont.num(placeholder ? 20 : 26, weight: .medium))
+                .font(TFFont.num(26, weight: .medium))
                 .foregroundStyle(placeholder ? TF.textTertiary : TF.text)
                 .lineLimit(1)
                 .contentTransition(.numericText())
@@ -230,7 +229,7 @@ struct PrivacyView: View {
                         .font(.system(size: 22, weight: .light))
                         .foregroundStyle(TF.textTertiary)
                     Text("暂未发现跟踪器流量")
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(TF.textSecondary)
                     Text("启动系统代理并浏览一段时间，这里会按域名列出命中的跟踪器。")
                         .font(.system(size: 12))
@@ -265,8 +264,8 @@ struct PrivacyView: View {
                                 block(finding.domain)
                             } label: {
                                 HStack(spacing: 4) {
-                                    Image(systemName: "plus").font(.system(size: 8, weight: .bold))
-                                    Text("加入拦截").font(.system(size: 11, weight: .medium))
+                                    Image(systemName: "plus").font(.system(size: 9, weight: .bold))
+                                    Text("加入拦截").font(.system(size: 12, weight: .medium))
                                 }
                                 .foregroundStyle(TF.textSecondary)
                                 .padding(.horizontal, 8)
@@ -341,7 +340,7 @@ struct PrivacyView: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(TF.text)
                 Text(detail)
                     .font(.system(size: 12))

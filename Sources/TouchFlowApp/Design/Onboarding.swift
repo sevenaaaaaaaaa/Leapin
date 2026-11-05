@@ -97,7 +97,7 @@ struct OnboardingView: View {
                 .disabled(engine.state == .running || engine.state == .starting)
 
                 Text(engine.state == .running ? "已监听 127.0.0.1:\(engine.profile.general.mixedPort)" : "监听端口 \(engine.profile.general.mixedPort)")
-                    .font(TFFont.mono(10.5))
+                    .font(TFFont.mono(10))
                     .foregroundStyle(engine.state == .running ? TF.mint : TF.textTertiary)
             }
         case 1:
@@ -108,15 +108,15 @@ struct OnboardingView: View {
                 .buttonStyle(TFPrimaryButtonStyle(tint: engine.systemProxyActive ? TF.dangerFill : nil))
 
                 Text(engine.systemProxyActive ? "系统代理已接管" : "当前未接管系统网络")
-                    .font(.system(size: 10.5))
+                    .font(.system(size: 10))
                     .foregroundStyle(engine.systemProxyActive ? TF.mint : TF.textTertiary)
             }
         default:
             HStack(spacing: 8) {
                 TFKeyCap(keys: "⌘K")
-                Text("随时唤起命令面板").font(.system(size: 10.5)).foregroundStyle(TF.textTertiary)
+                Text("随时唤起命令面板").font(.system(size: 10)).foregroundStyle(TF.textTertiary)
                 TFKeyCap(keys: "⌘F").padding(.leading, 6)
-                Text("搜索当前页面").font(.system(size: 10.5)).foregroundStyle(TF.textTertiary)
+                Text("搜索当前页面").font(.system(size: 10)).foregroundStyle(TF.textTertiary)
             }
         }
     }

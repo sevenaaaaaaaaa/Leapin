@@ -64,7 +64,7 @@ struct StatTile: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 Image(systemName: icon)
-                    .font(.system(size: 9.5, weight: .medium))
+                    .font(.system(size: 9, weight: .medium))
                     .foregroundStyle(tint.opacity(0.9))
             }
             Text(value)
@@ -101,7 +101,7 @@ struct Badge: View {
     var color: Color = TF.textSecondary
     var body: some View {
         Text(text)
-            .font(.system(size: 9.5, weight: .semibold))
+            .font(.system(size: 9, weight: .semibold))
             .tracking(0.3)
             .padding(.horizontal, 5.5)
             .padding(.vertical, 2.5)
@@ -193,7 +193,7 @@ struct TFLineField: View {
         TextField("", text: $text, prompt: Text(placeholder).foregroundColor(TF.textTertiary))
             .textFieldStyle(.plain)
             .focused($focused)
-            .font(.system(size: 12.5))
+            .font(.system(size: 12))
             .multilineTextAlignment(alignment)
             .lineLimit(1)
             .frame(width: width)
@@ -234,7 +234,7 @@ struct FlowRow: View {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .fill(accent.opacity(0.10))
                 Image(systemName: flow.blockedBy != nil ? "nosign" : (flow.phase == .closed ? "arrow.left.arrow.right" : "bolt.horizontal.fill"))
-                    .font(.system(size: 8.5, weight: .bold))
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundStyle(accent)
             }
             .frame(width: 21, height: 21)
@@ -246,12 +246,12 @@ struct FlowRow: View {
                     .lineLimit(1)
                 HStack(spacing: 6) {
                     Text(Fmt.clock(flow.timestamp))
-                        .font(TFFont.mono(9))
+                        .font(TFFont.mono(10))
                         .foregroundStyle(TF.textTertiary)
                     if !flow.policy.isEmpty { Badge(text: flow.policy) }
                     if let rule = flow.matchedRule, !rule.isEmpty {
                         Text(rule)
-                            .font(TFFont.mono(9))
+                            .font(TFFont.mono(10))
                             .foregroundStyle(TF.textTertiary)
                             .lineLimit(1)
                     }

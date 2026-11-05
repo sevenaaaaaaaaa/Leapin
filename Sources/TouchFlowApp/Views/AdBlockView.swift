@@ -168,7 +168,7 @@ struct AdBlockView: View {
                         .foregroundStyle(probeFocused ? TF.accent : TF.textTertiary)
                     TextField("doubleclick.net", text: $probe)
                         .textFieldStyle(.plain)
-                        .font(TFFont.mono(13))
+                        .font(TFFont.mono(12))
                         .focused($probeFocused)
                         .onSubmit(run)
                     if !probe.isEmpty {
@@ -204,7 +204,7 @@ struct AdBlockView: View {
                         .foregroundStyle(TF.text)
                     if let reason = result.reason {
                         Text(reason)
-                            .font(TFFont.mono(11))
+                            .font(TFFont.mono(12))
                             .foregroundStyle(TF.textSecondary)
                             .lineLimit(1)
                     }

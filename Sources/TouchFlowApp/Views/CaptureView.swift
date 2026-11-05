@@ -19,6 +19,7 @@ struct CaptureView: View {
     @State private var statusFilter: StatusFilter = .all
     @FocusState private var searchFocused: Bool
     @FocusState private var listFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private enum StatusFilter: String, CaseIterable, Identifiable {
         case all, success, redirect, clientError, blocked
@@ -68,9 +69,45 @@ struct CaptureView: View {
             // 窄窗口或无选中项时只留列表：空详情栏占掉半屏，是首屏最贵的空白。
             GeometryReader { geo in
                 Group {
-                    if geo.size.width < 820 || current == nil {
+                    if current == nil {
                         list
                             .background(TF.panel)
+                    } else if geo.size.width < 820 {
+                        // 窄窗不再永久分栏（会留半屏空详情），改为选中后从右侧推出的检视层。
+                        ZStack(alignment: .trailing) {
+                            list
+                                .background(TF.panel)
+                            VStack(spacing: 0) {
+                                HStack(spacing: 8) {
+                                    TFEyebrow(text: "请求详情 / REQUEST")
+                                    Spacer(minLength: 6)
+                                    Text("esc")
+                                        .font(TFFont.mono(10))
+                                        .foregroundStyle(TF.textTertiary)
+                                    Button {
+                                        selected = nil
+                                    } label: {
+                                        Image(systemName: "xmark")
+                                            .font(.system(size: 9, weight: .bold))
+                                            .foregroundStyle(TF.textSecondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("关闭详情")
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 9)
+                                TFDivider()
+                                detail
+                            }
+                            .frame(width: max(330, geo.size.width * 0.56))
+                            .background(TF.bg)
+                            .overlay(alignment: .leading) {
+                                Rectangle().fill(TF.stroke).frame(width: 1)
+                            }
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                                .shadow(color: .black.opacity(0.10), radius: 14, x: -5)
+                        }
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: current?.id)
                     } else {
                         HSplitView {
                             list
@@ -92,6 +129,7 @@ struct CaptureView: View {
             .padding(.top, 16)
             .padding(.bottom, 24)
         }
+        .onExitCommand { selected = nil }
         .navigationTitle("抓包")
         .alert("HTTPS 解密需要信任证书", isPresented: $showMITMWarning) {
             Button("去安装 CA") { app.installCA() }
@@ -142,7 +180,7 @@ struct CaptureView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: paused ? "play.fill" : "pause.fill").font(.system(size: 9, weight: .bold))
-                    Text(paused ? "继续" : "暂停").font(.system(size: 11, weight: .medium))
+                    Text(paused ? "继续" : "暂停").font(.system(size: 12, weight: .medium))
                 }
             }
             .buttonStyle(TFGhostButtonStyle())
@@ -169,7 +207,7 @@ struct CaptureView: View {
             Button { exportHAR() } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "square.and.arrow.up").font(.system(size: 9, weight: .bold))
-                    Text("导出 HAR").font(.system(size: 11, weight: .medium))
+                    Text("导出 HAR").font(.system(size: 12, weight: .medium))
                 }
             }
             .buttonStyle(TFGhostButtonStyle())
@@ -178,7 +216,7 @@ struct CaptureView: View {
             Button { showClearConfirm = true } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "trash").font(.system(size: 9, weight: .bold))
-                    Text("清空").font(.system(size: 11, weight: .medium))
+                    Text("清空").font(.system(size: 12, weight: .medium))
                 }
             }
             .buttonStyle(TFGhostButtonStyle())
@@ -209,7 +247,7 @@ struct CaptureView: View {
                     statusFilter = .all
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 10.5))
+                .font(.system(size: 10))
                 .foregroundStyle(TF.accent)
             }
         }
@@ -235,25 +273,7 @@ struct CaptureView: View {
 
             TFDivider()
 
-            VStack(spacing: 0) {
-                ForEach(0..<7, id: \.self) { i in
-                    HStack(spacing: 9) {
-                        skeleton(width: 26).frame(width: 46, alignment: .leading)
-                        skeleton(width: 150 + CGFloat((i * 37) % 110))
-                        Spacer(minLength: 8)
-                        skeleton(width: 22).frame(width: 34, alignment: .trailing)
-                        skeleton(width: 30).frame(width: 52, alignment: .trailing)
-                    }
-                    .padding(.horizontal, 18)
-                    .frame(height: 35)
-                    if i < 6 { TFDivider().opacity(0.5).padding(.leading, 18) }
-                }
-            }
-            .opacity(0.55)
-            .accessibilityHidden(true)
-
-            Spacer(minLength: 0)
-
+            // 空态不用骨架屏：永久骨架会被读成「正在加载」，与「没有数据」是两件事。
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(engine.profile.general.captureEnabled ? "暂无 HTTP 请求" : "抓包已在设置中关闭")
@@ -282,14 +302,23 @@ struct CaptureView: View {
                 .buttonStyle(TFPrimaryButtonStyle())
             }
             .padding(.horizontal, 18)
-            .padding(.vertical, 15)
-            .background(TF.panel)
-            .overlay(alignment: .top) { TFDivider() }
-        }
-    }
+            .padding(.top, 18)
+            .padding(.bottom, 15)
 
-    private func skeleton(width: CGFloat) -> some View {
-        Capsule().fill(TF.text.opacity(0.08)).frame(width: width, height: 7)
+            // 空白账页：只有横线，没有占位胶囊——读作「还没写」，不是「正在加载」。
+            VStack(spacing: 0) {
+                ForEach(0..<5, id: \.self) { _ in
+                    Rectangle()
+                        .fill(TF.stroke.opacity(0.35))
+                        .frame(height: 0.5)
+                        .padding(.horizontal, 18)
+                        .padding(.bottom, 35)
+                }
+            }
+            .accessibilityHidden(true)
+
+            Spacer(minLength: 0)
+        }
     }
 
     private var list: some View {
@@ -361,11 +390,11 @@ struct CaptureView: View {
                 HStack(spacing: 5) {
                     if request.blocked {
                         Image(systemName: "hand.raised.fill")
-                            .font(.system(size: 8))
+                            .font(.system(size: 9))
                             .foregroundStyle(TF.danger)
                     }
                     Text(request.host)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(TF.text)
                         .lineLimit(1)
                 }

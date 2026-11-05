@@ -127,7 +127,7 @@ struct RulesView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "arrow.clockwise").font(.system(size: 9, weight: .bold))
-                    Text("重载").font(.system(size: 11, weight: .medium))
+                    Text("重载").font(.system(size: 12, weight: .medium))
                 }
             }
             .buttonStyle(TFGhostButtonStyle())
@@ -137,7 +137,7 @@ struct RulesView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "plus").font(.system(size: 9, weight: .bold))
-                    Text("添加规则").font(.system(size: 11, weight: .semibold))
+                    Text("添加规则").font(.system(size: 12, weight: .semibold))
                 }
             }
             .buttonStyle(TFPrimaryButtonStyle())
@@ -186,6 +186,11 @@ struct RulesView: View {
                             } content: {
                                 RuleRow(index: index + 1, rule: rule)
                             }
+                            .overlay(alignment: .bottom) {
+                                if rule.id != filtered.last?.id {
+                                    Rectangle().fill(TF.stroke.opacity(0.5)).frame(height: 0.5)
+                                }
+                            }
                             .contextMenu {
                                 Button("复制匹配值") {
                                     TFClipboard.copy(rule.value)
@@ -211,9 +216,32 @@ struct RulesView: View {
                             pendingDelete = rule
                         }
                     }
+
+                    tableFooter
                 }
             }
         }
+    }
+
+    /// 账页的合计行：把「还剩多少、都判给谁」写在表尾，空面板就不再是无解释的白。
+    private var tableFooter: some View {
+        let direct = filtered.filter { $0.policy.uppercased() == "DIRECT" }.count
+        return HStack(spacing: 10) {
+            Text("共 \(filtered.count) 条")
+            if direct > 0 { Text("·").foregroundStyle(TF.strokeStrong) }
+            if direct > 0 { Text("DIRECT \(direct)") }
+            if filtered.count - direct > 0 {
+                Text("·").foregroundStyle(TF.strokeStrong)
+                Text("代理 \(filtered.count - direct)")
+            }
+            Spacer(minLength: 8)
+            Text("首次命中裁决").foregroundStyle(TF.textTertiary)
+        }
+        .font(TFFont.mono(10))
+        .foregroundStyle(TF.textSecondary)
+        .padding(.horizontal, 18)
+        .padding(.vertical, 11)
+        .overlay(alignment: .top) { TFDivider() }
     }
 
     private func moveSelection(_ direction: MoveCommandDirection) {
@@ -246,7 +274,7 @@ struct RulesView: View {
                                         .foregroundStyle(TF.text)
                                     Spacer()
                                     Text(group.type.rawValue.uppercased())
-                                        .font(TFFont.mono(8.5))
+                                        .font(TFFont.mono(10))
                                         .tracking(0.6)
                                         .foregroundStyle(TF.textTertiary)
                                 }
@@ -271,7 +299,7 @@ struct RulesView: View {
                                 .foregroundStyle(TF.text)
                             Spacer()
                             Text(outbound.type.rawValue)
-                                .font(TFFont.mono(8.5))
+                                .font(TFFont.mono(10))
                                 .foregroundStyle(TF.textTertiary)
                         }
                         .padding(.vertical, 3)
@@ -333,7 +361,7 @@ struct RulesView: View {
     private func shortcut(_ key: String, _ label: String) -> some View {
         HStack(spacing: 8) {
             TFKeyCap(keys: key)
-            Text(label).font(.system(size: 10.5)).foregroundStyle(TF.textTertiary)
+            Text(label).font(.system(size: 10)).foregroundStyle(TF.textTertiary)
         }
     }
 
@@ -368,7 +396,7 @@ struct RuleRow: View {
             if rule.noResolve { Badge(text: "no-resolve", color: TF.textTertiary) }
             Spacer()
             Text(rule.policy)
-                .font(TFFont.mono(10.5, weight: .semibold))
+                .font(TFFont.mono(10, weight: .semibold))
                 .tracking(0.2)
                 .foregroundStyle(policyColor)
         }
@@ -487,7 +515,7 @@ struct AddRuleSheet: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("不做 DNS 解析")
-                        .font(.system(size: 12.5))
+                        .font(.system(size: 12))
                         .foregroundStyle(TF.text)
                     Text("no-resolve，IP 规则常用")
                         .font(.system(size: 12))
@@ -500,7 +528,7 @@ struct AddRuleSheet: View {
 
             if let validationError {
                 HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9.5))
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9))
                     Text(validationError).font(.system(size: 12))
                 }
                 .foregroundStyle(TF.danger)

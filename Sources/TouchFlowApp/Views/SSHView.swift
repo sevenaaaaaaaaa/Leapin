@@ -56,20 +56,20 @@ struct SSHView: View {
                 HStack(alignment: .bottom, spacing: 12) {
                     field("主机 / HOST") {
                         TextField("主机名或 IP", text: $host)
-                            .font(TFFont.mono(13))
+                            .font(TFFont.mono(12))
                     }
                     .frame(minWidth: 200)
 
                     field("端口 / PORT") {
                         TextField("22", text: $port)
-                            .font(TFFont.mono(13))
+                            .font(TFFont.mono(12))
                             .multilineTextAlignment(.center)
                     }
                     .frame(width: 92)
 
                     field("用户 / USER") {
                         TextField("用户名", text: $user)
-                            .font(TFFont.mono(13))
+                            .font(TFFont.mono(12))
                     }
                     .frame(width: 158)
                 }
@@ -85,7 +85,7 @@ struct SSHView: View {
                     if useKey {
                         field("私钥 / KEY") {
                             TextField("私钥路径", text: $keyPath)
-                                .font(TFFont.mono(12.5))
+                                .font(TFFont.mono(12))
                         }
                         Button("选择…") { pickKey() }
                             .buttonStyle(TFGhostButtonStyle())
@@ -117,7 +117,7 @@ struct SSHView: View {
                         } label: {
                             HStack(spacing: 5) {
                                 Image(systemName: "bolt.slash").font(.system(size: 9, weight: .bold))
-                                Text("断开").font(.system(size: 11, weight: .semibold))
+                                Text("断开").font(.system(size: 12, weight: .semibold))
                             }
                         }
                         .buttonStyle(TFPrimaryButtonStyle(tint: TF.dangerFill))
@@ -127,7 +127,7 @@ struct SSHView: View {
                         } label: {
                             HStack(spacing: 5) {
                                 Image(systemName: "bolt.fill").font(.system(size: 9, weight: .bold))
-                                Text(connecting ? "连接中…" : "连接").font(.system(size: 11, weight: .semibold))
+                                Text(connecting ? "连接中…" : "连接").font(.system(size: 12, weight: .semibold))
                             }
                         }
                         .buttonStyle(TFPrimaryButtonStyle())
@@ -155,7 +155,7 @@ struct SSHView: View {
         VStack(alignment: .leading, spacing: 6) {
             if let label {
                 Text(label)
-                    .font(TFFont.mono(9))
+                    .font(TFFont.mono(10))
                     .tracking(1.2)
                     .foregroundStyle(TF.textTertiary)
             }
@@ -190,7 +190,7 @@ struct SSHView: View {
         VStack(spacing: 0) {
             HStack(spacing: 9) {
                 Text(connected ? "\(user)@\(host):\(port)" : "ssh — 未连接")
-                    .font(TFFont.mono(11, weight: .medium))
+                    .font(TFFont.mono(12, weight: .medium))
                     .tracking(0.3)
                     .foregroundStyle(Color(red: 0.72, green: 0.78, blue: 0.86))
                     .lineLimit(1)
@@ -257,11 +257,11 @@ struct SSHView: View {
 
             HStack(spacing: 8) {
                 Text("$")
-                    .font(TFFont.mono(12.5, weight: .bold))
+                    .font(TFFont.mono(12, weight: .bold))
                     .foregroundStyle(TF.mint)
                 TextField("", text: $command, prompt: Text("输入命令，回车发送").foregroundColor(Color(red: 0.42, green: 0.50, blue: 0.60)))
                     .textFieldStyle(.plain)
-                    .font(TFFont.mono(12.5))
+                    .font(TFFont.mono(12))
                     .foregroundStyle(Color(red: 0.85, green: 0.90, blue: 0.97))
                     .onSubmit(send)
                     .disabled(!connected)

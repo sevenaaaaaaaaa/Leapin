@@ -506,16 +506,16 @@ private struct SidebarView: View {
                             .padding(.horizontal, 16).padding(.vertical, 8)
                     } else {
                         Text(group.title)
-                            .font(TFFont.mono(8.5, weight: .medium))
+                            .font(TFFont.mono(10, weight: .medium))
                             .tracking(1.7)
                             .foregroundStyle(TF.textTertiary)
                             .padding(.horizontal, 20)
-                            .padding(.top, groupIndex == 1 ? 6 : 18)
+                            .padding(.top, 20)
                             .padding(.bottom, 7)
                     }
                 } else if !compact {
                     Text(group.title)
-                        .font(TFFont.mono(8.5, weight: .medium))
+                        .font(TFFont.mono(10, weight: .medium))
                         .tracking(1.7)
                         .foregroundStyle(TF.textTertiary)
                         .padding(.horizontal, 20)
@@ -557,7 +557,7 @@ private struct SidebarView: View {
         } label: {
             if compact {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(TF.textSecondary)
                     .frame(maxWidth: .infinity)
                     .frame(height: 30)
@@ -640,12 +640,12 @@ private struct SidebarRow: View {
                     .foregroundStyle(selected ? TF.accent : TF.textSecondary)
                 if !compact {
                     Text(section.title)
-                        .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
+                        .font(.system(size: 12, weight: selected ? .semibold : .regular))
                         .foregroundStyle(selected ? TF.text : TF.textSecondary)
                     Spacer(minLength: 0)
                     if hover, let hint, !selected {
                         Text("⌘\(hint)")
-                            .font(TFFont.mono(8.5))
+                            .font(TFFont.mono(10))
                             .foregroundStyle(TF.textTertiary)
                     }
                 }
@@ -733,9 +733,9 @@ private struct StatusCard: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: 9, weight: .bold))
                         Text(engine.state == .running ? "停止代理" : "启动代理")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: 12, weight: .semibold))
                         Spacer(minLength: 0)
                     }
                     .foregroundStyle(engine.state == .running ? TF.danger : TF.accent)
@@ -835,7 +835,7 @@ struct StatusChip: View {
         HStack(spacing: 6) {
             StatusDot(color: color, pulsing: state == .running)
             Text(state.label)
-                .font(.system(size: 10.5, weight: .semibold))
+                .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(TF.textSecondary)
         }
         .padding(.horizontal, plain ? 0 : 10)
@@ -873,7 +873,7 @@ struct MenuBarPanel: View {
     private func metric(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(value).font(TFFont.num(11, weight: .semibold)).foregroundStyle(TF.text)
-            Text(label).font(.system(size: 8.5)).foregroundStyle(TF.textTertiary)
+            Text(label).font(.system(size: 9)).foregroundStyle(TF.textTertiary)
         }
     }
 
@@ -884,13 +884,13 @@ struct MenuBarPanel: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 7, style: .continuous).fill(TF.accentFill)
                     Image(systemName: "shield.lefthalf.filled")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(.white)
                 }
                 .frame(width: 24, height: 24)
                 VStack(alignment: .leading, spacing: 0) {
                     Text("TouchFlow").font(TFFont.display(12.5, weight: .bold))
-                    Text(engine.state.label).font(.system(size: 9.5)).foregroundStyle(TF.textTertiary)
+                    Text(engine.state.label).font(.system(size: 9)).foregroundStyle(TF.textTertiary)
                 }
                 Spacer()
                 StatusDot(color: engine.state == .running ? TF.mint : TF.textTertiary,
@@ -902,9 +902,9 @@ struct MenuBarPanel: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: 9, weight: .bold))
                     Text(engine.state == .running ? "停止代理" : "启动代理")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -934,7 +934,7 @@ struct MenuBarPanel: View {
                 HStack(spacing: 5) {
                     Text("127.0.0.1:\(engine.profile.general.mixedPort)")
                         .font(TFFont.mono(10, weight: .medium))
-                    Image(systemName: "doc.on.doc").font(.system(size: 8))
+                    Image(systemName: "doc.on.doc").font(.system(size: 9))
                 }
                 .foregroundStyle(TF.textTertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -952,7 +952,7 @@ struct MenuBarPanel: View {
                         NSApp.activate(ignoringOtherApps: true)
                     } label: {
                         HStack(spacing: 7) {
-                            Image(systemName: section.icon).font(.system(size: 9.5)).frame(width: 14)
+                            Image(systemName: section.icon).font(.system(size: 9)).frame(width: 14)
                             Text(section.title).font(.system(size: 12))
                             Spacer()
                         }

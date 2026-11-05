@@ -55,7 +55,7 @@ struct NASView: View {
                             Image(systemName: scanning ? "stop.circle" : "antenna.radiowaves.left.and.right")
                                 .font(.system(size: 9, weight: .bold))
                             Text(scanning ? "停止扫描" : "开始扫描")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(.system(size: 12, weight: .semibold))
                         }
                     }
                     .buttonStyle(TFPrimaryButtonStyle())
@@ -129,10 +129,10 @@ struct NASView: View {
 
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(device.name)
-                                    .font(.system(size: 12.5, weight: .medium))
+                                    .font(.system(size: 12, weight: .medium))
                                     .foregroundStyle(TF.text)
                                 Text("\(device.host):\(device.port) · \(device.service)")
-                                    .font(TFFont.mono(10.5))
+                                    .font(TFFont.mono(10))
                                     .foregroundStyle(TF.textTertiary)
                             }
 
@@ -143,7 +143,7 @@ struct NASView: View {
                             }
                             if selected == device {
                                 Text("已选择")
-                                    .font(TFFont.mono(9))
+                                    .font(TFFont.mono(10))
                                     .tracking(1)
                                     .foregroundStyle(TF.textTertiary)
                             }
@@ -217,7 +217,7 @@ struct NASView: View {
                                     .font(.system(size: 9, weight: .bold))
                                     .foregroundStyle(TF.accent)
                                 Text(busy ? "挂载中…" : "挂载")
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .font(.system(size: 12, weight: .semibold))
                             }
                         }
                         .buttonStyle(TFGhostButtonStyle())
@@ -257,7 +257,7 @@ struct NASView: View {
                         .font(.system(size: 20, weight: .light))
                         .foregroundStyle(TF.textTertiary)
                     Text("还没有选择设备")
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(TF.textSecondary)
                     Text(devices.isEmpty
                          ? "先在「发现 NAS」中扫描，或手动输入主机名添加设备；选中后这里会出现共享名与凭据表单。"
@@ -311,7 +311,7 @@ struct NASView: View {
     private func field(_ text: Binding<String>, _ placeholder: String, mono: Bool) -> some View {
         TextField("", text: text, prompt: Text(placeholder).foregroundColor(TF.textTertiary))
             .textFieldStyle(.plain)
-            .font(mono ? TFFont.mono(13) : .system(size: 13))
+            .font(mono ? TFFont.mono(12) : .system(size: 13))
             .padding(.horizontal, 10)
             .frame(width: 260, height: 30)
             .background(TF.panelSolid, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
