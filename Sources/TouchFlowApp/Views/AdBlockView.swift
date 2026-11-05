@@ -47,13 +47,10 @@ struct AdBlockView: View {
                                 .foregroundStyle(TF.textTertiary)
                         }
                         Spacer()
-                        Toggle("", isOn: Binding(
+                        TFSwitch(isOn: Binding(
                             get: { engine.profile.adblock.enabled },
                             set: { engine.setAdBlockEnabled($0) }
                         ))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
                     }
 
                     TFDivider().opacity(0.6)
@@ -181,10 +178,7 @@ struct AdBlockView: View {
 
     private func subToggle(_ label: String, _ isOn: Bool, set: @escaping (Bool) -> Void) -> some View {
         HStack(spacing: 6) {
-            Toggle("", isOn: Binding(get: { isOn }, set: set))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.mini)
+            TFSwitch(isOn: Binding(get: { isOn }, set: set), width: 30)
             Text(label)
                 .font(.system(size: 10.5))
                 .foregroundStyle(isOn ? TF.textSecondary : TF.textTertiary)

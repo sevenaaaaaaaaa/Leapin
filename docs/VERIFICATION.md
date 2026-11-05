@@ -97,6 +97,8 @@ tfctl proxy status  # 系统代理：关闭
 | 逐页截图（10 页） | 全部渲染正常：总览 / 分流规则 / 去广告 / 抓包 / SSH / NAS / 智能学习 / 隐私 / 配置 / 设置 |
 | 浅色 / 深色 | 两套配色均检查（深色通过 `TF_APPEARANCE=dark` 启动验证） |
 | 视觉回归修复 | 主按钮渐变遮住文字、端口千分位、NAS 输入框图标重叠、抓包双栏无间隔、规则列表满出血 |
+| 控件状态 | macOS 27 下无标签 `.switch` 恒定渲染为关闭态 → 自绘 `TFSwitch`（去广告/总览/设置/顶栏系统代理） |
+| 抓包页真实数据 | 经代理请求 plain HTTP 后列表出现 `example.com 200` 与 `doubleclick.net 403 已拦截`，详情页显示请求/响应头 |
 | Release 包 | `dist/TouchFlow.app` 8.5MB，启动与页面切换正常 |
 
 界面结构：`Sources/TouchFlowApp/Design/Theme.swift`（令牌/背景/按钮/标题）+ `Views/Shared.swift`（Card/StatTile/Badge/FlowRow）

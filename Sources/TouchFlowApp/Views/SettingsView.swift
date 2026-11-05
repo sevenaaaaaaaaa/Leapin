@@ -277,10 +277,7 @@ private struct ToggleRow: View {
                 }
             }
             Spacer(minLength: 12)
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.mini)
+            TFSwitch(isOn: $isOn, width: 34)
         }
         .padding(.vertical, 3)
     }

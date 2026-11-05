@@ -286,3 +286,33 @@ struct TFDivider: View {
         Rectangle().fill(TF.stroke).frame(height: 1)
     }
 }
+
+/// Custom switch: macOS 27 的无标签 `.switch` 在部分容器里会恒定渲染成关闭态，
+/// 这里用自绘开关保证状态与视觉一致，也顺便统一了品牌色。
+struct TFSwitch: View {
+    @Binding var isOn: Bool
+    var tint: Color = TF.accent
+    var width: CGFloat = 38
+
+    var body: some View {
+        let h = width * 22 / 38
+        Button {
+            isOn.toggle()
+        } label: {
+            Capsule(style: .continuous)
+                .fill(isOn ? tint : TF.stroke.opacity(1.4))
+                .frame(width: width, height: h)
+                .overlay(
+                    Circle()
+                        .fill(.white)
+                        .shadow(color: .black.opacity(0.18), radius: 1.5, y: 0.5)
+                        .padding(h * 0.12)
+                        .frame(width: h, height: h)
+                        .offset(x: isOn ? (width - h) / 2 : -(width - h) / 2)
+                )
+                .animation(.spring(response: 0.26, dampingFraction: 0.82), value: isOn)
+        }
+        .buttonStyle(.plain)
+        .accessibilityRepresentation { Toggle(isOn: $isOn) { EmptyView() } }
+    }
+}

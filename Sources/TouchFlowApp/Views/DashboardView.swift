@@ -116,10 +116,7 @@ struct DashboardView: View {
             Text(label)
                 .font(.system(size: 10.5))
                 .foregroundStyle(isOn ? TF.text : TF.textTertiary)
-            Toggle("", isOn: Binding(get: { isOn }, set: set))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .controlSize(.mini)
+            TFSwitch(isOn: Binding(get: { isOn }, set: set), width: 30)
         }
     }
 

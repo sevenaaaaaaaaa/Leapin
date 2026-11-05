@@ -115,30 +115,57 @@ struct CaptureView: View {
                             ? "暂无 HTTP 请求。启动代理并把应用流量指向 127.0.0.1:\(engine.profile.general.mixedPort) 后即可看到明文请求；HTTPS 需开启解密。"
                             : "抓包已在设置中关闭")
             } else {
-                List(selection: $selected) {
+                ScrollView {
+                  LazyVStack(spacing: 2) {
                     ForEach(filtered) { request in
-                        HStack(spacing: 8) {
+                        HStack(spacing: 9) {
                             Text(request.method)
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .padding(.horizontal, 5).padding(.vertical, 2)
-                                .background(methodColor(request.method).opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .frame(width: 32)
+                                .padding(.vertical, 3)
+                                .background(methodColor(request.method).opacity(0.14), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
                                 .foregroundStyle(methodColor(request.method))
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(request.host).font(.callout).lineLimit(1)
-                                Text(path(request.url)).font(.caption2.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+                                HStack(spacing: 5) {
+                                    if request.blocked {
+                                        Image(systemName: "hand.raised.fill")
+                                            .font(.system(size: 8))
+                                            .foregroundStyle(TF.danger)
+                                    }
+                                    Text(request.host)
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundStyle(TF.text)
+                                        .lineLimit(1)
+                                }
+                                Text(path(request.url))
+                                    .font(TFFont.mono(9.5))
+                                    .foregroundStyle(TF.textTertiary)
+                                    .lineLimit(1)
                             }
-                            Spacer()
+                            Spacer(minLength: 8)
                             if let code = request.statusCode {
-                                Text("\(code)").font(.caption.monospaced())
-                                    .foregroundStyle(code < 400 ? .green : .red)
+                                Text(String(code))
+                                    .font(TFFont.num(10, weight: .semibold))
+                                    .padding(.horizontal, 6).padding(.vertical, 2)
+                                    .background((code < 400 ? TF.success : TF.danger).opacity(0.13),
+                                                in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                                    .foregroundStyle(code < 400 ? TF.success : TF.danger)
                             }
-                            Text(Fmt.duration(request.durationMs)).font(.caption2).foregroundStyle(.tertiary)
+                            Text(Fmt.duration(request.durationMs))
+                                .font(TFFont.num(9.5))
+                                .foregroundStyle(TF.textTertiary)
+                                .frame(width: 52, alignment: .trailing)
                         }
-                        .tag(request.id)
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, 9).padding(.vertical, 7)
+                        .background(selected == request.id ? TF.accent.opacity(0.11) : Color.clear,
+                                    in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .contentShape(Rectangle())
+                        .onTapGesture { selected = request.id }
                     }
+                  }
+                  .padding(8)
                 }
-                .listStyle(.inset)
+                .scrollIndicators(.visible)
             }
         }
     }

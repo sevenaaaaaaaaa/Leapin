@@ -148,6 +148,11 @@ struct RootView: View {
         }
         .overlay(alignment: .bottom) { toast }
         .preferredColorScheme(ProcessInfo.processInfo.environment["TF_APPEARANCE"] == "dark" ? .dark : nil)
+        .task {
+            if ProcessInfo.processInfo.environment["TF_AUTOSTART"] == "1" {
+                await engine.start()
+            }
+        }
         .fileImporter(isPresented: $app.showImporter,
                       allowedContentTypes: [.yaml, .plainText, .json, .data],
                       allowsMultipleSelection: false) { result in
@@ -359,13 +364,10 @@ private struct PageHeaderBar: View {
                     Text("系统代理")
                         .font(.system(size: 11))
                         .foregroundStyle(TF.textSecondary)
-                    Toggle("", isOn: Binding(
+                    TFSwitch(isOn: Binding(
                         get: { engine.systemProxyActive },
                         set: { engine.toggleSystemProxy($0) }
-                    ))
-                    .labelsHidden()
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
+                    ), width: 32)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)

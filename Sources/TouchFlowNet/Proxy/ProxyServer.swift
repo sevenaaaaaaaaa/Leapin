@@ -379,12 +379,16 @@ public final class ProxyServer: @unchecked Sendable {
 
         if decision.isBlocked || decision.outbound.type == .reject {
             recordRejected(meta, decision: decision, blockedBy: "rule")
+            recordBlockedCapture(host: authority.host, url: request.target,
+                                 method: request.method.uppercased(), request: request)
             try await writePlainHTTP(socket, status: 403, reason: "Forbidden",
                                      message: "TouchFlow blocked \(authority.host)")
             return false
         }
         if let blocker, blocker.verdict(for: authority.host, thirdParty: false).blocked {
             recordRejected(meta, decision: decision, blockedBy: "adblock")
+            recordBlockedCapture(host: authority.host, url: request.target,
+                                 method: request.method.uppercased(), request: request)
             try await writePlainHTTP(socket, status: 403, reason: "Forbidden",
                                      message: "TouchFlow blocked \(authority.host)")
             return false
@@ -428,6 +432,9 @@ public final class ProxyServer: @unchecked Sendable {
                 throw TouchFlowError.connectionFailed("origin closed without a response")
             }
             let responseBody = try await readResponseBody(response, request: request, stream: upstreamStream)
+            recordPlainCapture(host: authority.host, request: request, requestBody: body,
+                               response: response, responseBody: responseBody,
+                               durationMs: elapsedMs(since: started))
 
             var responseHeaders = HTTPCodec.stripHopByHop(response.headers)
             if request.method.uppercased() != "HEAD" {
@@ -452,6 +459,50 @@ public final class ProxyServer: @unchecked Sendable {
                 "HTTP \(request.method) \(authority.host) failed: \(error.localizedDescription)")
             return false
         }
+    }
+
+    // MARK: - Capture (plain HTTP)
+
+    /// Plain HTTP is not decrypted, but header/body pairs are still worth recording
+    /// when the user enabled HTTP capture: the Capture page then also shows
+    /// unencrypted traffic and every blocked ad request.
+    private func recordPlainCapture(host: String,
+                                    request: HTTPRequestHead,
+                                    requestBody: Data,
+                                    response: HTTPResponseHead,
+                                    responseBody: Data,
+                                    durationMs: Int) {
+        guard let capture else { return }
+        capture.capture(CapturedRequest(
+            method: request.method.uppercased(),
+            url: request.target,
+            host: host,
+            requestHeaders: Self.headerDictionary(request.headers),
+            requestBody: Self.captureBody(requestBody),
+            statusCode: response.status,
+            responseHeaders: Self.headerDictionary(response.headers),
+            responseBody: Self.captureBody(responseBody),
+            mimeType: response.headers.first("Content-Type"),
+            durationMs: durationMs))
+    }
+
+    private func recordBlockedCapture(host: String, url: String, method: String, request: HTTPRequestHead) {
+        guard let capture else { return }
+        capture.capture(CapturedRequest(method: method,
+                                        url: url,
+                                        host: host,
+                                        requestHeaders: Self.headerDictionary(request.headers),
+                                        statusCode: 403,
+                                        blocked: true))
+    }
+
+    private static func headerDictionary(_ headers: HTTPHeaders) -> [String: String] {
+        Dictionary(headers.items.map { ($0.name, $0.value) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    private static func captureBody(_ data: Data) -> Data? {
+        guard !data.isEmpty else { return nil }
+        return data.count > 262_144 ? Data(data.prefix(262_144)) : data
     }
 
     // MARK: - SOCKS5
