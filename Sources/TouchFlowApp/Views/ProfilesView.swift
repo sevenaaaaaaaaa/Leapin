@@ -113,6 +113,8 @@ struct ProfilesView: View {
                                 .font(.system(size: 9, weight: .bold))
                             Text("导入配置")
                                 .font(.system(size: 12, weight: .semibold))
+                                .lineLimit(1)
+                                .fixedSize()
                         }
                     }
                     .buttonStyle(TFPrimaryButtonStyle())
@@ -124,8 +126,10 @@ struct ProfilesView: View {
                         HStack(spacing: 4) {
                             Image(systemName: "link")
                                 .font(.system(size: 9, weight: .bold))
-                            Text("粘贴订阅链接")
+                            Text("粘贴订阅")
                                 .font(.system(size: 12, weight: .medium))
+                                .lineLimit(1)
+                                .fixedSize()
                         }
                     }
                     .buttonStyle(TFGhostButtonStyle())
@@ -146,6 +150,8 @@ struct ProfilesView: View {
                                 .font(.system(size: 9, weight: .bold))
                             Text("导出")
                                 .font(.system(size: 12, weight: .medium))
+                                .lineLimit(1)
+                                .fixedSize()
                         }
                         .foregroundStyle(TF.text)
                         .padding(.horizontal, 10)

@@ -309,8 +309,8 @@ struct CaptureView: View {
             VStack(spacing: 0) {
                 ForEach(0..<5, id: \.self) { _ in
                     Rectangle()
-                        .fill(TF.stroke.opacity(0.35))
-                        .frame(height: 0.5)
+                        .fill(TF.stroke)
+                        .frame(height: 1)
                         .padding(.horizontal, 18)
                         .padding(.bottom, 35)
                 }

@@ -175,7 +175,7 @@ struct RulesView: View {
                     .padding(.horizontal, 18)
                     .padding(.top, 10)
                     .padding(.bottom, 7)
-                    Rectangle().fill(TF.stroke.opacity(0.7)).frame(height: 0.5)
+                    Rectangle().fill(TF.stroke).frame(height: 1)
                     ScrollView {
                     LazyVStack(spacing: 1) {
                         ForEach(Array(filtered.enumerated()), id: \.element.id) { index, rule in
@@ -188,7 +188,7 @@ struct RulesView: View {
                             }
                             .overlay(alignment: .bottom) {
                                 if rule.id != filtered.last?.id {
-                                    Rectangle().fill(TF.stroke.opacity(0.5)).frame(height: 0.5)
+                                    Rectangle().fill(TF.stroke).frame(height: 1)
                                 }
                             }
                             .contextMenu {
