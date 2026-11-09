@@ -133,6 +133,12 @@ docs/ARCHITECTURE.md             契约与设计
 ./scripts/sync-e2e.sh       # 双存储同步：配对 / 收敛 / 离线改动 / override / 只读面板
 ```
 
+## 仓库卫生
+
+- 提交身份统一为 `Leapin Maintainers <maintainers@leapin.dev>`；历史提交的作者/邮箱已重写，不含个人账号。
+- 示例地址使用 TEST-NET（`192.0.2.0/24`）；仓库内不含个人路径、主机名、设备标识或真实邮箱。
+- 已忽略 `.build*/`、`dist/`、`.bench/`、`.stress/`、`docs/shots/`、`.env*`、`*.pem`、`*.key`、`*.p12`、`*.log`、`secrets.json`；这些目录可能含本机运行数据，不要用 `git add -f` 强加。
+
 ## 开发
 
 ```bash

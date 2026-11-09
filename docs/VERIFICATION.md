@@ -241,6 +241,21 @@ P2 不在本轮点名的 P1/P3 里，但它是路线图中 P1 之后、且不依
 - 未验证 / 未做：真实 SSH/NAS 钥匙串凭据迁移（无真实凭据可测）；旧数据目录删除（刻意保留以便回滚）；
   工作区目录 `~/TouchFlow` 尚未改名（会话 cwd 限制）；GitHub 仓库尚未创建/推送。
 
+## 0.7 仓库隐私清理（v1.8，2026-11-10）
+
+发布前对 tracked files 与全部 16 个历史提交做了一次隐私审计与清理。
+
+- 初始命中：本机绝对路径、作者身份（姓名 / 本地邮箱 / GitHub noreply）、机型指纹、SSH 示例用户名、
+  示例 LAN 地址、文档里的旧 commit id。
+- 当前树：路径改为 `~`，机型改为 `Apple silicon Mac`，示例用户名改为 `user`，示例地址改为 TEST-NET `192.0.2.9`，
+  旧 commit id 改为「历史提交」；`.gitignore` 增加 `.env*`、`*.pem`、`*.key`、`*.p12`、`*.log`、`secrets.json`。
+- 历史：16 个提交全部重写为单一作者 `Leapin Maintainers <maintainers@leapin.dev>`，每个历史树都重新清洗；
+  删除 `refs/original`、清空 reflog 并 `git gc --prune=now`。
+- 验证：重写后按「本机路径 / 用户名 / 机型 / 示例 LAN 地址」等模式扫描**全部提交** → **0 命中**；
+  `git log --all` 只剩中立作者；`git status` 干净；事后全量测试 **205 passed / 1 skipped / 0 warnings**。
+- 原始历史备份保留在仓库外的临时目录（含个人信息，确认无误后删除）；仓库尚未推送。
+- 边界：GitHub 账户/仓库所有者仍是可见的托管层信息；本机 `~/Library/Application Support` 与钥匙串里的运行数据未动。
+
 ## 1. 构建
 
 ```

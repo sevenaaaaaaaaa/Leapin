@@ -169,4 +169,5 @@ iPhone 浏览器渲染取证、配对码失败退避、`SyncPeer.scopes` 强制�
   旧 CA 继续沿用（CN 暂保留 `TouchFlow Root CA`，避免用户重装证书）。
 - 验证：fresh build 0 warning；205 passed / 1 skipped；sync-e2e 36/36、control-e2e 22/22、smoke 10/10；
   `dist/Leapin.app` 的 bundle id / executable / 签名已核对。详见 docs/VERIFICATION.md §0.6。
+- 隐私：发布前已重写 16 个提交的作者与历史树，扫描 0 命中 personal paths/hostnames/device names；详见 VERIFICATION §0.7。
 - 后续：工作区目录仍叫 `TouchFlow`（会话 cwd，未动）；GitHub 仓库名与推送待定；真实钥匙串凭据迁移未验证。
