@@ -1,6 +1,6 @@
-# Leapin · 一跃
+# Leapin
 
-> One leap. No detour. —— 一跃即达，不必绕路。
+> One leap. No detour.
 
 融合 Surge / Clash 能力的 macOS 网络工具：规则分流、去广告、抓包、SSH、NAS 快速挂载、从 App 列表或截图学习分流规则，并把隐私保护做进默认行为。
 

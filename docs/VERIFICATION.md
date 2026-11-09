@@ -6,7 +6,7 @@ v1.4 把视觉层迁到 macOS 26 Liquid Glass（窗口 behind-window 材质 + �
 v1.5 开始 v3 路线图的 P0（诚实性）：AUTO 真测速、PROCESS/SRC-IP 接上、每条连接带裁决链、导入报告单列不可拨协议。
 v1.6 交付 P1 控制面（action API / SSE / token / 审计 / diff reload / CLI）与 P3 规则索引 + 永不命中诊断。
 v1.7 交付 P2 设备身份 + 局域网同步 + 只读 Web 面板；P4+ 需 NE 签名，只交付设计 docs/P4-DESIGN.md。
-v1.8 把项目从 TouchFlow 更名为 **Leapin（一跃）**：模块/CLI/App/bundle/数据目录/钥匙串/环境变量全部改名，旧数据自动迁移。
+v1.8 把项目从 TouchFlow 更名为 **Leapin**（中文名暂未定）：模块/CLI/App/bundle/数据目录/钥匙串/环境变量全部改名，旧数据自动迁移。
 历史小节（v1.0–v1.7）保留原验收事实，路径与二进制名按现名统一。
 
 ## 0. 视觉重构验证（v1.2）
@@ -223,7 +223,7 @@ P2 不在本轮点名的 P1/P3 里，但它是路线图中 P1 之后、且不依
 改名不是换文案，是一次全量重命名 + 一次数据迁移。公开面（模块、CLI、App、bundle、URL scheme、环境变量）
 与持久化面（数据目录、钥匙串 service、广告列表、CA）都动了。
 
-- 命名：`LEAPIN` 字标 / `Leapin` 正文 / `leapin` 代码；中文「一跃」；口号 `One leap. No detour.`（见 [docs/BRAND.md](BRAND.md)）。
+- 命名：`LEAPIN` 字标 / `Leapin` 正文 / `leapin` 代码；口号 `One leap. No detour.`；中文名暂未定（「一跃」评估后放弃，见 [docs/BRAND.md](BRAND.md)）。
 - 代码：`TouchFlowCore/Policy/Net/Integrations/Control/Sync/Runtime/App` → `Leapin*`；`TF` 命名空间 → `LP`；
   `tfctl` → `leapin`；C target `CTouchFlowProc` → `CLeapinProc`；C 符号 `tf_*` → `leapin_*`；环境变量 `TF_*` → `LEAPIN_*`。
 - 构建：`swift build --scratch-path .build-verify`（全新 scratch）→ **0 error / 0 warning**；

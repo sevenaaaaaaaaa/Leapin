@@ -162,7 +162,7 @@ iPhone 浏览器渲染取证、配对码失败退避、`SyncPeer.scopes` 强制�
 
 ## 13. 改名：TouchFlow → Leapin（v1.8，2026-11-10）
 
-- 品牌：`LEAPIN` / `Leapin` / `leapin`；中文「一跃」；口号 `One leap. No detour.`。理由与用法见 docs/BRAND.md。
+- 品牌：`LEAPIN` / `Leapin` / `leapin`；口号 `One leap. No detour.`；中文名待定（「一跃」评估后放弃）。理由与用法见 docs/BRAND.md。
 - 范围：Swift 模块/类型、`TF`→`LP`、`tfctl`→`leapin`、bundle id `com.leapin.app`、App `Leapin.app`、
   数据目录、钥匙串 service、URL scheme、环境变量 `TF_*`→`LEAPIN_*`。
 - 兼容：旧数据目录一次性复制（保留旧目录）、设备身份自动迁移（deviceID 不变）、旧命名广告列表迁移、
