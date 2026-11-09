@@ -311,7 +311,7 @@ v1.1 变更：`stop()` 与 App 退出时**先回滚系统代理**再关监听（
 
 ## 5. 性能（scripts/bench.sh，release leapin）
 
-环境：Apple silicon Mac/ macOS 27.3 / arm64，数字为本机实测（3 次取最小）。
+环境：Apple silicon Mac / macOS 27.3 / arm64，数字为本机实测（3 次取最小）。
 
 | 场景 | 结果 |
 | --- | --- |

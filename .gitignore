@@ -6,4 +6,10 @@
 dist/
 docs/shots/
 .DS_Store
-*.xcuserstate
+*.xcuserstate.env
+.env.*
+*.pem
+*.key
+*.p12
+*.log
+secrets.json
