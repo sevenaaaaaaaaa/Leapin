@@ -1,23 +1,23 @@
 #!/bin/bash
-# TouchFlow 性能基准（P4）。只用系统自带工具：swift / awk / perl / curl / lsof / nc / dig / python3。
+# Leapin 性能基准（P4）。只用系统自带工具：swift / awk / perl / curl / lsof / nc / dig / python3。
 #
 # 用法：
-#   scripts/bench.sh                      # 全量（首次 release 构建 tfctl，约 1-3 分钟）
-#   TF_BENCH_SKIP_BUILD=1 scripts/bench.sh
-#   TF_BENCH_RULES="1000 10000 100000" scripts/bench.sh
+#   scripts/bench.sh                      # 全量（首次 release 构建 leapin，约 1-3 分钟）
+#   LEAPIN_BENCH_SKIP_BUILD=1 scripts/bench.sh
+#   LEAPIN_BENCH_RULES="1000 10000 100000" scripts/bench.sh
 #
 # 使用独立 scratch（--scratch-path .build-bench），不与 GUI 的 .build 抢锁。
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-SCRATCH=${TF_BENCH_SCRATCH:-"$ROOT/.build-bench"}
-OUT=${TF_BENCH_OUT:-"$ROOT/.bench"}
-TFCTL="$SCRATCH/release/tfctl"
-RULES_SIZES=${TF_BENCH_RULES:-"1000 10000 100000"}
-MIXED_PORT=${TF_BENCH_MIXED_PORT:-17890}
+SCRATCH=${LEAPIN_BENCH_SCRATCH:-"$ROOT/.build-bench"}
+OUT=${LEAPIN_BENCH_OUT:-"$ROOT/.bench"}
+LEAPIN_BIN="$SCRATCH/release/leapin"
+RULES_SIZES=${LEAPIN_BENCH_RULES:-"1000 10000 100000"}
+MIXED_PORT=${LEAPIN_BENCH_MIXED_PORT:-17890}
 HTTP_PORT=$((MIXED_PORT + 1))
 SOCKS_PORT=$((MIXED_PORT + 2))
-ORIGIN_PORT=${TF_BENCH_ORIGIN_PORT:-18080}
+ORIGIN_PORT=${LEAPIN_BENCH_ORIGIN_PORT:-18080}
 PROXY_PID=""
 ORIGIN_PID=""
 
@@ -34,11 +34,11 @@ trap cleanup EXIT
 mkdir -p "$OUT/profiles"
 
 # ---------- 1. 构建 ----------
-if [ -z "${TF_BENCH_SKIP_BUILD:-}" ]; then
-  note "release 构建 tfctl（scratch: ${SCRATCH}）"
-  ( cd "$ROOT" && swift build -c release --product tfctl --scratch-path "$SCRATCH" 2>&1 | grep -E 'error:' | head -20 || true )
+if [ -z "${LEAPIN_BENCH_SKIP_BUILD:-}" ]; then
+  note "release 构建 leapin（scratch: ${SCRATCH}）"
+  ( cd "$ROOT" && swift build -c release --product leapin --scratch-path "$SCRATCH" 2>&1 | grep -E 'error:' | head -20 || true )
 fi
-[ -x "$TFCTL" ] || { echo "缺少可执行文件 ${TFCTL}（先跑一次不带 TF_BENCH_SKIP_BUILD 的 bench.sh）" >&2; exit 1; }
+[ -x "$LEAPIN_BIN" ] || { echo "缺少可执行文件 ${LEAPIN_BIN}（先跑一次不带 LEAPIN_BENCH_SKIP_BUILD 的 bench.sh）" >&2; exit 1; }
 
 # ---------- 2. 规则生成 ----------
 gen_profile() { # $1=规则数 $2=输出文件
@@ -81,12 +81,12 @@ min_ms() { # $@ = 命令
 note "规则引擎：加载 + 单次 decide（wall clock，3 次取最小）"
 printf '%-10s %10s %12s %14s\n' "规则数" "总耗时ms" "启动基线ms" "净增ms/万条"
 gen_profile 0 "$OUT/profiles/rules-0.surge"
-base=$(min_ms "$TFCTL" rules example.com --profile "$OUT/profiles/rules-0.surge")
+base=$(min_ms "$LEAPIN_BIN" rules example.com --profile "$OUT/profiles/rules-0.surge")
 printf '%-10s %10s %12s %14s\n' 0 "$base" "$base" "-"
 for n in $RULES_SIZES; do
   p="$OUT/profiles/rules-$n.surge"
   [ -f "$p" ] || gen_profile "$n" "$p"
-  ms=$(min_ms "$TFCTL" rules example.com --profile "$p")
+  ms=$(min_ms "$LEAPIN_BIN" rules example.com --profile "$p")
   net=$((ms - base))
   if [ "$net" -lt 0 ]; then net=0; fi
   denom=$n
@@ -99,12 +99,12 @@ done
 note "10 万规则 p50/p95"
 BIG_PROFILE="$OUT/profiles/rules-100000.surge"
 [ -f "$BIG_PROFILE" ] || gen_profile 100000 "$BIG_PROFILE"
-measure_line=$("$TFCTL" rules example.com --profile "$BIG_PROFILE" --measure 2000 | tail -1)
+measure_line=$("$LEAPIN_BIN" rules example.com --profile "$BIG_PROFILE" --measure 2000 | tail -1)
 printf '%-24s %s\n' "10 万规则 p50/p95" "$measure_line"
 
 # ---------- 3. AdBlock ----------
 note "AdBlock：内置拦截列表（加载 + 单次判定）"
-ms=$(min_ms "$TFCTL" adblock doubleclick.net)
+ms=$(min_ms "$LEAPIN_BIN" adblock doubleclick.net)
 printf '%-24s %10s\n' "内置列表 加载+判定ms" "$ms"
 if ! [ -f "$OUT/profiles/abp-100k.txt" ]; then
   awk 'BEGIN { for (i = 0; i < 100000; i++) printf "||host%d.example.com^\n", i }' > "$OUT/profiles/abp-100k.txt"
@@ -121,7 +121,7 @@ ORIGIN_PID=$!
 sleep 1
 
 gen_profile 1000 "$OUT/profiles/serve.surge"
-"$TFCTL" run --profile "$OUT/profiles/serve.surge" >"$OUT/proxy.log" 2>&1 &
+"$LEAPIN_BIN" run --profile "$OUT/profiles/serve.surge" >"$OUT/proxy.log" 2>&1 &
 PROXY_PID=$!
 ready=0
 for _ in $(seq 1 50); do
@@ -150,8 +150,8 @@ printf '%-24s %10ss\n' "p95" "$p95"
 printf '%-24s %10s\n' "FD（前/后）" "$fd_before/$fd_after"
 
 # DNS：默认监听 5354 常被用户自己的 DNS 占用，基准用独立端口 + 独立实例。
-DNS_PORT=${TF_BENCH_DNS_PORT:-15354}
-DNS_MIXED=${TF_BENCH_DNS_MIXED_PORT:-17899}
+DNS_PORT=${LEAPIN_BENCH_DNS_PORT:-15354}
+DNS_MIXED=${LEAPIN_BENCH_DNS_MIXED_PORT:-17899}
 if nc -z 127.0.0.1 "$DNS_PORT" 2>/dev/null; then
   note "DNS：端口 $DNS_PORT 已被占用，跳过"
 elif ! have dig; then
@@ -169,7 +169,7 @@ dns:
 rules:
   - MATCH,DIRECT
 EOF
-  "$TFCTL" run --profile "$OUT/profiles/dns.yaml" >"$OUT/dns-proxy.log" 2>&1 &
+  "$LEAPIN_BIN" run --profile "$OUT/profiles/dns.yaml" >"$OUT/dns-proxy.log" 2>&1 &
   DNS_PID=$!
   dns_ready=0
   for _ in $(seq 1 50); do

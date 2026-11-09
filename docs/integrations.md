@@ -1,15 +1,15 @@
-# TouchFlowIntegrations 交付说明
+# LeapinIntegrations 交付说明
 
-模块：`Sources/TouchFlowIntegrations/`（依赖 `TouchFlowCore`，无新增 SPM 依赖）
-测试：`Tests/TouchFlowIntegrationsTests/PlaceholderTests.swift`（10 个用例）
-公共 API：与 `docs/ARCHITECTURE.md` 第 3 节 `TouchFlowIntegrations` 段逐字一致；Runtime / App / tfctl 已按同一份签名编译通过。
+模块：`Sources/LeapinIntegrations/`（依赖 `LeapinCore`，无新增 SPM 依赖）
+测试：`Tests/LeapinIntegrationsTests/PlaceholderTests.swift`（10 个用例）
+公共 API：与 `docs/ARCHITECTURE.md` 第 3 节 `LeapinIntegrations` 段逐字一致；Runtime / App / leapin 已按同一份签名编译通过。
 
 ```
-swift build --target TouchFlowIntegrations   # Build complete!
-swift test --filter TouchFlowIntegrationsTests
+swift build --target LeapinIntegrations   # Build complete!
+swift test --filter LeapinIntegrationsTests
 # Executed 11 tests, with 0 failures (0 unexpected) in 0.690 (0.691) seconds
 
-swift test          # 整包：Core/Policy 通过；TouchFlowNetTests 当前被本模块之外的
+swift test          # 整包：Core/Policy 通过；LeapinNetTests 当前被本模块之外的
                     # CaptureTests 失败+挂起阻塞（CaptureTests.swift:26 CA 解析断言），
                     # 与本模块无关，未能跑完整包汇总
 ```
@@ -38,9 +38,9 @@ swift test          # 整包：Core/Policy 通过；TouchFlowNetTests 当前被�
 - 命令行：`/usr/bin/ssh -tt -p <port> -o ServerAliveInterval=15 -o ConnectTimeout=10 <hostKeyArgs> [-i <key> -o IdentitiesOnly=yes] user@host`。
 - `knownHosts` 支持策略字符串 `accept-new` / `yes` / `no` / `ask`（原样传给 `StrictHostKeyChecking`），也支持文件路径（转换为 `-o UserKnownHostsFile=<path> -o StrictHostKeyChecking=yes`）；传入空串时默认 `accept-new`。
 - 密码认证：在 0700 临时目录写入 0600 `askpass.sh`，内容为
-  `#!/bin/sh` + `printf '%s\n' "$TF_SSH_PASSWORD"`；密码只通过 `Process.environment` 的 `TF_SSH_PASSWORD` 传递，**从不进入 argv、不写日志**；同时设置 `SSH_ASKPASS`、`SSH_ASKPASS_REQUIRE=force`、`DISPLAY=:0`。会话结束（`disconnect()`、连接失败、`deinit`）都会删除脚本与临时目录，失败路径也有测试断言无残留。
+  `#!/bin/sh` + `printf '%s\n' "$LEAPIN_SSH_PASSWORD"`；密码只通过 `Process.environment` 的 `LEAPIN_SSH_PASSWORD` 传递，**从不进入 argv、不写日志**；同时设置 `SSH_ASKPASS`、`SSH_ASKPASS_REQUIRE=force`、`DISPLAY=:0`。会话结束（`disconnect()`、连接失败、`deinit`）都会删除脚本与临时目录，失败路径也有测试断言无残留。
 - stdout 与 stderr 合并到同一个 `Pipe`，`readabilityHandler` 解码 UTF-8 后回调 `outputHandler`（在私有串行队列调用，UI 需自行切主线程）。ANSI 颜色默认保留，另提供 `SSHSession.stripANSI(_:)` 供需要纯文本的调用方使用。
-- 连接成功的判定：首包到达，或 3 秒后进程仍存活；进程提前退出则抛 `TouchFlowError.connectionFailed`，消息带 stderr 尾部（最多 600 字符）。`ssh` 不存在时抛 `unsupported`。
+- 连接成功的判定：首包到达，或 3 秒后进程仍存活；进程提前退出则抛 `LeapinError.connectionFailed`，消息带 stderr 尾部（最多 600 字符）。`ssh` 不存在时抛 `unsupported`。
 - `write` 原样写入 stdin，不自动补换行（App 自己拼 `\n`）；未连接时写日志后静默返回。
 - `resize` 做了 `TIOCSWINSZ` 最佳努力调用，但 `Process` 给的是管道而不是 pty master，所以实际是 no-op（远端的列宽不会跟随窗口变化）。这是本实现已知的主要限制，注释已说明；上远程 `vim`/`top` 会出现宽度不自适应。
 
@@ -58,7 +58,7 @@ swift test          # 整包：Core/Policy 通过；TouchFlowNetTests 当前被�
 挂载（已实现）：
 
 - `openInFinder(host:share:)`：拼 `smb://host/share` 交给 `NSWorkspace.open`，由 Finder/Keychain 处理凭据，**不经手密码**，最安全；Finder 拒绝时抛 `connectionFailed`。
-- `mountSMB(host:share:user:password:)`：挂载点 `~/Volumes/<share>`（自动创建），写 0600 临时脚本，脚本用环境变量 `TF_SMB_USER` / `TF_SMB_PASSWORD` 拼接 `mount_smbfs` 的 URL，20 秒超时；成功后用 `/sbin/mount` 复核该路径确实已挂载，返回挂载 URL；失败时把密码（含百分号编码形式）从错误文本里抹掉再抛出。
+- `mountSMB(host:share:user:password:)`：挂载点 `~/Volumes/<share>`（自动创建），写 0600 临时脚本，脚本用环境变量 `LEAPIN_SMB_USER` / `LEAPIN_SMB_PASSWORD` 拼接 `mount_smbfs` 的 URL，20 秒超时；成功后用 `/sbin/mount` 复核该路径确实已挂载，返回挂载 URL；失败时把密码（含百分号编码形式）从错误文本里抹掉再抛出。
 - **已知风险（写进代码注释）**：`mount_smbfs` 只接受 URL 里的密码，因此密码最终会出现在 `mount_smbfs` 自己的 argv 中，可被同用户进程短暂读到；我们的 `Process.arguments` 与日志里没有密码，脚本在 `defer` 中删除。要彻底避免只能走 Finder 那条路。
 - 额外提供 `unmount(_:)`（`/sbin/umount`）与 `revealInFinder(_:)`（Finder 中显示卷），非契约必需但 UI 有用。
 
@@ -90,7 +90,7 @@ swift test          # 整包：Core/Policy 通过；TouchFlowNetTests 当前被�
 
 ## 6. 未实现（诚实清单）
 
-- **Kill Switch（加分项，主动放弃）**：`pf` 需要 root（`pfctl -e -f` / anchor 都需要 sudo），而一旦规则写错会直接切断用户网络；按任务要求「不能静默失败」，本模块选择**不提供半成品实现**，避免误用。若后续要做，建议在 `tfctl` 层要求显式 `sudo`，并在写入前 `pfctl -n -f` 干跑校验 + 保存回滚锚点。
+- **Kill Switch（加分项，主动放弃）**：`pf` 需要 root（`pfctl -e -f` / anchor 都需要 sudo），而一旦规则写错会直接切断用户网络；按任务要求「不能静默失败」，本模块选择**不提供半成品实现**，避免误用。若后续要做，建议在 `leapin` 层要求显式 `sudo`，并在写入前 `pfctl -n -f` 干跑校验 + 保存回滚锚点。
 - SSH：SFTP、端口转发、`ControlMaster` 复用、指纹确认 UI。
 - NAS：AFP/NFS 挂载、设备型号与容量、Keychain 凭据保存。
 - 学习：图像预处理、批量规则冲突检测、从进程路径反查应用。
@@ -99,7 +99,7 @@ swift test          # 整包：Core/Policy 通过；TouchFlowNetTests 当前被�
 
 ## 7. 测试证据
 
-`Tests/TouchFlowIntegrationsTests/PlaceholderTests.swift`（11 个用例，全部通过）：
+`Tests/LeapinIntegrationsTests/PlaceholderTests.swift`（11 个用例，全部通过）：
 
 1. `testCatalogIsPopulatedWithPlausibleDomains` — 目录 ≥30（实际 55）、名称唯一、每个域名小写、无空格、无 scheme、≥2 段、TLD 为字母。
 2. `testParsePlainTextMatchesCatalogAndKeepsUnknownApps` — 中英混排 + 目录命中的兜底 + 未知应用保留空域名。

@@ -1,8 +1,8 @@
-# TouchFlow 设计评审 — 距离 Awwwards 还有多远
+# Leapin 设计评审 — 距离 Awwwards 还有多远
 
 **评审基准**：`/tmp/tfbase/*.png`，浅色，1040×752，10 页逐张看（00 dashboard / 01 rules / 02 adblock / 03 capture / 09 settings 全看，04–08 抽查后补看全）。
 **评审口径**：Awwwards SOTD / FWA / Webby 的 craft 标准 —— 不是"好看"，是"每一个像素都能被解释"。
-**代码侧**：只读，未改任何 `.swift`。注意：评审期间仓库正被并发修改（`git status` 显示 `Design/Theme.swift`、`TouchFlowApp.swift`、`Views/Shared.swift` 已被改动，方向是暖纸 + vermilion + 去 rounded），所以下文**代码引用一律用符号名、不用行号**，行号已漂移。图形证据以基线截图为准。
+**代码侧**：只读，未改任何 `.swift`。注意：评审期间仓库正被并发修改（`git status` 显示 `Design/Theme.swift`、`LeapinApp.swift`、`Views/Shared.swift` 已被改动，方向是暖纸 + vermilion + 去 rounded），所以下文**代码引用一律用符号名、不用行号**，行号已漂移。图形证据以基线截图为准。
 
 ---
 
@@ -27,13 +27,13 @@
 
 ## 1. 先说清楚：哪些东西是 AI 通用审美
 
-这一节是后面所有建议的前提。以下 10 条，任何一条出现在作品集里都会被评委归入"模板感"，而 TouchFlow 十条全中：
+这一节是后面所有建议的前提。以下 10 条，任何一条出现在作品集里都会被评委归入"模板感"，而 Leapin 十条全中：
 
-1. **极光光斑** —— `TFBackground` 两团 `Circle` blur 120/130（accent 10% / mint 8%）。2021 年 Stripe 带火的配方，现在等于"我没有背景设计能力"的招供。
-2. **蓝紫品牌渐变** —— `TF.brand = LinearGradient(accent #3D6BFF → violet #7B5CFF)`，用在 logo、三个主按钮、hero 渐变底。这是"AI startup"最饱和的视觉签名，而且它把两个都没有语义的颜色绑在一起。
-3. **圆角系统字体** —— `TFFont.display` / `TFFont.num` 全部 `design: .rounded`。"默认配置" 21pt rounded、"0" 24pt rounded：这是消费级 App 的语气，放在一个会显示 `IP-CIDR 172.16.0.0/12` 的工具里，像给示波器贴了卡通贴纸。
+1. **极光光斑** —— `LPBackground` 两团 `Circle` blur 120/130（accent 10% / mint 8%）。2021 年 Stripe 带火的配方，现在等于"我没有背景设计能力"的招供。
+2. **蓝紫品牌渐变** —— `LP.brand = LinearGradient(accent #3D6BFF → violet #7B5CFF)`，用在 logo、三个主按钮、hero 渐变底。这是"AI startup"最饱和的视觉签名，而且它把两个都没有语义的颜色绑在一起。
+3. **圆角系统字体** —— `LPFont.display` / `LPFont.num` 全部 `design: .rounded`。"默认配置" 21pt rounded、"0" 24pt rounded：这是消费级 App 的语气，放在一个会显示 `IP-CIDR 172.16.0.0/12` 的工具里，像给示波器贴了卡通贴纸。
 4. **五等分彩虹统计卡** —— 总览 5 张 `StatTile`：蓝（活动连接）/ 红（已拦截）/ 紫（抓包）/ mint（流量）/ amber（规则）。五种颜色互不构成系统，且红 = 坏事的直觉被用在了"拦截成功"这件好事上。
-5. **每张卡都长一样** —— `TF_PanelModifier` 给全 App 每一块内容同一个白底 0.86 + 14pt 圆角 + 1px 10% 描边 + 0.06 阴影 r14 y6。当所有东西都浮起来，就没有东西浮起来。
+5. **每张卡都长一样** —— `LEAPIN_PanelModifier` 给全 App 每一块内容同一个白底 0.86 + 14pt 圆角 + 1px 10% 描边 + 0.06 阴影 r14 y6。当所有东西都浮起来，就没有东西浮起来。
 6. **24pt 着色圆角方块图标** —— `SectionHeader` 的 tint 14% 底 + 11pt SF Symbol。全 App 30+ 个，设置页一屏 6 个。它是"卡片标题需要装饰"的肌肉记忆，不是信息。
 7. **空状态模板** —— 居中 26pt thin SF Symbol + 11.5pt 灰字 + 一句说明。4 个页面同一套，其中 2 个（抓包、发现）连 CTA 都没有。
 8. **虚线投放区** —— 学习页 264×112 dashed 圆角 12。Figma / Notion 模板的直系后代。
@@ -49,7 +49,7 @@
 ### 2.1 Typography
 
 **现状证据**
-- 基线 `TFFont` 调用里出现 **15 个不同字号**：7.5 / 8.5 / 9 / 9.5 / 10 / 10.5 / 11 / 11.5 / 12 / 12.5 / 13.5 / 14.5 / 20 / 21 / 24。
+- 基线 `LPFont` 调用里出现 **15 个不同字号**：7.5 / 8.5 / 9 / 9.5 / 10 / 10.5 / 11 / 11.5 / 12 / 12.5 / 13.5 / 14.5 / 20 / 21 / 24。
   其中 9.5 → 12.5 之间**挤了 7 档，每档相差 0.5–1pt**。0.5pt 在 Retina 上是 1 物理像素 —— 用户看不见这个差别，只能感觉到"文字有点乱"。
 - 正文实际落在 **10–11.5pt**：卡片说明 10.5、`SectionHeader` 副标题 11、页头副标题 11.5、Badge 9.5、侧栏 kicker 7.5（`NETWORK CONTROL`）、复制图标 8.5。macOS HIG 的正文是 **13pt**，11pt 是 small，10pt 是 mini。**这个 App 把 mini 当 body 用。**
 - 两个层级只有 1pt 之差的地方到处都是：`SectionHeader` 标题 13.5 / 副标题 11；卡片标题 12.5 / 说明 10.5。层级差 < 1.35×，在 10pt 尺度上等于没有层级。
@@ -64,7 +64,7 @@
 
 `@swift
 // 1) 收成 6 档 + 显式角色，删掉其余 9 个字号
-enum TFFont {
+enum LPFont {
     case display   // 28 .semibold  tracking -0.6
     case title     // 17 .semibold  tracking -0.2
     case body      // 13 .regular              <- 正文从 10-11.5 抬到 13
@@ -81,7 +81,7 @@ Text(title)
 Text(subtitle.uppercased())
     .font(.system(size: 10.5, weight: .medium, design: .monospaced))
     .tracking(1.4)
-    .foregroundStyle(TF.textTertiary)
+    .foregroundStyle(LP.textTertiary)
 // 4) 数字：.rounded -> .monospaced + 关掉自救式缩放
 Text(value)
     .font(.system(size: 24, weight: .semibold, design: .monospaced))
@@ -106,11 +106,11 @@ Text(desc).frame(maxWidth: 560, alignment: .leading)   // 约 68ch @ 10pt
 - 同一 App 里总览页密度 ≈ 8 个信息块/屏，配置页 ≈ 2 个/屏 —— **没有密度策略**，说明留白是每个 View 各自"感觉一下"决定的，不是系统。
 
 **基准差距**
-获奖作品的留白是**有刻度的**：一套 4/8/12/16/24/32/48 的间距标尺，任何两元素间距必须落在标尺上；卡片内 padding 与卡片间距有固定比例（通常内 16 / 外 24）。TouchFlow 有 `TF.gutter = 18` 这个 token 却**基本没被使用**，实际值散落成 12/13/14/16/20/22/26 一堆手写数字。
+获奖作品的留白是**有刻度的**：一套 4/8/12/16/24/32/48 的间距标尺，任何两元素间距必须落在标尺上；卡片内 padding 与卡片间距有固定比例（通常内 16 / 外 24）。Leapin 有 `LP.gutter = 18` 这个 token 却**基本没被使用**，实际值散落成 12/13/14/16/20/22/26 一堆手写数字。
 
 **修法**
 `@swift
-enum TFSpace { static let s1: CGFloat = 4, s2 = 8, s3 = 12, s4 = 16, s5 = 24, s6 = 32, s7 = 48 }
+enum LPSpace { static let s1: CGFloat = 4, s2 = 8, s3 = 12, s4 = 16, s5 = 24, s6 = 32, s7 = 48 }
 // 卡片内 padding 一律 s4(16)，卡片间距一律 s5(24)，页面边距 s6(32)
 `@
 具体到总览页：hero 160 -> **96pt**（标题与按钮同一基线，orb 92 -> 56），删掉"第一步"整条（信息合并进 hero 的一行 12pt 提示），5 张 StatTile -> **4 张可换行**，把"最近连接"整卡提上首屏 —— 这是全 App 唯一会持续变化的内容，它应该在首屏。抓包页：左栏空态保留并**加 CTA**，右栏空态降级为一行内联提示，不占整卡。
@@ -121,7 +121,7 @@ enum TFSpace { static let s1: CGFloat = 4, s2 = 8, s3 = 12, s4 = 16, s5 = 24, s6
 
 **现状证据**
 - **主 CTA 通货膨胀**：总览页同一屏内有两个"启动代理"渐变按钮（hero 右上 + 引导条右侧），加上侧栏底部第三个。NAS 页同一屏两个"开始扫描"（卡片内 + 空状态中央）。当一屏有 2 个一样的主按钮，**主按钮就不再是主按钮**。
-- **卡片平权**：`TF_PanelModifier` 让"当前配置"hero、"本地端点"、"白名单"、"挂载说明"全部同一视觉重量。读者无法通过视觉判断"先看哪"。
+- **卡片平权**：`LEAPIN_PanelModifier` 让"当前配置"hero、"本地端点"、"白名单"、"挂载说明"全部同一视觉重量。读者无法通过视觉判断"先看哪"。
 - **页面级 3 层结构，但没有第 4 层**：页头（20 bold）/ 卡片标题（13.5 semibold）/ 正文（10.5）。缺的是**"这一步最重要的一件事"**这一层 —— 也就是 hero 应该承担、但被装饰用掉的那一层。
 - 表头缺失：01 分流规则 9 行规则**没有列头**。哪一列是类型、哪一列是策略、右侧绿字是"目标"还是"状态"全靠猜。这是信息架构层的缺失，不只是排版。
 - 状态色反向：02 "元素隐藏"把字符串 `已开启` 塞进 24pt 数字位，与左边的 `0`、`0` 并排 —— 同一行里两个数字一个状态，读者第一眼会把它读成"三个数字"。
@@ -132,12 +132,12 @@ enum TFSpace { static let s1: CGFloat = 4, s2 = 8, s3 = 12, s4 = 16, s5 = 24, s6
 **修法**
 `@swift
 // 1) 一屏一个 primary：层级用语义，而不是再加一种颜色
-enum TFButtonRank { case primary, secondary, quiet }
+enum LPButtonRank { case primary, secondary, quiet }
 // primary 全 App 每屏最多 1 个（靠 review 规则约束，不靠 API）
 // 2) 主角卡用"抬升"而非"渐变"区分：唯一保留阴影的层级
 extension View {
-    func tfRaised() -> some View { /* 白实底 + 0.10 阴影 r24 y10，每屏只用 1 处 */ }
-    func tfFlat()   -> some View { /* 去阴影，只留 1px hairline，其余全部改这个 */ }
+    func lpRaised() -> some View { /* 白实底 + 0.10 阴影 r24 y10，每屏只用 1 处 */ }
+    func lpFlat()   -> some View { /* 去阴影，只留 1px hairline，其余全部改这个 */ }
 }
 // 3) 规则表加列头（mono 9.5 uppercase tracking 1.2），用 Grid 对齐
 Grid(alignment: .leading, horizontalSpacing: 12) {
@@ -157,9 +157,9 @@ Grid(alignment: .leading, horizontalSpacing: 12) {
 
 **现状证据**
 - token 有 7 个强调色（accent / violet / mint / amber / danger / success + brand 渐变），**没有一个承载固定语义**：mint 同时表示"直连"（01 DIRECT）、"累计流量"（00）、"使用中"（08）、"DNS 安全"（07 状态点）。violet 同时是品牌色、抓包数、PROXY 策略、"当前配置"徽章。
-- **4 套互不相干的渐变**：`TF.brand`（accent -> violet 线性）、`TF.mintGradient`（mint -> accent 线性）、隐私页环形 `AngularGradient`（mint 三停）、SSH 终端 `#0B1020` 深 navy（既不是 `TF.bg` 深色 token，也不是任何 token）。四套渐变 = 四个设计者的痕迹。
-- **系统色泄漏**：01 与 06 页右上"系统代理"开关外圈有一圈 macOS 系统蓝（约 #0B84FF）焦点框；01 策略组的 `NSPopUpButton` 自带 AppKit bezel 与蓝色 chevron。这两个蓝都不是 `TF.accent`（#3D6BFF），在浅薰衣草背景上一眼能看出来。
-- **对比度**：`TF.textTertiary` #5F6C82 在 `TF.bg` #F3F5FA 上约 **4.9:1**（勉强过 AA），但一旦落到 accent 14% 的 chip 底上就掉到 **约 4.4:1**，已经在 AA 线下 —— 而 9.5pt 的 Badge 正好是那种底。
+- **4 套互不相干的渐变**：`LP.brand`（accent -> violet 线性）、`LP.mintGradient`（mint -> accent 线性）、隐私页环形 `AngularGradient`（mint 三停）、SSH 终端 `#0B1020` 深 navy（既不是 `LP.bg` 深色 token，也不是任何 token）。四套渐变 = 四个设计者的痕迹。
+- **系统色泄漏**：01 与 06 页右上"系统代理"开关外圈有一圈 macOS 系统蓝（约 #0B84FF）焦点框；01 策略组的 `NSPopUpButton` 自带 AppKit bezel 与蓝色 chevron。这两个蓝都不是 `LP.accent`（#3D6BFF），在浅薰衣草背景上一眼能看出来。
+- **对比度**：`LP.textTertiary` #5F6C82 在 `LP.bg` #F3F5FA 上约 **4.9:1**（勉强过 AA），但一旦落到 accent 14% 的 chip 底上就掉到 **约 4.4:1**，已经在 AA 线下 —— 而 9.5pt 的 Badge 正好是那种底。
 - 红用于"已拦截"（好事）、amber 用于"规则"（中性）—— 颜色语义与业务语义冲突。
 
 **基准差距**
@@ -167,7 +167,7 @@ Grid(alignment: .leading, horizontalSpacing: 12) {
 
 **修法**
 `@swift
-enum TF {
+enum LP {
     // Ink scale：只有 4 级
     static let ink      = Color(hex: 0x141310)   // 主文字
     static let inkMid   = Color(hex: 0x4A4740)   // 次文字
@@ -181,9 +181,9 @@ enum TF {
     // 渐变：全 App 只保留 0 个
 }
 // 干掉光斑
-struct TFBackground: View { var body: some View { TF.bg } }   // 就这一行
+struct LPBackground: View { var body: some View { LP.bg } }   // 就这一行
 // 干掉阴影，只留 hairline
-.overlay(Rectangle().stroke(TF.rule, lineWidth: 0.5))
+.overlay(Rectangle().stroke(LP.rule, lineWidth: 0.5))
 `@
 并且必须**统一系统 accent**：系统 focus ring 的蓝无法用 `NSApp.appearance` 覆盖，解决方式是给所有自绘控件加自定义焦点环（见 2.6），并把 `Picker` 从 `NSPopUpButton` 换成自绘菜单 —— 否则系统蓝会永远在泄漏。
 
@@ -192,11 +192,11 @@ struct TFBackground: View { var body: some View { TF.bg } }   // 就这一行
 ### 2.5 Motion（从静态图 + 代码推断）
 
 **现状证据**
-- **代码里 16 处 `.animation` / `withAnimation`，全部是 easeOut 0.10–0.20**，只有自绘 `TFSwitch` 用了 spring(.26, .82)。也就是说：**全 App 的运动曲线只有一种，且是"过渡"而不是"物理"**。获奖作品的运动是有性格的 —— 快进慢出、轻微过冲、有质量感。
+- **代码里 16 处 `.animation` / `withAnimation`，全部是 easeOut 0.10–0.20**，只有自绘 `LPSwitch` 用了 spring(.26, .82)。也就是说：**全 App 的运动曲线只有一种，且是"过渡"而不是"物理"**。获奖作品的运动是有性格的 —— 快进慢出、轻微过冲、有质量感。
 - **唯一"想做转场"的地方其实是死的**：`AppModel.go()` 用 `withAnimation(.easeOut(0.12))` 包住页面切换，但 `RootView` 的 `sectionContent` 是裸 `switch`，**没有 `.transition` 也没有 `.id`** -> 10 页切换是**硬切**，那行 `withAnimation` 什么都没做。这是最能说明"动效是装饰性添加"的证据。
 - **该动的地方没动**：抓包页是流式列表（请求以每秒几十条进来），但**没有插入动画、没有新行高亮、没有滚动锚定策略**。用户看到的是行突然出现、列表跳一下。这是这个工具最核心的动效场景，预算为 0。
 - **不该动的地方在动**：`StatusDot` 用 `repeatForever` 的 1.6s 呼吸环（scale 0.75->1.25 + 淡出），hero orb 用 `symbolEffect(.pulse)`。装饰在呼吸，信息在硬切。
-- **reduce motion 只覆盖 1/5**：`TFRow` 检查了 `accessibilityReduceMotion`；`StatusDot`、`TFProgressLine`（1.1s 无限循环）、`symbolEffect(.pulse)`、`TFSwitch` 都没检查。
+- **reduce motion 只覆盖 1/5**：`LPRow` 检查了 `accessibilityReduceMotion`；`StatusDot`、`LPProgressLine`（1.1s 无限循环）、`symbolEffect(.pulse)`、`LPSwitch` 都没检查。
 
 **基准差距**
 获奖作品的运动语言通常 <=3 条曲线（一条进、一条出、一条强调），且有**语义**：状态变化动、层级变化动、数据增长动；**装饰不动**。另外必须支持 reduce motion —— 这是评委直接扣分项。
@@ -204,36 +204,36 @@ struct TFBackground: View { var body: some View { TF.bg } }   // 就这一行
 **修法**
 `@swift
 // 1) 三条曲线，全 App 只用这三条
-enum TFMotion {
+enum LPMotion {
     static let enter = Animation.spring(response: 0.34, dampingFraction: 0.86)  // 面板/卡片进
     static let shift = Animation.spring(response: 0.26, dampingFraction: 0.92)  // hover/选中/开关
     static let value = Animation.easeOut(duration: 0.22)                        // 数字/进度
 }
 @Environment(\.accessibilityReduceMotion) private var reduceMotion
-var anim: Animation? { reduceMotion ? nil : TFMotion.shift }
+var anim: Animation? { reduceMotion ? nil : LPMotion.shift }
 
 // 2) 页面转场真的接上（现在是死代码）
 sectionContent
     .id(app.page)
     .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 6)),
                             removal: .opacity))
-    .animation(TFMotion.enter, value: app.page)
+    .animation(LPMotion.enter, value: app.page)
 
 // 3) 抓包流：插入 + 高亮 + 锚定（这是核心资产）
 List(selection: $selected) { ... }
-    .animation(TFMotion.value, value: rows.map(\.id))       // 行插入/删除
+    .animation(LPMotion.value, value: rows.map(\.id))       // 行插入/删除
     .onChange(of: rows.first?.id) { _, new in
-        if follow, let new { withAnimation(TFMotion.value) { proxy.scrollTo(new, anchor: .top) } }
+        if follow, let new { withAnimation(LPMotion.value) { proxy.scrollTo(new, anchor: .top) } }
     }
 // 新行左侧 2pt 信号色条 0.9s 淡出，代替整行闪烁
 .overlay(alignment: .leading) {
-    Rectangle().fill(TF.signal).frame(width: 2)
+    Rectangle().fill(LP.signal).frame(width: 2)
         .opacity(isNew ? 1 : 0).animation(.easeOut(duration: 0.9), value: isNew)
 }
 
 // 4) 关掉装饰运动
 // StatusDot: 去掉 repeatForever，改成"状态变化时 pulse 一次" —— 静止态不该有东西在动
-// TFProgressLine: reduceMotion 时改成静态 40% 填充
+// LPProgressLine: reduceMotion 时改成静态 40% 填充
 `@
 
 ---
@@ -260,26 +260,26 @@ List(selection: $selected) { ... }
 
 **修法**
 `@swift
-// 统一焦点环（把 TFSwitch 的做法推广到所有自绘控件）
-struct TFFocusRing: ViewModifier {
+// 统一焦点环（把 LPSwitch 的做法推广到所有自绘控件）
+struct LPFocusRing: ViewModifier {
     @FocusState private var focused: Bool
     func body(content: Content) -> some View {
         content.focusable().focused($focused)
             .overlay(RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(TF.signal.opacity(focused ? 0.9 : 0), lineWidth: 1.5)
+                .strokeBorder(LP.signal.opacity(focused ? 0.9 : 0), lineWidth: 1.5)
                 .padding(-3))
     }
 }
 // 主按钮要有"质量"
 .scaleEffect(pressed ? 0.985 : hover ? 1.01 : 1)     // 1% 的抬升就够"贵"
 .brightness(hover ? 0.06 : 0)
-.animation(TFMotion.shift, value: hover)
+.animation(LPMotion.shift, value: hover)
 // 数值域改成真输入框
 TextField("", value: $port, format: .number)
     .textFieldStyle(.plain)
     .padding(.horizontal, 8).frame(height: 24)
     .background(.white, in: RoundedRectangle(cornerRadius: 6))
-    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(TF.rule, lineWidth: 1))
+    .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(LP.rule, lineWidth: 1))
     .font(.system(size: 12, design: .monospaced))     // 端口是数据，等宽右对齐
 // 路径可复制
 Text(path).truncationMode(.middle).textSelection(.enabled).help(path)
@@ -291,7 +291,7 @@ Text(path).truncationMode(.middle).textSelection(.enabled).help(path)
 
 **现状证据**
 - 窗口 `minWidth: 1040 / minHeight: 700`，但**宽度预算从来没算过**：抓包页两栏各 `minWidth: 380` + 各 7pt padding（=394 × 2 = 788），外层 `.padding(.horizontal, 20)`。最小窗口下主区可用 = 1040 - 212（侧栏）- 1（分割）= 827，减去 40 = **787pt**。**788 > 787，恒差 1pt** —— 这个页面的最低宽度需求，比它自己声明的最小窗口还宽 1pt。这不是"边缘情况"，这是没有预算表的直接证据。
-- `tfPage` 是 `.frame(maxWidth: 1080, alignment: .leading)`：窗口拉宽到 1440 时，正文右边界停在 1080，而页头右侧按钮贴在窗口右缘 —— **页头和正文不共享同一条右网格线**，右侧空出约 95pt 死白。
+- `lpPage` 是 `.frame(maxWidth: 1080, alignment: .leading)`：窗口拉宽到 1440 时，正文右边界停在 1080，而页头右侧按钮贴在窗口右缘 —— **页头和正文不共享同一条右网格线**，右侧空出约 95pt 死白。
 - 总览 5 张 `StatTile` 是 `HStack(spacing: 12)` 死写 5 张，无 `LazyVGrid` / `ViewThatFits`。1440 宽时它们只是变宽，密度不变；1040 宽时每张 145pt，任何值变长就触发 `minimumScaleFactor` 偷偷缩字。
 - 分流规则右栏死写 286pt，NAS 页 244 / 260 / 220 死写 —— 三处都是"在这个窗口尺寸下看起来还行"的数值。
 - `minHeight: 700`：总览页在 700 高时"最近连接"完全在折叠线以下，且没有任何"下面还有内容"的提示（无渐隐遮罩、无滚动条常显）。
@@ -331,7 +331,7 @@ Text(host).truncationMode(.middle)
 **基准差距**
 Awwwards 级的作品有一个共同点：**至少有一个"只有这个产品才会有"的视觉机制**。比如 Proxyman 的请求瀑布图、Charles 的结构树、Bloomberg 的键盘提示条、Teenage Engineering 的刻度铭牌。它们不靠渐变，靠**把产品独有的数据变成视觉主角**。
 
-**TouchFlow 的独家素材现成摆在那里，没人用**：
+**Leapin 的独家素材现成摆在那里，没人用**：
 1. **流量本身就是图形** —— 每个请求有 duration / size / status，可以是一条横向时间条（waterfall）。现在它是 9 行表格。
 2. **路由决策链** —— 一个域名怎么被 MATCH / GEOIP / SUFFIX 命中的，天然是一条分支图形。现在藏在"分流解释器"一个输入框后面。
 3. **端点是坐标** —— `127.0.0.1:7890` 是一个物理地址，可以做成仪表读数（mono 大数字 + 小字单位），而不是 4 行表格里的小字。
@@ -365,7 +365,7 @@ Awwwards 级的作品有一个共同点：**至少有一个"只有这个产品�
 15 档 -> 6 档；正文 10–11.5 -> **13**；`display` 去 `.rounded`，数字改 SF Mono；`StatTile` 删掉 `minimumScaleFactor`。这是唯一一个"只改 `Theme.swift` 就能让全 App 从商用模板升到工作室作品"的动作。**成本约 1h，收益最大。**
 
 **2. 颜色收敛为「1 信号色 + 4 状态色」，删掉全部渐变与光斑**
-`TF.brand` / `mintGradient` / 隐私角向渐变 / 白名单紫 / 彩虹 stat 全部下线；`TFBackground` 一行纯色；卡片阴影 -> 0.5pt hairline。**成本约 1.5h，立刻杀死"AI 通用审美"的三条主罪。**
+`LP.brand` / `mintGradient` / 隐私角向渐变 / 白名单紫 / 彩虹 stat 全部下线；`LPBackground` 一行纯色；卡片阴影 -> 0.5pt hairline。**成本约 1.5h，立刻杀死"AI 通用审美"的三条主罪。**
 
 **3. 建立"每屏一个主角"的层级**
 一屏最多 1 个 primary 按钮（现在总览 3 个、NAS 2 个）；卡片分 raised / flat 两级（现在全部同级）；规则表补列头；状态值不进数字位。**成本约 2h，解决"不知道先看哪"这个根本问题。**
@@ -380,7 +380,7 @@ hero 160->96、删"第一步"横幅、统计 5->4 可换行、把"最近连接"�
 现在 `withAnimation` 是死代码、10 页硬切；`StatusDot` 无限呼吸但不尊重 reduce motion。改成 spring(0.34/0.86) 入场 + `.id(app.page)` + `.transition`，装饰动效全部静止化。**成本约 2h，是评委最容易注意到的"廉价感"来源之一。**
 
 **7. 微交互五态补齐（hover / focus / pressed / disabled / loading）**
-所有自绘控件加焦点环（现在只有 `TFSwitch` 有）；主按钮加 1% scale + brightness hover；数值域从"灰填充"变真输入框（白底 + hairline + mono）；CA 路径可复制 + `.help()`；危险操作加 danger 变体。**成本约 3h，是"专业感"的密度来源。**
+所有自绘控件加焦点环（现在只有 `LPSwitch` 有）；主按钮加 1% scale + brightness hover；数值域从"灰填充"变真输入框（白底 + hairline + mono）；CA 路径可复制 + `.help()`；危险操作加 danger 变体。**成本约 3h，是"专业感"的密度来源。**
 
 > 顺序建议：1 -> 2 -> 3 必须一起做（共用 `Theme.swift` 与 `Shared.swift`，分三次改会互相打脸）；4 / 5 / 6 / 7 可并行。
 
@@ -414,7 +414,7 @@ hero 160->96、删"第一步"横幅、统计 5->4 可换行、把"最近连接"�
 2. **注意力成本最低**：用户读的是数字和行。近单色把"识别颜色"的开销降到 0，只留一个红点告诉"哪里出事了"。彩虹统计卡强迫用户每次重新解码 5 种颜色的含义。
 3. **视觉密度正相关**：装饰越少，能塞的信息越多。这个 App 有 10 页、表格、日志、路径、IP —— 它需要密度，而不是呼吸感。Editorial 的暖纸 + 大留白会**降低**可比密度。
 4. **抗过时**：Swiss 网格与仪器面板 40 年没变过形；蓝紫渐变每 3 年换一代。评委看的是"这是不是 2026 年的作品"，而不是"这是不是 2023 年的 Linear"。
-5. **它给原创性留了位置**：一旦底色是纯的，**唯一有颜色的东西就是数据**（状态点、时间条、流量线）。到那时 SSH 那个深色仪器面不再是孤例，而是整个 App 的材质基准 —— 那才是"只有 TouchFlow 会有"的画面。
+5. **它给原创性留了位置**：一旦底色是纯的，**唯一有颜色的东西就是数据**（状态点、时间条、流量线）。到那时 SSH 那个深色仪器面不再是孤例，而是整个 App 的材质基准 —— 那才是"只有 Leapin 会有"的画面。
 
 ### 与并发改动的协调建议
 

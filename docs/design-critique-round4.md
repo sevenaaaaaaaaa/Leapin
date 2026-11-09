@@ -1,6 +1,6 @@
-# TouchFlow · 第四轮视觉评审
+# Leapin · 第四轮视觉评审
 
-> **对象**：~/TouchFlow，第四轮视觉迭代后 15 张截图（/tmp/tffinal2/：dashboard / rules / adblock / capture / ssh / nas / learn / privacy / profiles / settings / dark-dashboard / dark-capture / narrow-dashboard / narrow-capture / narrow-settings）
+> **对象**：~/Leapin，第四轮视觉迭代后 15 张截图（/tmp/tffinal2/：dashboard / rules / adblock / capture / ssh / nas / learn / privacy / profiles / settings / dark-dashboard / dark-capture / narrow-dashboard / narrow-capture / narrow-settings）
 > **坐标约定**：像素均指 2× PNG 原始像素，÷2 得 pt。文中"实测/量得"一律来自 PIL 像素扫描或 grep 源码，不是目测。
 > **基准**：Awwwards / Webby 级桌面专业工具。**交付线 6.5 · 获奖线 8.0（且任何一维不得低于 7.7）**。
 > **权限边界**：全程只读（read / grep / python 像素测量 + 一次 2× 裁切放大）。未改 .swift，未构建，未启动 App，未 commit。
@@ -16,7 +16,7 @@
 | 3 | Visual Hierarchy | **7.6** | 5 组导航 + 仪器条把层级理对了，但总览一屏把「已停止」说三遍（页头胶囊 / hero chip / 侧栏状态卡），并给两次「启动代理」 |
 | 4 | Color | **8.0** | 纸墨 + 单一朱红仍是最强项，规则页墨阶去 pill 已落地；扣分在 hero 里 amber badge + 灰底 badge 混排，暗色下琥珀 badge 的 10% 底压成 (41,37,30) 泥色块 |
 | 5 | Motion | **7.2** | 地震仪 rateCeiling 每秒 ×0.94 衰减 + sqrt 映射修好了上轮「形态乱跳」；但全站 33 处动画只有 4 条曲线（25×easeOut / 6×snappy / 1×spring），reduceMotion 只覆盖 5 个文件 |
-| 6 | Micro-interaction | **7.2** | 学习页拖拽 isTargeted、解析按钮 disabled→primary、TFSwitch 统一 32pt 三项已修；但按钮仍无焦点环（Theme.swift:251-287），TFRow 无按下态 |
+| 6 | Micro-interaction | **7.2** | 学习页拖拽 isTargeted、解析按钮 disabled→primary、LPSwitch 统一 32pt 三项已修；但按钮仍无焦点环（Theme.swift:251-287），LPRow 无按下态 |
 | 7 | Responsive | **7.3** | 900 宽零溢出：侧栏收 68pt 图标轨 + 单胶囊工具条 + 分组塌成 1px 分隔，工程完成度高；缺的是**高度**维度（700pt 硬切无淡出）与抓包分栏的宽度算术（见 §4.2） |
 | 8 | Originality | **8.2** | 「纸墨仪表 + 顶部 44×2 朱红规则条 + 双向地震仪」是能认出来的签名系统，且这次真的双向了；扣分只在证据：15 张图**全是空闲态**，签名图一次都没带数据出现 |
 
@@ -43,7 +43,7 @@
 
 | # | 宣称的改动 | 状态 | 证据 |
 |---|-----------|------|------|
-| ① | 侧栏按 5 组分组（工作区/代理/观测/工具/系统） | **大部分落地，一处破功** | 分组结构、8.5pt tracking 1.7 组标签、18/7pt 内边距都在（TouchFlowApp.swift:509-552）；但第二组用了 `padding(.top, groupIndex == 1 ? 6 : 18)`（:513），见 §4.4 |
+| ① | 侧栏按 5 组分组（工作区/代理/观测/工具/系统） | **大部分落地，一处破功** | 分组结构、8.5pt tracking 1.7 组标签、18/7pt 内边距都在（LeapinApp.swift:509-552）；但第二组用了 `padding(.top, groupIndex == 1 ? 6 : 18)`（:513），见 §4.4 |
 | ② | 总览流量图改双向（下载实线在上 / 上传虚线在下 / 图例 / 60s 轴标 / 共享 rateCeiling） | **代码完成，证据为零** | 实现是完整的（DashboardView.swift:342-371 + :62-64 衰减 + :346-347 sqrt）；但空闲态 `rawPeak > 0.5` 守卫（:333-339）让双向形态**在截图中完全不可见**——只能从源码确认，无法从交付物确认 |
 | ③ | mono 字号收敛到 10/12 | **半程** | 89 处 mono 调用：mono(10)×32 + mono(12)×13 = 45 处（51%）；另有 8.5×9、9×8、11×9、12.5×6、13×6、10.5×5、7×1 共 44 处散落 |
 | ④ | 规则页策略改墨阶、类型去 pill | **完成，做对了** | `rules.png` 里类型列已是纯 mono 大写（IP-CIDR / SUFFIX / PROCESS / GEOIP / MATCH），策略列 DIRECT 常规字重、PROXY 加粗——这是本轮视觉上最干净的一处 |
@@ -63,7 +63,7 @@
 
 ### 4.2 空态骨架屏：10 行幽灵骨架正在承诺一个永远不会来的加载（Whitespace + Micro-interaction）
 
-- **总览**：`最近连接 / RECENT` 空态渲染 3 行永久骨架（DashboardView.swift:702-717，`Capsule` 填 `TF.text.opacity(0.07)`，高 7pt），下面才是"代理未启动，把系统流量指向 127.0.0.1:7,890 后即可记录"。
+- **总览**：`最近连接 / RECENT` 空态渲染 3 行永久骨架（DashboardView.swift:702-717，`Capsule` 填 `LP.text.opacity(0.07)`，高 7pt），下面才是"代理未启动，把系统流量指向 127.0.0.1:7,890 后即可记录"。
 - **抓包**：同款但 7 行（CaptureView.swift:238-253，0.08 ink、整栈再叠 0.55 不透明度），**面板顶部钉 7 行灰条，底部栏才是真文案 + 朱红 CTA，中间约 130pt 空白**（量得：最后一行 ~y1050，底栏起 ~y1310，面板 y 363-1455）。用户的视线落在灰条上，需要跨过 130pt 才能读到"暂无 HTTP 请求"。
 - **语义问题**：骨架屏 = "正在加载"的承诺。这里它是**永久态**，且 `Spacer(minLength: 0)` 把它顶死在顶部。第一次打开的人会等它加载完。
 - **验收**：空态删掉骨架（或改成 3 行极淡的表格网格线，无 capsule、无 0.55 叠层），文案与 CTA 上移到首屏垂直中枢（面板 40% 高度处），而不是沉底。
@@ -73,12 +73,12 @@
 - **现象**：整张表**没有任何行分隔线**。实测 y 430-1250、x 900-1360 区间内只有两条横线：面板描边（366 / 1455）和表头下 0.5pt 的 #ECEBE8（y=426）。源码同源：`LazyVStack(spacing: 1)` 无逐行 hairline，只有表头上一条（RulesView.swift:178-180）。
 - **后果**：9 行 32pt 节距的 mono 数据漂浮在 ~28pt 的空白里，而**策略列距匹配值约 380pt**（表头 `Spacer(minLength: 8)` + 右对齐构造）。跨行读"这行是 PROXY 还是 DIRECT"要靠肉眼保持水平线——这正是行线存在的理由。Direction 叫"Editorial Instrument"，账页/表格是没有行线的，而这张表**有**行线才像账页。
 - **另一半**：`ScrollView` 把面板撑到页高 544pt，9 行在 ~y1240 结束，**留 107pt 带描边的空面板，没有 footer、没有合计行、没有"共 9 条"**。空面板比空态更贵：它看起来像"还有内容没加载出来"。
-- **验收**：加 0.5pt `TF.stroke.opacity(0.55)` 逐行线；面板高度改为内容自适应（`fixedSize(vertical:)` 或给最小高度而非撑满），底部加一行 mono 10 的 `共 9 条 · 按 # 排序 · ⌘F 聚焦` 收口。
+- **验收**：加 0.5pt `LP.stroke.opacity(0.55)` 逐行线；面板高度改为内容自适应（`fixedSize(vertical:)` 或给最小高度而非撑满），底部加一行 mono 10 的 `共 9 条 · 按 # 排序 · ⌘F 聚焦` 收口。
 
 ### 4.4 侧栏分组节奏在"第一个选中项"处破功（Visual Hierarchy）
 
 - **现象**：选中 `总览` 时，`代理` 组标签距选中 pill 底边只有 **9pt**（实测 2× y：pill 底 389 → 代理标签顶 407 = 18px）；而 `观测 / 工具 / 系统` 三个组标签距上一项都是 **23pt**（~47px）。于是"代理"读起来像"总览"的子项，而不是平级分组。
-- **根因**：`padding(.top, groupIndex == 1 ? 6 : 18)`（TouchFlowApp.swift:513）——为第二组单独写了 6pt。这行 fudge 大概是当初为压掉视觉空隙加的，但它是按"组序号"判断而不是按"上一项是否选中/是否 pill"，所以只要 总览 被选中就必现。
+- **根因**：`padding(.top, groupIndex == 1 ? 6 : 18)`（LeapinApp.swift:513）——为第二组单独写了 6pt。这行 fudge 大概是当初为压掉视觉空隙加的，但它是按"组序号"判断而不是按"上一项是否选中/是否 pill"，所以只要 总览 被选中就必现。
 - **验收**：删掉这行三元表达式，统一 18pt；如果担心 `总览` 的 pill 让第一组显得松，就调 pill 的 `padding(.vertical)`，不要动组间距。
 
 ### 4.5 跨页对齐债：同一组件 / 同一类字段出现了两套对齐（Typography + Responsive）
@@ -100,7 +100,7 @@
 **已经对的**：页标题 22 semibold tracking −0.6、hero 34 tracking −1.1、正文 12/12.5 双档、mono 用于一切数据（IP、端口、规则值、字节数）——这套骨架比上轮扎实得多，圆角字体当正文的问题彻底消失，12pt 成为主力。
 
 **为什么还差 0.5**：
-- 字号**档数没变**（17 → 17）。非 mono 确实从 17 压到 8，但 mono 又散成 9 档；7pt 的 "NETWORK CONTROL"（TouchFlowApp.swift:616）在 2× 下只有 14px 高，是全仓最小的字。
+- 字号**档数没变**（17 → 17）。非 mono 确实从 17 压到 8，但 mono 又散成 9 档；7pt 的 "NETWORK CONTROL"（LeapinApp.swift:616）在 2× 下只有 14px 高，是全仓最小的字。
 - mono 8.5 被四个不同语义复用：侧栏组标签、地震仪轴标、右栏 meta、hover 键位提示。组标签是"结构"，轴标是"刻度"，键位提示是"操作"——三者同级于排版是错的。
 - 隐私页 20pt / 26pt 混排（§4.1）是同一维度里的硬伤。
 
@@ -141,11 +141,11 @@
 
 ### 5.6 Micro-interaction — 7.2 / FAIL（差 0.5）
 
-**已经对的**：学习页 dropzone 现在有 `isTargeted` 反馈；解析按钮 `disabled` 走 ghost、可用才走 primary；TFSwitch 全站统一 32pt（上轮三种尺寸）；复制按钮 mint 勾 1.1s；badge / 行 hover 都在。
+**已经对的**：学习页 dropzone 现在有 `isTargeted` 反馈；解析按钮 `disabled` 走 ghost、可用才走 primary；LPSwitch 全站统一 32pt（上轮三种尺寸）；复制按钮 mint 勾 1.1s；badge / 行 hover 都在。
 
 **为什么还差 0.5**：
-- **按钮没有焦点环**：`TFPrimaryButtonStyle` / `TFGhostButtonStyle`（Theme.swift:251-287）里没有 `focused` / `isEnabled` 分支，也没有 `focusEffectDisabled`。键盘用户 Tab 到"启动代理"上看不到任何提示——而开关和输入框**都**有焦点态，这个不一致很刺眼。
-- **TFRow 无按下态**（Interactions.swift:8-40 只有 hover 与 selected）。列表行点下去没有 0.985 的压缩或 0.86 的透明度，只有跳转。按钮有、行没有，是同一套手感里的断层。
+- **按钮没有焦点环**：`LPPrimaryButtonStyle` / `LPGhostButtonStyle`（Theme.swift:251-287）里没有 `focused` / `isEnabled` 分支，也没有 `focusEffectDisabled`。键盘用户 Tab 到"启动代理"上看不到任何提示——而开关和输入框**都**有焦点态，这个不一致很刺眼。
+- **LPRow 无按下态**（Interactions.swift:8-40 只有 hover 与 selected）。列表行点下去没有 0.985 的压缩或 0.86 的透明度，只有跳转。按钮有、行没有，是同一套手感里的断层。
 - 空态骨架屏（§4.2）本质也是 micro-interaction 问题：**用"加载中"的语汇表达"没有数据"**。
 
 ### 5.7 Responsive — 7.3 / FAIL（差 0.4）
@@ -159,7 +159,7 @@
 
 ### 5.8 Originality — 8.2 / PASS 获奖线
 
-**已经对的**：「Editorial Instrument」不是皮肤，是**一套判断**——不要卡片阴影、要 hairline；不要多强调色、要墨阶 + 单一朱红；不要 glow、要顶部 44×2 的规则条（DashboardView.swift:156-162，实测红线 y 278-281 与面板描边 y=278 同排，是**压在边上的信号条**，不是浮空装饰）；数据不要图表、要"地震仪"。双向化之后（下载实线在上 / 上传虚线在下 / 共享 ceiling），这个器件终于只有 TouchFlow 有。
+**已经对的**：「Editorial Instrument」不是皮肤，是**一套判断**——不要卡片阴影、要 hairline；不要多强调色、要墨阶 + 单一朱红；不要 glow、要顶部 44×2 的规则条（DashboardView.swift:156-162，实测红线 y 278-281 与面板描边 y=278 同排，是**压在边上的信号条**，不是浮空装饰）；数据不要图表、要"地震仪"。双向化之后（下载实线在上 / 上传虚线在下 / 共享 ceiling），这个器件终于只有 Leapin 有。
 
 **为什么不是 8.5+**：
 - **交付物里它从未工作过**。15 张截图全是空闲态，双向形态、端点圆点、图例实时数值一次都没出现。评委只能读到一根 2pt 红游标 + 一条几乎看不见的基线——这不是"克制"，这是"缺席"。
@@ -174,7 +174,7 @@
 3. **规则页去 pill 是本轮视觉最干净的一处**（类型列纯 mono 大写 + 策略墨阶）。
 4. **隐私页从"0 分给 100"变成"无样本"**，还配了"没有流量时显示「—」"的解释句——这是判断力，比任何字号修复都值钱。
 5. **抓包 820 阈值**：右栏 40% 死区终究消失了（上轮 #1 问题）。
-6. **上轮的假斜体疑虑被证伪**：hero 那句 serif 在中文下渲染为直立衬线（2× 裁切确认），`TFFont.serif(13.5).italic()` 仍是代码异味但没有可见缺陷——所以**没有**算进扣分。
+6. **上轮的假斜体疑虑被证伪**：hero 那句 serif 在中文下渲染为直立衬线（2× 裁切确认），`LPFont.serif(13.5).italic()` 仍是代码异味但没有可见缺陷——所以**没有**算进扣分。
 
 ---
 
@@ -186,7 +186,7 @@
 |---|---|---|---|
 | P0 | 空态重做：删 10 行永久骨架，文案+CTA 上移到面板垂直中枢（§4.2） | Whitespace +0.4 / Micro +0.2 / Hierarchy +0.1 | 一次性修掉两处最大死白，且是"用户第一眼"的位置 |
 | P0 | 字号谱收敛到真 10 档以内：删 7pt、把 mono 8.5 拆成"组标签 8.5 / 轴标 10"、13pt mono 全部归 12 | Typography +0.4 | 机械工程，收益最确定；档数不变是本轮最站不住的一点 |
-| P1 | 按钮焦点环 + TFRow 按下态 + reduceMotion 全站守卫（§5.5/5.6） | Micro +0.4 / Motion +0.2 | 都是"一行代码级"修补，但决定"专业/业余" |
+| P1 | 按钮焦点环 + LPRow 按下态 + reduceMotion 全站守卫（§5.5/5.6） | Micro +0.4 / Motion +0.2 | 都是"一行代码级"修补，但决定"专业/业余" |
 | P1 | 规则表加行线 + 面板高度自适应 + footer 合计（§4.3） | Whitespace +0.2 / Originality +0.1 | 把"账页"语法补齐，顺手把 107pt 空面板收掉 |
 | P2 | 拍一套**工作态**截图（代理运行、抓包 100+ 条、隐私出分、双向流量有峰） | Originality +0.2 / Motion +0.2 | 不是代码工作，是证据工作；没有它，8.0 的讨论永远缺一块 |
 
@@ -204,9 +204,9 @@
 <summary>附录：证据复现方式</summary>
 
 - 像素测量：`python3 -c "from PIL import Image; im=Image.open('/tmp/tffinal2/rules.png'); ..."` 扫行内亮度突变 / 取色块众数（页面纯色多，Counter 取 top-6 即可拿到 panel / stroke / 文字色）
-- 字号普查：`grep -o 'mono([0-9.]*' Sources/TouchFlowApp -r | sort | uniq -c | sort -rn`（非 mono 同理换 size(）
-- 动画普查：`grep -rn -oE '\.easeOut\(|\.snappy\(|\.spring\(|\.easeInOut\(' Sources/TouchFlowApp | sort | uniq -c`
-- reduceMotion 覆盖：`grep -rln accessibilityReduceMotion Sources/TouchFlowApp`
+- 字号普查：`grep -o 'mono([0-9.]*' Sources/LeapinApp -r | sort | uniq -c | sort -rn`（非 mono 同理换 size(）
+- 动画普查：`grep -rn -oE '\.easeOut\(|\.snappy\(|\.spring\(|\.easeInOut\(' Sources/LeapinApp | sort | uniq -c`
+- reduceMotion 覆盖：`grep -rln accessibilityReduceMotion Sources/LeapinApp`
 - 裁切放大：`Image.open(p).crop((x0,y0,x1,y1)).resize((w*2,h*2), Image.LANCZOS)`——用于确认朱红规则条是否浮空、serif 是否假斜体（两条疑虑均被此步证伪）
 
 </details>

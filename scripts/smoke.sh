@@ -1,18 +1,18 @@
 #!/bin/bash
-# End-to-end smoke test: start tfctl, verify HTTP / SOCKS5 / CONNECT proxying.
-# 端口可用 TF_SMOKE_PORT 错开（默认 7890；专用 socks 端口 = TF_SMOKE_PORT + 2）。
+# End-to-end smoke test: start leapin, verify HTTP / SOCKS5 / CONNECT proxying.
+# 端口可用 LEAPIN_SMOKE_PORT 错开（默认 7890；专用 socks 端口 = LEAPIN_SMOKE_PORT + 2）。
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-BIN=${TF_SMOKE_BIN:-".build/debug/tfctl"}
-[ -x "$BIN" ] || { echo "build first: swift build --product tfctl"; exit 1; }
+BIN=${LEAPIN_SMOKE_BIN:-".build/debug/leapin"}
+[ -x "$BIN" ] || { echo "build first: swift build --product leapin"; exit 1; }
 
-MIXED_PORT=${TF_SMOKE_PORT:-7890}
+MIXED_PORT=${LEAPIN_SMOKE_PORT:-7890}
 HTTP_PORT=$((MIXED_PORT + 1))
-SOCKS_PORT=${TF_SMOKE_SOCKS_PORT:-$((MIXED_PORT + 2))}
+SOCKS_PORT=${LEAPIN_SMOKE_SOCKS_PORT:-$((MIXED_PORT + 2))}
 
-# 最小专用配置：监听端口跟随 TF_SMOKE_PORT，避免与正在运行的实例抢默认端口。
-PROFILE=$(mktemp -t tfctl-smoke.XXXXXX).surge
+# 最小专用配置：监听端口跟随 LEAPIN_SMOKE_PORT，避免与正在运行的实例抢默认端口。
+PROFILE=$(mktemp -t leapin-smoke.XXXXXX).surge
 {
     echo "[General]"
     echo "mixed-listen = :$MIXED_PORT"
@@ -24,7 +24,7 @@ PROFILE=$(mktemp -t tfctl-smoke.XXXXXX).surge
     echo "FINAL,DIRECT"
 } >"$PROFILE"
 
-LOG=$(mktemp -t tfctl.XXXXXX)
+LOG=$(mktemp -t leapin.XXXXXX)
 "$BIN" run --profile "$PROFILE" >"$LOG" 2>&1 &
 PID=$!
 trap 'kill $PID 2>/dev/null; wait $PID 2>/dev/null; rm -f "$PROFILE"' EXIT

@@ -1,20 +1,20 @@
 #!/bin/bash
-# P2 end-to-end: two isolated TouchFlow stores, LAN pairing, content-addressed
+# P2 end-to-end: two isolated Leapin stores, LAN pairing, content-addressed
 # version convergence, offline edit delivery and device-level override.
 #
-#   TFCTL=.build-lead/debug/tfctl scripts/sync-e2e.sh
+#   LEAPIN_BIN=.build-lead/debug/leapin scripts/sync-e2e.sh
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
-TFCTL=$(printenv TFCTL 2>/dev/null || true)
-if [ -z "$TFCTL" ]; then TFCTL=".build/debug/tfctl"; fi
-if [ ! -x "$TFCTL" ]; then echo "tfctl not found: $TFCTL"; exit 1; fi
+LEAPIN_BIN=$(printenv LEAPIN_BIN 2>/dev/null || true)
+if [ -z "$LEAPIN_BIN" ]; then LEAPIN_BIN=".build/debug/leapin"; fi
+if [ ! -x "$LEAPIN_BIN" ]; then echo "leapin not found: $LEAPIN_BIN"; exit 1; fi
 
-ROOT=$(mktemp -d "/tmp/tf-sync.XXXXXX")
+ROOT=$(mktemp -d "/tmp/leapin-sync.XXXXXX")
 A="$ROOT/a"
 B="$ROOT/b"
 mkdir -p "$A" "$B"
-export TF_SYNC_FILE_KEY=1
+export LEAPIN_SYNC_FILE_KEY=1
 pass=0; fail=0
 check() {
   if [ "$2" -eq 0 ]; then echo "PASS  $1"; pass=$((pass+1)); else echo "FAIL  $1"; fail=$((fail+1)); fi
@@ -60,15 +60,15 @@ wait_server() {
 }
 
 echo "== 1. A 生成首个版本"
-TF_PROFILE_ROOT="$A" "$TFCTL" sync record --profile "$ROOT/a.surge" > "$ROOT/a-record.log" 2>&1
+LEAPIN_PROFILE_ROOT="$A" "$LEAPIN_BIN" sync record --profile "$ROOT/a.surge" > "$ROOT/a-record.log" 2>&1
 check "A 记录版本" $?
-A_STATUS="$ROOT/a-status.json"; TF_PROFILE_ROOT="$A" "$TFCTL" sync status --json > "$A_STATUS"
+A_STATUS="$ROOT/a-status.json"; LEAPIN_PROFILE_ROOT="$A" "$LEAPIN_BIN" sync status --json > "$A_STATUS"
 A_V1=$(json_get "$A_STATUS" "['effective']")
 check "A 生效版本非空" $([ -n "$A_V1" ] && echo 0 || echo 1)
 check "A 只有 1 个版本" $([ "$(json_get "$A_STATUS" "['versions'].__len__()")" = "1" ] && echo 0 || echo 1)
 
 echo "== 2. A 起服务，B 配对并拉取（计 5s 收敛）"
-TF_PROFILE_ROOT="$A" "$TFCTL" sync serve --port 0 > "$ROOT/a-serve.log" 2>&1 &
+LEAPIN_PROFILE_ROOT="$A" "$LEAPIN_BIN" sync serve --port 0 > "$ROOT/a-serve.log" 2>&1 &
 APID=$!
 wait_server "$ROOT/a-serve.log"; check "A 同步服务就绪" $?
 
@@ -90,40 +90,40 @@ check "panel.json readOnly=true" $([ "$(json_get "$ROOT/panel.json" "['readOnly'
 MUT=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:$PORT/panel?token=$PANEL_TOKEN")
 check "面板 POST 405" $([ "$MUT" = "405" ] && echo 0 || echo 1)
 START=$(python3 -c 'import time;print(time.time())')
-TF_PROFILE_ROOT="$B" "$TFCTL" sync pair "127.0.0.1:$PORT" --code "$CODE" > "$ROOT/b-pair.log" 2>&1
+LEAPIN_PROFILE_ROOT="$B" "$LEAPIN_BIN" sync pair "127.0.0.1:$PORT" --code "$CODE" > "$ROOT/b-pair.log" 2>&1
 check "B 配对成功" $?
-TF_PROFILE_ROOT="$B" "$TFCTL" sync pull "127.0.0.1:$PORT" > "$ROOT/b-pull.log" 2>&1
+LEAPIN_PROFILE_ROOT="$B" "$LEAPIN_BIN" sync pull "127.0.0.1:$PORT" > "$ROOT/b-pull.log" 2>&1
 check "B 拉取成功" $?
 END=$(python3 -c 'import time;print(time.time())')
 ELAPSED=$(python3 -c "print(round($END-$START,2))")
 check "配对+拉取 <5s（实际 $ELAPSED s）" $(python3 -c "print(0 if $END-$START < 5 else 1)")
-B_STATUS="$ROOT/b-status.json"; TF_PROFILE_ROOT="$B" "$TFCTL" sync status --json > "$B_STATUS"
+B_STATUS="$ROOT/b-status.json"; LEAPIN_PROFILE_ROOT="$B" "$LEAPIN_BIN" sync status --json > "$B_STATUS"
 check "B 生效版本与 A 一致" $([ "$(json_get "$B_STATUS" "['effective']")" = "$A_V1" ] && echo 0 || echo 1)
 check "B 已应用该版本" $([ "$(json_get "$B_STATUS" "['applied']")" = "$A_V1" ] && echo 0 || echo 1)
 
 echo "== 3. 离线编辑：停 A，B 新建版本"
 stop_server
-TF_PROFILE_ROOT="$B" "$TFCTL" sync record --profile "$ROOT/b.surge" > "$ROOT/b-record.log" 2>&1
+LEAPIN_PROFILE_ROOT="$B" "$LEAPIN_BIN" sync record --profile "$ROOT/b.surge" > "$ROOT/b-record.log" 2>&1
 check "B 离线记录新版本" $?
-B_OFFLINE="$ROOT/b-offline.json"; TF_PROFILE_ROOT="$B" "$TFCTL" sync status --json > "$B_OFFLINE"
+B_OFFLINE="$ROOT/b-offline.json"; LEAPIN_PROFILE_ROOT="$B" "$LEAPIN_BIN" sync status --json > "$B_OFFLINE"
 B_V2=$(json_get "$B_OFFLINE" "['effective']")
 check "B 本地已有 2 个版本" $([ "$(json_get "$B_OFFLINE" "['versions'].__len__()")" = "2" ] && echo 0 || echo 1)
 check "B 离线版本与 v1 不同" $([ "$B_V2" != "$A_V1" ] && echo 0 || echo 1)
 
 echo "== 4. 重连：B 把离线版本推给 A"
-TF_PROFILE_ROOT="$A" "$TFCTL" sync serve --port 0 > "$ROOT/a-serve2.log" 2>&1 &
+LEAPIN_PROFILE_ROOT="$A" "$LEAPIN_BIN" sync serve --port 0 > "$ROOT/a-serve2.log" 2>&1 &
 APID=$!
 wait_server "$ROOT/a-serve2.log"; check "A 同步服务重启" $?
-TF_PROFILE_ROOT="$B" "$TFCTL" sync pair "127.0.0.1:$PORT" --code "$CODE" > "$ROOT/b-pair2.log" 2>&1
+LEAPIN_PROFILE_ROOT="$B" "$LEAPIN_BIN" sync pair "127.0.0.1:$PORT" --code "$CODE" > "$ROOT/b-pair2.log" 2>&1
 check "B 重新配对" $?
-TF_PROFILE_ROOT="$B" "$TFCTL" sync pull "127.0.0.1:$PORT" > "$ROOT/b-pull2.log" 2>&1
+LEAPIN_PROFILE_ROOT="$B" "$LEAPIN_BIN" sync pull "127.0.0.1:$PORT" > "$ROOT/b-pull2.log" 2>&1
 check "B 第二轮拉取" $?
-A_STATUS2="$ROOT/a-status2.json"; TF_PROFILE_ROOT="$A" "$TFCTL" sync status --json > "$A_STATUS2"
-B_STATUS2="$ROOT/b-status2.json"; TF_PROFILE_ROOT="$B" "$TFCTL" sync status --json > "$B_STATUS2"
+A_STATUS2="$ROOT/a-status2.json"; LEAPIN_PROFILE_ROOT="$A" "$LEAPIN_BIN" sync status --json > "$A_STATUS2"
+B_STATUS2="$ROOT/b-status2.json"; LEAPIN_PROFILE_ROOT="$B" "$LEAPIN_BIN" sync status --json > "$B_STATUS2"
 check "A 收到 B 的离线版本（2 个版本）" $([ "$(json_get "$A_STATUS2" "['versions'].__len__()")" = "2" ] && echo 0 || echo 1)
 check "A 生效版本 = B 的离线版本" $([ "$(json_get "$A_STATUS2" "['effective']")" = "$B_V2" ] && echo 0 || echo 1)
 check "B 生效版本仍为离线版本" $([ "$(json_get "$B_STATUS2" "['effective']")" = "$B_V2" ] && echo 0 || echo 1)
-TF_PROFILE_ROOT="$A" "$TFCTL" sync panel --port "$PORT" --json > "$ROOT/a-panel-link.json" 2>/dev/null
+LEAPIN_PROFILE_ROOT="$A" "$LEAPIN_BIN" sync panel --port "$PORT" --json > "$ROOT/a-panel-link.json" 2>/dev/null
 A_PANEL_URL=$(json_get "$ROOT/a-panel-link.json" "['url']")
 check "sync panel 打印链接" $([ -n "$A_PANEL_URL" ] && echo 0 || echo 1)
 A_PANEL_JSON_URL=$(printf '%s' "$A_PANEL_URL" | sed 's|/panel?|/panel.json?|')
@@ -132,18 +132,18 @@ check "面板显示 2 个版本" $([ "$(json_get "$ROOT/panel2.json" "['versions
 check "面板生效版本与 A 状态一致" $([ "$(json_get "$ROOT/panel2.json" "['effective']")" = "$B_V2" ] && echo 0 || echo 1)
 
 echo "== 5. 设备级 override：B 固定回 v1，A 保持 v2"
-TF_PROFILE_ROOT="$B" "$TFCTL" sync override "$A_V1" > "$ROOT/b-override.log" 2>&1
+LEAPIN_PROFILE_ROOT="$B" "$LEAPIN_BIN" sync override "$A_V1" > "$ROOT/b-override.log" 2>&1
 check "B 设置 override" $?
-TF_PROFILE_ROOT="$B" "$TFCTL" sync pull "127.0.0.1:$PORT" > "$ROOT/b-pull3.log" 2>&1
+LEAPIN_PROFILE_ROOT="$B" "$LEAPIN_BIN" sync pull "127.0.0.1:$PORT" > "$ROOT/b-pull3.log" 2>&1
 check "B override 后拉取" $?
-B_STATUS3="$ROOT/b-status3.json"; TF_PROFILE_ROOT="$B" "$TFCTL" sync status --json > "$B_STATUS3"
+B_STATUS3="$ROOT/b-status3.json"; LEAPIN_PROFILE_ROOT="$B" "$LEAPIN_BIN" sync status --json > "$B_STATUS3"
 check "B override 生效（仍是 v1）" $([ "$(json_get "$B_STATUS3" "['effective']")" = "$A_V1" ] && echo 0 || echo 1)
-TF_PROFILE_ROOT="$B" "$TFCTL" sync override --clear >/dev/null 2>&1
-B_STATUS4="$ROOT/b-status4.json"; TF_PROFILE_ROOT="$B" "$TFCTL" sync status --json > "$B_STATUS4"
+LEAPIN_PROFILE_ROOT="$B" "$LEAPIN_BIN" sync override --clear >/dev/null 2>&1
+B_STATUS4="$ROOT/b-status4.json"; LEAPIN_PROFILE_ROOT="$B" "$LEAPIN_BIN" sync status --json > "$B_STATUS4"
 check "清除 override 后回到 v2" $([ "$(json_get "$B_STATUS4" "['effective']")" = "$B_V2" ] && echo 0 || echo 1)
 
 echo "== 6. 错误配对码被拒绝"
-if TF_PROFILE_ROOT="$B" "$TFCTL" sync pair "127.0.0.1:$PORT" --code 000000 > "$ROOT/bad-pair.log" 2>&1; then
+if LEAPIN_PROFILE_ROOT="$B" "$LEAPIN_BIN" sync pair "127.0.0.1:$PORT" --code 000000 > "$ROOT/bad-pair.log" 2>&1; then
   check "错误配对码应失败" 1
 else
   check "错误配对码被拒绝" 0

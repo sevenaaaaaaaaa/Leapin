@@ -1,8 +1,8 @@
 # Control plane (P1)
 
-Local HTTP/1.1 API for scripts and the CLI (`tfctl`). Implemented by
-`Sources/TouchFlowControl/ControlServer.swift` (transport, auth, audit, SSE) and
-`TouchFlowEngine: ControlBackend` (`Sources/TouchFlowRuntime/`).
+Local HTTP/1.1 API for scripts and the CLI (`leapin`). Implemented by
+`Sources/LeapinControl/ControlServer.swift` (transport, auth, audit, SSE) and
+`LeapinEngine: ControlBackend` (`Sources/LeapinRuntime/`).
 
 ## Enable / configure
 
@@ -20,13 +20,13 @@ socket binds `127.0.0.1` only; true binds `0.0.0.0`.
 
 ## Files
 
-Both live next to the profile store, i.e. under `$TF_PROFILE_ROOT` (default
-`~/Library/Application Support/TouchFlow`):
+Both live next to the profile store, i.e. under `$LEAPIN_PROFILE_ROOT` (default
+`~/Library/Application Support/Leapin`):
 
-- **Token** — `$TF_PROFILE_ROOT/control-token`. 32 random bytes as 64 lowercase
+- **Token** — `$LEAPIN_PROFILE_ROOT/control-token`. 32 random bytes as 64 lowercase
   hex characters, created once and reused. The directory is `0700`, the file
   is `0600`, written atomically.
-- **Audit** — `$TF_PROFILE_ROOT/control-audit.jsonl`. One JSON object per line:
+- **Audit** — `$LEAPIN_PROFILE_ROOT/control-audit.jsonl`. One JSON object per line:
   `timestampMs, method, path, action, status, remote, allowed, tokenPrefix, detail`.
   Appended serially; rotated to `control-audit.jsonl.1` once it exceeds 5 MB.
   Audit write failures are swallowed and never crash the server.
@@ -34,7 +34,7 @@ Both live next to the profile store, i.e. under `$TF_PROFILE_ROOT` (default
 Read the token with:
 
 ```bash
-TOKEN=$(cat "${TF_PROFILE_ROOT:-$HOME/Library/Application Support/TouchFlow}/control-token")
+TOKEN=$(cat "${LEAPIN_PROFILE_ROOT:-$HOME/Library/Application Support/Leapin}/control-token")
 ```
 
 ## Auth
@@ -42,7 +42,7 @@ TOKEN=$(cat "${TF_PROFILE_ROOT:-$HOME/Library/Application Support/TouchFlow}/con
 Any one of:
 
 - `Authorization: Bearer $TOKEN`
-- `X-TouchFlow-Token: $TOKEN`
+- `X-Leapin-Token: $TOKEN`
 - `?token=$TOKEN` (kept for curl convenience; prefer a header)
 
 Comparison is constant-time. Missing or wrong credentials return `401` with
@@ -100,7 +100,7 @@ to the profile; it never restarts the engine, so live connections stay up.
 ## curl end-to-end
 
 ```bash
-ROOT="${TF_PROFILE_ROOT:-$HOME/Library/Application Support/TouchFlow}"
+ROOT="${LEAPIN_PROFILE_ROOT:-$HOME/Library/Application Support/Leapin}"
 TOKEN=$(cat "$ROOT/control-token"); BASE=http://127.0.0.1:7900
 curl -s -H "Authorization: Bearer $TOKEN" "$BASE/v1/status" | jq .
 curl -s -H "Authorization: Bearer $TOKEN" "$BASE/v1/connections?limit=5" | jq .
@@ -110,6 +110,6 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" "$BASE/v1/reload" | jq .
 curl -sN -H "Authorization: Bearer $TOKEN" "$BASE/v1/events?since=0"   # Ctrl-C to stop
 ```
 
-Full acceptance script: `scripts/control-e2e.sh` (isolated `TF_PROFILE_ROOT`,
+Full acceptance script: `scripts/control-e2e.sh` (isolated `LEAPIN_PROFILE_ROOT`,
 asserts 401/0600/status/policies/explain/select/SSE/connections/diff-reload/
 audit/404/405).

@@ -1,8 +1,8 @@
 #!/bin/bash
 # P1 control-plane end-to-end test.
 #
-# Runs a throwaway tfctl instance against an isolated profile store
-# (TF_PROFILE_ROOT), then proves with curl only:
+# Runs a throwaway leapin instance against an isolated profile store
+# (LEAPIN_PROFILE_ROOT), then proves with curl only:
 #   * token auth (401 without, 200 with Bearer)
 #   * GET /v1/status, /v1/policies, /v1/connections
 #   * SSE /v1/events delivers a live flow event
@@ -12,19 +12,19 @@
 #   * git-style audit trail /v1/audit records allowed + denied calls
 #   * 404 / 405 handling
 #
-# Usage: scripts/control-e2e.sh   (needs .build/debug/tfctl; TFCTL= to override)
+# Usage: scripts/control-e2e.sh   (needs .build/debug/leapin; LEAPIN_BIN= to override)
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-BIN=${TFCTL:-.build/debug/tfctl}
-[ -x "$BIN" ] || { echo "build first: swift build --product tfctl"; exit 1; }
+BIN=${LEAPIN_BIN:-.build/debug/leapin}
+[ -x "$BIN" ] || { echo "build first: swift build --product leapin"; exit 1; }
 
-WORK=$(mktemp -d -t tf-control.XXXXXX)
-export TF_PROFILE_ROOT="$WORK/store"
-MIXED=${TF_E2E_MIXED:-17890}
-CONTROL=${TF_E2E_CONTROL:-17900}
-WEB=${TF_E2E_WEB:-18081}
-LOG="$WORK/tfctl.log"
+WORK=$(mktemp -d -t leapin-control.XXXXXX)
+export LEAPIN_PROFILE_ROOT="$WORK/store"
+MIXED=${LEAPIN_E2E_MIXED:-17890}
+CONTROL=${LEAPIN_E2E_CONTROL:-17900}
+WEB=${LEAPIN_E2E_WEB:-18081}
+LOG="$WORK/leapin.log"
 SERVER_LOG="$WORK/server.log"
 
 cleanup() {
@@ -136,10 +136,10 @@ if [ "$ready" -ne 1 ]; then
     exit 1
 fi
 
-TOKEN_PATH=$(find "$TF_PROFILE_ROOT" -maxdepth 3 \( -name 'control-token' -o -name 'token' \) -type f 2>/dev/null | head -1)
+TOKEN_PATH=$(find "$LEAPIN_PROFILE_ROOT" -maxdepth 3 \( -name 'control-token' -o -name 'token' \) -type f 2>/dev/null | head -1)
 if [ -z "$TOKEN_PATH" ]; then
-    echo "token file not found under $TF_PROFILE_ROOT"
-    find "$TF_PROFILE_ROOT" -maxdepth 3 -type f | sed 's/^/  /'
+    echo "token file not found under $LEAPIN_PROFILE_ROOT"
+    find "$LEAPIN_PROFILE_ROOT" -maxdepth 3 -type f | sed 's/^/  /'
     exit 1
 fi
 TOKEN=$(cat "$TOKEN_PATH")
@@ -213,7 +213,7 @@ SLOW_PID=$!
 sleep 0.8
 "$BIN" import "$WORK/v2.yaml" >"$WORK/import2.txt" 2>&1
 ID2=$(sed -n 's/^id: //p' "$WORK/import2.txt" | head -1)
-[ -n "$ID2" ] && printf '%s' "$ID2" > "$TF_PROFILE_ROOT/active.json"
+[ -n "$ID2" ] && printf '%s' "$ID2" > "$LEAPIN_PROFILE_ROOT/active.json"
 reload=$(curl -s --max-time 30 "${AUTH[@]}" -X POST "$BASE/v1/reload")
 echo "$reload" | grep -q '"restarted":false'; check "reload restarted=false" $? "$reload"
 echo "$reload" | grep -q 'rules'; check "reload 报告应用项" $? "$reload"
@@ -248,7 +248,7 @@ code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "${AUTH[@]}" -X DELET
 echo "----"
 echo "pass=$pass fail=$fail  (work: $WORK, log: $LOG)"
 if [ "$fail" -ne 0 ]; then
-    echo "---- tfctl log (tail)"
+    echo "---- leapin log (tail)"
     tail -30 "$LOG"
     exit 1
 fi

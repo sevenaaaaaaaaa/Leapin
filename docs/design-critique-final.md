@@ -1,4 +1,4 @@
-# TouchFlow 二轮视觉评审（Final · 视觉重构后）
+# Leapin 二轮视觉评审（Final · 视觉重构后）
 
 > 评审对象：/tmp/tffinal/review 下 21 张真实窗口截图（light ×10、light3-ssh/adblock/learn 最新版、compact 900×700 ×4、dark ×4）
 > 代码核对：只读 grep / read，未构建、未启动、未改任何 .swift
@@ -18,7 +18,7 @@
 | 5 | Motion | **6.0** | FAIL | FAIL | 转场死代码已修，但一种曲线、零共享元素、两处无视 reduce motion |
 | 6 | Micro-interaction | **6.5** | PASS | FAIL | hover/复制/键盘提示都在；按钮无焦点环，开关三个尺寸 |
 | 7 | Responsive | **6.5** | PASS | FAIL | 788>787 溢出已消灭；网格不重排、分栏不坍缩 |
-| 8 | Originality | **7.5** | PASS | FAIL | Editorial Instrument 立住了；缺一个「只有 TouchFlow 才有」的画面 |
+| 8 | Originality | **7.5** | PASS | FAIL | Editorial Instrument 立住了；缺一个「只有 Leapin 才有」的画面 |
 | | **加权总分** | **6.7** | | | 上一版约 4.1 |
 
 ### ① 是否达到 Awwwards / Webby「可提交」状态
@@ -37,14 +37,14 @@
 
 **现状证据（好的一面，先记账）**
 - `light-rules` 右栏「策略组 / GROUPS」「出站 / OUTBOUNDS」「规则集 / RULE-SETS」「快捷键 / KEYS」——mono 小字 + 字距 1.2–1.7 的 eyebrow + 1px 发丝线，这是 Editorial 语法的正确用法。
-- `light-profiles` 底部「导入来源」四行（Clash YAML / Surge conf / TouchFlow JSON / 订阅链接 + mono 规则串）是全 App 排版最好的一块：左列固定宽、右列 mono 对齐、行距一致，像一份工单。
+- `light-profiles` 底部「导入来源」四行（Clash YAML / Surge conf / Leapin JSON / 订阅链接 + mono 规则串）是全 App 排版最好的一块：左列固定宽、右列 mono 对齐、行距一致，像一份工单。
 - 页面标题 26pt semibold tracking −0.8（Shared.swift `PageHeader`），副标题 12pt tertiary，层级干净。
 - 数据统一 SF Mono + `contentTransition(.numericText())`，数字不抖——专业度在这一处成立。
 
 **现状证据（扣分项）**
 - `grep` 统计：全项目 **25 个不同字号**（7 / 7.5 / 8 / 8.5 / 9 / 9.5 / 10 / 10.5 / 11 / 11.5 / 12 / 12.5 / 13 / 13.5 / 14 / 14.5 / 15 / 18 / 19 / 20 / 22 / 26 / 27 / 30 / 48）。**11pt 出现 88 次**、10pt 37 次、9pt 41 次、9.5pt 24 次——五个「迷你号」在当正文用。
 - `light-settings` 左栏：11pt 标签 + 9.5pt 说明 + 12.5pt 数值同处一行；「上游」被截成 `https://1.1.1...tls://1.0.0.1`（中间省略、无 tooltip、无复制）。
-- `light-dashboard` hero 那句 `代理尚未启动，本机流量仍走系统默认路径。` 用 `TFFont.serif(13.5).italic()`（DashboardView.swift:60）。SF Serif 无中文斜体，CJK 会被合成倾斜——**假斜体**，专业评审判定最快的硬伤之一。
+- `light-dashboard` hero 那句 `代理尚未启动，本机流量仍走系统默认路径。` 用 `LPFont.serif(13.5).italic()`（DashboardView.swift:60）。SF Serif 无中文斜体，CJK 会被合成倾斜——**假斜体**，专业评审判定最快的硬伤之一。
 - `light3-adblock` 统计条三格里两格是数字、一格是 `已开启`，26pt 位放词不放数。
 
 **与获奖基准的差距**
@@ -53,7 +53,7 @@
 **具体修法（SwiftUI 原语级）**
 1. Theme.swift 建 7 档 token，删掉裸 `.system(size:)`：
 ```swift
-extension TFFont {
+extension LPFont {
     static let micro   = Font.system(size: 9.5, weight: .medium).monospaced()   // eyebrow / keycap
     static let caption = Font.system(size: 12, weight: .regular)                // 说明 / 单位 / meta
     static let body    = Font.system(size: 13, weight: .regular)                // 唯一阅读字号
@@ -65,7 +65,7 @@ extension TFFont {
 ```
 2. 三张映射表全局替换：`size: 11 → .body`、`size: 10 / 10.5 → .caption`、`size: 9 / 9.5 → .micro`。中文**删掉 tracking**（中文加字距会散行），tracking 只留给 mono eyebrow。
 3. hero 标题 30 → 34，页面标题 26 → 22：**把两者差距从 4pt 拉到 12pt**。现在 30 与 26 同屏（`light-dashboard` y≈50 与 y≈180）互相抵消，读者不知道这页的主语是谁。
-4. 删 `TFFont.serif(13.5).italic()`；那句人话改 `.body` + `textSecondary`。斜体只允许拉丁（如 `v1.1`）。
+4. 删 `LPFont.serif(13.5).italic()`；那句人话改 `.body` + `textSecondary`。斜体只允许拉丁（如 `v1.1`）。
 5. 截断三件套：`.truncationMode(.middle)` 已对，补 `.help(fullValue)` + 行尾 `doc.on.doc`（本地端点卡已有此模式，直接复制）。
 
 **验收**：非 mono 正文字号 ≥12pt；`size:` 调用点由 321 处降到 <60；中文无 `.italic()`；任一屏字号相邻两级比值 ≥1.3。
@@ -75,7 +75,7 @@ extension TFFont {
 ## 2 Whitespace — 6.0 / FAIL
 
 **现状证据**
-- 好：gutter 统一（`tfPage` 32/26、卡内 18、行间 24），发丝线取代阴影，页面呼吸一致。`light-rules` 左表 37pt 行高、无斑马纹、只靠发丝线，密度正确。
+- 好：gutter 统一（`lpPage` 32/26、卡内 18、行间 24），发丝线取代阴影，页面呼吸一致。`light-rules` 左表 37pt 行高、无斑马纹、只靠发丝线，密度正确。
 - `light-capture`：左右两个 500pt 高的大空态并排，整屏约 **62% 空白**；右侧「选择左侧请求查看详情」占了 380pt 宽。
 - `light3-ssh`：终端 470pt 高，只有顶部一行说明 + 左下 `$` 光标，**85% 是黑**。
 - `light3-learn`：左 textarea 430×155 纯空白（**无 placeholder**），右虚线拖拽区 264×112，两个大空腔并排。
@@ -92,12 +92,12 @@ if engine.captures.isEmpty {
     VStack(spacing: 0) {
         captureHeaderRow                       // 方法 / URL / 状态 / 耗时 照常
         ForEach(0..<4) { _ in
-            HStack { Rectangle().fill(TF.stroke).frame(height: 9) }
+            HStack { Rectangle().fill(LP.stroke).frame(height: 9) }
                 .frame(height: 34)
                 .redacted(reason: .placeholder)
         }
         Spacer()
-        TFEmptyState(...)                      // 空态下沉到底部，不居中
+        LPEmptyState(...)                      // 空态下沉到底部，不居中
     }
 }
 ```
@@ -124,7 +124,7 @@ if engine.captures.isEmpty {
 获奖页是「一个主角 + 若干配角」，配角靠**尺寸差 3 倍**或留白区分，不靠颜色。现在主角与配角的尺寸比只有 1.15。
 
 **具体修法**
-1. 删掉总览引导条（DashboardView.swift:202 的 `TFEmptyState(actionTitle:)`），信息并入 hero 人话：「代理尚未启动 · 启动后本机流量才会经过 127.0.0.1:7890」。
+1. 删掉总览引导条（DashboardView.swift:202 的 `LPEmptyState(actionTitle:)`），信息并入 hero 人话：「代理尚未启动 · 启动后本机流量才会经过 127.0.0.1:7890」。
 2. 统计条改「1 主 4 从」：活动连接 34pt display 占 1.6 倍宽，其余 15pt 等分。层级从「五个 0」变成「一个数字 + 四个注脚」。
 ```swift
 HStack(alignment: .firstTextBaseline, spacing: 0) {
@@ -146,7 +146,7 @@ HStack(alignment: .firstTextBaseline, spacing: 0) {
 - 方向正确且执行到位：暖纸 `#F6F4EF` / 暗墨 `#0A0A0B`、墨阶四级（`text` / `textSecondary` / `textTertiary`）、唯一信号色朱红 `#C63A12`（暗色 `#FF7A4D`，实心按钮另用 `accentFill` `#C2410F` 保证白字 ≥4.5:1——注释里写明了，专业动作）。`light-dashboard` 全屏只有 3 处朱红：hero 顶部 44×2 信号线、启动按钮、去广告开关。克制得漂亮。
 - 失败点一：策略/状态色仍开三原色。`light-rules` `DIRECT` 是墨绿 `#0C7A55`、`PROXY` 是紫 `#5446B8`，而 `REJECT` 是朱红——**朱红既是「添加规则」的主按钮色，又是「拒绝」的语义色**。同一个颜色在同屏承担两种相反含义，这是色彩语义的硬冲突。
 - 失败点二：总览 Badge 仍在用 `violet`（HTTPS 解密）与 `amber`（去广告），`light3-privacy` 又引入绿点/琥珀点两套状态色。于是「单一信号色」在第 2、7 页破功两次。
-- 失败点三：残留渐变。`TF.brand` 仍是朱红→焦褐的双停渐变，用在菜单栏面板图标（TouchFlowApp.swift:860）与不定态进度条（Interactions.swift:144/147）；`mintGradient` 已是死代码。全 App 唯一的两处渐变都被藏在不显眼处——要么删，要么明确写进规范。
+- 失败点三：残留渐变。`LP.brand` 仍是朱红→焦褐的双停渐变，用在菜单栏面板图标（LeapinApp.swift:860）与不定态进度条（Interactions.swift:144/147）；`mintGradient` 已是死代码。全 App 唯一的两处渐变都被藏在不显眼处——要么删，要么明确写进规范。
 - 对比度风险：9–9.5pt 的 tertiary 在纸色上约 4.6:1，**刚过 AA 无余量**；而它承担了大量说明文字。暗色 tertiary 在 `#151517` 上同样贴线。
 
 **与获奖基准的差距**
@@ -158,33 +158,33 @@ HStack(alignment: .firstTextBaseline, spacing: 0) {
 enum PolicyTone {
     static func color(_ p: String) -> Color {
         switch p.uppercased() {
-        case "DIRECT": return TF.textTertiary                     // 灰：不经过本机
-        case "PROXY", "AUTO": return TF.text                      // 墨：经过本机（重要，但不是警告）
-        case "REJECT": return TF.danger                           // 朱红：唯一语义色
-        default: return TF.textSecondary
+        case "DIRECT": return LP.textTertiary                     // 灰：不经过本机
+        case "PROXY", "AUTO": return LP.text                      // 墨：经过本机（重要，但不是警告）
+        case "REJECT": return LP.danger                           // 朱红：唯一语义色
+        default: return LP.textSecondary
         }
     }
 }
 ```
 2. 删掉 Badge 的 violet/amber：HTTPS 解密用「中性描边胶囊 + 锁图标」，去广告用「中性描边 + 盾牌图标」，靠**图标**而不是色相区分。
 3. 隐私页状态点收敛为两级：完成 = 实心墨点，待办 = 空心墨环，风险 = 实心朱红。绿/琥珀全部删除。
-4. `TF.brand` 改 `TF.accentFill`（纯色）；`mintGradient` 删除。若坚持品牌渐变，只允许出现在 24×24 的菜单栏图标内，并在 Theme 注释里写死边界。
+4. `LP.brand` 改 `LP.accentFill`（纯色）；`mintGradient` 删除。若坚持品牌渐变，只允许出现在 24×24 的菜单栏图标内，并在 Theme 注释里写死边界。
 
-**验收**：全项目色值（除黑白灰）≤6 个；朱红在任一屏的含义唯一；`grep -c "TF.violet\|TF.mint\|TF.amber"` 等于 0（或仅剩数据系列）。
+**验收**：全项目色值（除黑白灰）≤6 个；朱红在任一屏的含义唯一；`grep -c "LP.violet\|LP.mint\|LP.amber"` 等于 0（或仅剩数据系列）。
 
 ---
 
 ## 5 Motion — 6.0 / FAIL
 
 **现状证据（从静态图 + 代码核对）**
-- 上一轮的**死代码已修**：TouchFlowApp.swift:388–391 现在有 `.transition(.opacity.combined(with: .offset(y: 6)))` + `.animation(.easeOut(0.18), value: app.section)`，10 页切换不再是硬切。
+- 上一轮的**死代码已修**：LeapinApp.swift:388–391 现在有 `.transition(.opacity.combined(with: .offset(y: 6)))` + `.animation(.easeOut(0.18), value: app.section)`，10 页切换不再是硬切。
 - 数字有 `contentTransition(.numericText())`（7 处，Shared/Dashboard/Privacy/AdBlock），计数变化会滚动——这是仪表感的核心，做对了。
 - 抓包新行有 `freshID` 高亮 + 0.25s easeOut（CaptureView.swift:113/286），列表流式插入有人管了。
-- 卡片 hover 有 1pt 上浮 + 0.06 阴影（`tfHoverLift`，且已检查 reduce motion）。
+- 卡片 hover 有 1pt 上浮 + 0.06 阴影（`lpHoverLift`，且已检查 reduce motion）。
 - 缺口一：**只有一种运动语言**。32 处 animation 里 26 处是 `easeOut 0.10–0.20`，其余是 `.snappy`。没有一条曲线是「仪器的」——获奖工具会用 0.35s 的强减速（如 `.timingCurve(0.2, 0.9, 0.1, 1)`）来表达「指针落位」，用 0.08s 表达「按键反馈」。现在两者都是 0.12。
 - 缺口二：**零共享元素**。抓包列表点一行 → 右侧详情是硬替换，没有 `matchedGeometryEffect` 或至少共享的元素位移。列表→详情的连续性正是 Raycast/Linear 级别的差距所在。
 - 缺口三：**插入没有编排**。新行只是自己闪一下，没有「列表整体下移 34pt + 新行从 4pt 高度展开」的段落动画，也没有滚动锚定（用户盯着的行会被顶走）。
-- 缺口四：**两处无限循环无视 reduce motion**：`StatusDot` 的 1.8s 脉冲（Theme.swift:308）与 `TFProgressLine` 的 1.1s 不定态（Interactions.swift:151）都没有 `accessibilityReduceMotion` 判断——而项目里其余 5 处都判了，属于漏项而非无知。
+- 缺口四：**两处无限循环无视 reduce motion**：`StatusDot` 的 1.8s 脉冲（Theme.swift:308）与 `LPProgressLine` 的 1.1s 不定态（Interactions.swift:151）都没有 `accessibilityReduceMotion` 判断——而项目里其余 5 处都判了，属于漏项而非无知。
 
 **与获奖基准的差距**
 获奖桌面工具的运动是「状态变化被可视化」：数字滚动、规则落地、行滑入、指针回零。现在只做到了「淡入淡出」，那是 Web 2016 的语言。
@@ -192,21 +192,21 @@ enum PolicyTone {
 **具体修法**
 1. 建三条曲线（Theme.swift）并在全项目替换：
 ```swift
-enum TFMotion {
+enum LPMotion {
     static let tap      = Animation.timingCurve(0.2, 0.0, 0.0, 1.0, duration: 0.10)  // 按下
     static let settle   = Animation.timingCurve(0.16, 0.9, 0.10, 1.0, duration: 0.34) // 指针落位/页面切换
     static let reveal   = Animation.spring(response: 0.34, dampingFraction: 0.86)      // 行/卡片出现
 }
 ```
 2. 页面切换改「发丝线扫过」而非整体位移：新页内容 `opacity` 0→1 配 `offset(y: 2)`，同时顶部 1px 朱红规则从左向右 `scaleEffect(x: 0→1, anchor: .leading)` 0.28s——一秒钟建立「翻页」的隐喻，比整体上移 6pt 高级。
-3. 抓包新行：给列表加 `.animation(TFMotion.reveal, value: engine.captures.first?.id)`，新行 `.transition(.asymmetric(insertion: .offset(y: -8).combined(with: .opacity), removal: .opacity))`，并 `ScrollViewReader` + `proxy.scrollTo(id, anchor: .top)` 保持视口稳定。
+3. 抓包新行：给列表加 `.animation(LPMotion.reveal, value: engine.captures.first?.id)`，新行 `.transition(.asymmetric(insertion: .offset(y: -8).combined(with: .opacity), removal: .opacity))`，并 `ScrollViewReader` + `proxy.scrollTo(id, anchor: .top)` 保持视口稳定。
 4. 列表→详情：详情面板头部（方法 + URL）用 `matchedGeometryEffect(id: "requestHead", in: ns)` 从行内放大 40pt 到位——一个动作讲清「你点的是这一行」。
 5. 补两处 reduce motion：
 ```swift
 @Environment(\.accessibilityReduceMotion) private var reduceMotion
 // StatusDot
 .animation(reduceMotion ? nil : .easeOut(duration: 1.8).repeatForever(autoreverses: false), value: on)
-// TFProgressLine
+// LPProgressLine
 if !reduceMotion { withAnimation(...) { phase = 1.1 } }
 ```
 
@@ -217,8 +217,8 @@ if !reduceMotion { withAnimation(...) { phase = 1.1 } }
 ## 6 Micro-interaction — 6.5 / PASS（交付线）· FAIL（获奖线）
 
 **现状证据**
-- 已在的细节：侧栏 hover 时右侧浮出 `⌘1…⌘0` 键位提示（TouchFlowApp.swift:621）；复制按钮点击换成对勾（Shared.swift:305，0.22s snappy）；`TFSwitch` 有自绘焦点环 + `.accessibilityRepresentation`（Theme.swift:369/374）；文本框聚焦时下划线转朱红（SettingsView.swift:421 等）；命令面板 `⌘K` 常驻工具栏与侧栏入口双通道。
-- 缺口一：**按钮没有焦点环**。`TFPrimaryButtonStyle` / `TFGhostButtonStyle` 都没有 `focused` 或 focus 描边；自定义 `.buttonStyle(.plain)` 在 macOS 全键盘导航下会出现系统蓝环（上一轮 `light-rules` 右上开关外圈那圈 `#0B84FF` 就是这个），此时蓝环与品牌色冲突。开关有环、按钮没有——最常被键盘访问的控件反而最弱。
+- 已在的细节：侧栏 hover 时右侧浮出 `⌘1…⌘0` 键位提示（LeapinApp.swift:621）；复制按钮点击换成对勾（Shared.swift:305，0.22s snappy）；`LPSwitch` 有自绘焦点环 + `.accessibilityRepresentation`（Theme.swift:369/374）；文本框聚焦时下划线转朱红（SettingsView.swift:421 等）；命令面板 `⌘K` 常驻工具栏与侧栏入口双通道。
+- 缺口一：**按钮没有焦点环**。`LPPrimaryButtonStyle` / `LPGhostButtonStyle` 都没有 `focused` 或 focus 描边；自定义 `.buttonStyle(.plain)` 在 macOS 全键盘导航下会出现系统蓝环（上一轮 `light-rules` 右上开关外圈那圈 `#0B84FF` 就是这个），此时蓝环与品牌色冲突。开关有环、按钮没有——最常被键盘访问的控件反而最弱。
 - 缺口二：**同一个开关三种宽度**：28（SSH）/ 30（顶栏、总览）/ 34（规则、去广告、抓包）。同一控件在不同页面大小不一，是「逐处调参」的痕迹。
 - 缺口三：**禁用态用「褪色实心」表达**。`light3-learn` 左下「解析列表」在空输入时渲染成 45% 透明朱红 + 白字，对比度跌到约 2.4:1，读作「坏掉的按钮」而不是「还差一步」。
 - 缺口四：**拖拽没有目标态**。LearnView.swift:118 `.dropDestination` 没有 `isTargeted` 绑定，拖文件进来时虚线框不变色、不扩张——用户唯一能确认「可以松手」的信号缺失。
@@ -232,27 +232,27 @@ if !reduceMotion { withAnimation(...) { phase = 1.1 } }
 ```swift
 .overlay(
     RoundedRectangle(cornerRadius: 7, style: .continuous)
-        .strokeBorder(focused ? TF.accent : .clear, lineWidth: 2)
+        .strokeBorder(focused ? LP.accent : .clear, lineWidth: 2)
         .padding(-3)
 )
 .focusEffectDisabled()
 ```
-2. 开关宽度收敛为单值 32（`TFSwitch(isOn:)` 默认值），删除所有 `width:` 实参。
+2. 开关宽度收敛为单值 32（`LPSwitch(isOn:)` 默认值），删除所有 `width:` 实参。
 3. 禁用态不要改透明度。在 style 里读 `@Environment(\.isEnabled)`：
 ```swift
 @Environment(\.isEnabled) private var enabled
 // fill: enabled ? accentFill : .clear
-// stroke: enabled ? .clear : TF.strokeStrong
-// foreground: enabled ? .white : TF.textTertiary
+// stroke: enabled ? .clear : LP.strokeStrong
+// foreground: enabled ? .white : LP.textTertiary
 ```
 4. 拖拽区加 `isTargeted`：
 ```swift
 .dropDestination(for: URL.self) { urls, _ in ... } isTargeted: { over in
-    withAnimation(TFMotion.tap) { dragOver = over }
+    withAnimation(LPMotion.tap) { dragOver = over }
 }
 // 虚线改 2pt 朱红 + 背景 accentSoft(4%)，图标 1.04 放大
 ```
-5. 列表行加 `.scaleEffect(pressed ? 0.998 : 1)` + 按下填充 `stroke.opacity(0.7)`，0.10s `TFMotion.tap`。
+5. 列表行加 `.scaleEffect(pressed ? 0.998 : 1)` + 按下填充 `stroke.opacity(0.7)`，0.10s `LPMotion.tap`。
 
 **验收**：键盘 Tab 走遍一屏，每个可操作元素都有可见焦点（且不是系统蓝）；开关只有一种尺寸；禁用态不靠透明度。
 
@@ -261,7 +261,7 @@ if !reduceMotion { withAnimation(...) { phase = 1.1 } }
 ## 7 Responsive — 6.5 / PASS（交付线）· FAIL（获奖线）
 
 **现状证据**
-- 上一轮的硬 bug **已消灭**：抓包两栏 `minWidth: 336`（CaptureView.swift:70/73）+ 窗口最小 `900×660`，不再 788>787 恒差 1pt 溢出；900pt 下侧栏塌成 68pt 图标栏（TouchFlowApp.swift:376 `geo.size.width < 960`），`compact-dashboard`/`compact-capture` 均无横向裁切。
+- 上一轮的硬 bug **已消灭**：抓包两栏 `minWidth: 336`（CaptureView.swift:70/73）+ 窗口最小 `900×660`，不再 788>787 恒差 1pt 溢出；900pt 下侧栏塌成 68pt 图标栏（LeapinApp.swift:376 `geo.size.width < 960`），`compact-dashboard`/`compact-capture` 均无横向裁切。
 - 旧值也顺手清理了：侧栏 216/68、页面 `maxWidth: 1180`。
 - 缺口一：总览统计条是固定 5 列 `HStack`，窗口变宽不重排（不要求瀑布流，但至少 2 行 × 3 列或 1 主 4 从，见 §3）。
 - 缺口二：设置页两列网格在 900pt 下仍是 2 列，每卡 370pt——`compact-settings` 里「上游」截断更狠、证书路径截成 `…/App…F…Flow/ca/…`。应该在 <980 时改单列（或 1 大 1 小的非对称）。
@@ -301,7 +301,7 @@ if let sel = selection, width >= 1000 {
 ## 8 Originality — 7.5 / PASS（交付线）· FAIL（获奖线）
 
 **现状证据（原创资产，实打实存在）**
-- 品牌标记：墨方块 + 斜体衬线 `T` + 右下角 5pt 朱红点（TouchFlowApp.swift:566–582）。这是「被设计过」的 mark，不是 SF Symbol 拼贴。
+- 品牌标记：墨方块 + 斜体衬线 `T` + 右下角 5pt 朱红点（LeapinApp.swift:566–582）。这是「被设计过」的 mark，不是 SF Symbol 拼贴。
 - 栏目语法：mono eyebrow + 中文主词（`策略组 / GROUPS`）、发丝线分区、下划线表单（设置页 7890/7891/7892 用单一底线而非输入框底色）——这套东西在 macOS 工具里很少见。
 - 隐私页的**刻度尺**：100 下方一条 0/55/80/100 的标尺（`light3-privacy` y≈258），把「分数」变成「读数」。这是全 App 最有原创性的一笔——它属于仪器，不属于 SaaS。
 - 智能学习的 `01 识别 / 02 建议 / 03 落地` 三段（mono 序号 + 衬线小标 + 说明），是编辑设计的正确用法。
@@ -325,9 +325,9 @@ TimelineView(.periodic(from: .now, by: 1)) { _ in
             let y = size.height - 2 - size.height * 0.85 * CGFloat(v)
             p.addLine(to: CGPoint(x: x, y: y))
         }
-        ctx.stroke(p, with: .color(TF.text.opacity(0.55)), lineWidth: 1)
+        ctx.stroke(p, with: .color(LP.text.opacity(0.55)), lineWidth: 1)
         ctx.fill(Path(CGRect(x: size.width - 2, y: 0, width: 2, height: size.height)),
-                 with: .color(TF.accent))
+                 with: .color(LP.accent))
     }
 }
 .frame(height: 28)
@@ -372,12 +372,12 @@ TimelineView(.periodic(from: .now, by: 1)) { _ in
 | 上轮问题 | 状态 | 证据 |
 |---|---|---|
 | ① 15 档字号 / 正文 10–11.5 / 圆角字体当正文 | **部分** | 圆角已去（`design: .rounded` → 默认 SF），数字改 mono；但仍 25 档、正文 11pt ×88 处 |
-| ② 颜色零语义 / 7 强调色 / 4 套渐变 | **大修** | 单信号色 + 墨阶成立；残留策略三色、Badge violet/amber、`TF.brand` 渐变 2 处 |
+| ② 颜色零语义 / 7 强调色 / 4 套渐变 | **大修** | 单信号色 + 墨阶成立；残留策略三色、Badge violet/amber、`LP.brand` 渐变 2 处 |
 | ③ 卡片平权 / 一屏 3 个主按钮 | **部分** | 每屏 1 实心已做到；总览仍有 3 个「启动代理」入口（2 个在主区） |
 | ④ 首屏讲 0 / 配置页 60% 空 | **一半** | 配置页用「导入来源」表填满，很好；总览首屏仍全是 0，真实数据在折叠线下 |
-| ⑤ `withAnimation` 死代码 / 抓包流零动效 | **已修** | TouchFlowApp.swift:388 有 transition + animation；CaptureView `freshID` 高亮 + `numericText` |
+| ⑤ `withAnimation` 死代码 / 抓包流零动效 | **已修** | LeapinApp.swift:388 有 transition + animation；CaptureView `freshID` 高亮 + `numericText` |
 | ⑥ 抓包双空态 / 宽度预算 788>787 | **一半** | 宽度已修（`minWidth: 336`、窗口 900）；空态未改（只加了 CTA），仍居中占满 |
-| ⑦ 无列头 / 状态塞数字位 / 焦点环只有开关 | **一半** | 规则表列头已加；adblock「已开启」仍占 26pt 数字位；焦点环仍只有 `TFSwitch` 与文本框 |
+| ⑦ 无列头 / 状态塞数字位 / 焦点环只有开关 | **一半** | 规则表列头已加；adblock「已开启」仍占 26pt 数字位；焦点环仍只有 `LPSwitch` 与文本框 |
 | ⑧ SSH 假窗口圆点 / 隐私 0 算 100 | **一半** | SSH 已修（去红黄绿、改 `ssh — 未连接` + `IDLE`，观感大升级）；隐私 100 分未动 |
 
 净结果：**3 项全修、3 项半修、2 项未动**。修对的部分质量很高（不是敷衍），未动的部分恰好是最伤"评审第一眼"的两处（首屏与诚实性）。
@@ -402,14 +402,14 @@ struct LedgerRow<Content: View>: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(label).font(TFFont.micro).tracking(1.4).foregroundStyle(TF.textTertiary)
-                if let note { Text(note).font(.system(size: 10)).foregroundStyle(TF.textTertiary.opacity(0.75)) }
+                Text(label).font(LPFont.micro).tracking(1.4).foregroundStyle(LP.textTertiary)
+                if let note { Text(note).font(.system(size: 10)).foregroundStyle(LP.textTertiary.opacity(0.75)) }
             }
             .frame(width: 96, alignment: .leading)
             content().frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.vertical, 11)
-        .background(alignment: .bottom) { Rectangle().fill(TF.stroke).frame(height: 0.5) }
+        .background(alignment: .bottom) { Rectangle().fill(LP.stroke).frame(height: 0.5) }
     }
 }
 
@@ -419,17 +419,17 @@ struct LedgerFooter: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack { ForEach(items, id: \.0) { k, v in
-                VStack(alignment: .leading) { Text(k).font(TFFont.micro); Text(v).font(TFFont.num(15)) }
+                VStack(alignment: .leading) { Text(k).font(LPFont.micro); Text(v).font(LPFont.num(15)) }
             } }
             .padding(.vertical, 12)
-            Rectangle().fill(TF.text).frame(height: 1)
-            Rectangle().fill(TF.text.opacity(0.25)).frame(height: 1).padding(.top, 2)
+            Rectangle().fill(LP.text).frame(height: 1)
+            Rectangle().fill(LP.text.opacity(0.25)).frame(height: 1).padding(.top, 2)
         }
     }
 }
 
 // 3) 数字列永远右对齐、永远 mono、永远 tabular
-Text("1,284,930").font(TFFont.num(12)).monospacedDigit()
+Text("1,284,930").font(LPFont.num(12)).monospacedDigit()
     .frame(width: 96, alignment: .trailing)
 ```
 先在**分流规则**（已有表格底子）与**总览**（把 5 个统计 + 最近连接合成一本流水）这两页试点，成功后再推到其它页。不要去改 SSH 终端和抓包详情——它们已经是"仪器面"，账页语法用不上。
@@ -509,27 +509,27 @@ Text("1,284,930").font(TFFont.num(12)).monospacedDigit()
 
 **2｜隐私 hero 左格塌陷（Typography + Whitespace + Hierarchy）**
 - 证据：`10-privacy3` hero 左三分之一现在只有 22pt 的「无样本」+ 一条几乎看不见的刻度尺，而这块原来站着 48pt 的「100」。右侧段落 12pt 反而成了视觉主体——hero 的锚点从「读数」漂到了「说明文字」。
-- 代码：PrivacyView.swift:71 `Text("无样本").font(TFFont.display(22, weight: .semibold))` 占据原 48pt 数字位；:76 `scoreRuler(hasSample ? r.score : 0, tint: tint)` 把刻度尺画成全暗。
+- 代码：PrivacyView.swift:71 `Text("无样本").font(LPFont.display(22, weight: .semibold))` 占据原 48pt 数字位；:76 `scoreRuler(hasSample ? r.score : 0, tint: tint)` 把刻度尺画成全暗。
 - 修法：保留仪器的光学质量，只换读数内容——
   ```swift
   Text(hasSample ? "\(r.score)" : "—")
-      .font(TFFont.num(48, weight: .medium))
-      .foregroundStyle(hasSample ? TF.text : TF.textTertiary)
+      .font(LPFont.num(48, weight: .medium))
+      .foregroundStyle(hasSample ? LP.text : LP.textTertiary)
   // 「无样本」降级为数字下方的 eyebrow：
-  Text("无样本 / NO SAMPLE").font(TFFont.overline).tracking(1.2).foregroundStyle(TF.textTertiary)
+  Text("无样本 / NO SAMPLE").font(LPFont.overline).tracking(1.2).foregroundStyle(LP.textTertiary)
   ```
   刻度尺传 `hasSample ? r.score : nil`，nil 时把 0–55 段画成 6% 斜纹带（「样本不足区」），刻度线保持 100% —— 分数缺失，仪器仍在。
 - 验收：遮住右侧段落，左格单独看仍是一块「有读数位置的仪表」。
 
 **3｜规则页 DIRECT 太淡、类型 chip 像禁用（Color + Typography）**
 - 证据：`02-rules` 整张表 8 行 DIRECT 全是浅灰，是这张页面里最高频的值，却是最淡的元素；类型 chip（IP-CIDR / SUFFIX / GEOIP）改成灰底灰字后，读起来像「不可选」的禁用标签，而不是类型元数据。
-- 代码：RulesView.swift:402 `if p == "DIRECT" { return TF.text.opacity(0.45) }`——在纸底 #F6F4EF 上约 **2.9:1**，低于 4.5:1；:366–369 策略文本直接用 `policyColor`。
-- 修法：策略值改 `TF.textSecondary`（≈0.66，≥4.5:1）；层级靠字重与大小，不靠透明度。类型去掉 pill 底与描边：
+- 代码：RulesView.swift:402 `if p == "DIRECT" { return LP.text.opacity(0.45) }`——在纸底 #F6F4EF 上约 **2.9:1**，低于 4.5:1；:366–369 策略文本直接用 `policyColor`。
+- 修法：策略值改 `LP.textSecondary`（≈0.66，≥4.5:1）；层级靠字重与大小，不靠透明度。类型去掉 pill 底与描边：
   ```swift
   Text(rule.kind.rawValue.uppercased())
-      .font(TFFont.mono(10, weight: .regular))
+      .font(LPFont.mono(10, weight: .regular))
       .tracking(0.8)
-      .foregroundStyle(TF.textTertiary)   // 不再加背景与边框
+      .foregroundStyle(LP.textTertiary)   // 不再加背景与边框
   ```
 - 验收：把截图转灰度，DIRECT 仍是可读的一列；类型列不再有「按钮感」。
 

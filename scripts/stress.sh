@@ -1,9 +1,9 @@
 #!/bin/bash
-# TouchFlow 稳定性压力测试（P5）。只用系统自带工具。
+# Leapin 稳定性压力测试（P5）。只用系统自带工具。
 #
 # 用法：
 #   scripts/stress.sh                       # 3 轮 × 500 并发随机中断
-#   TF_STRESS_ROUNDS=5 TF_STRESS_CONCURRENCY=200 scripts/stress.sh
+#   LEAPIN_STRESS_ROUNDS=5 LEAPIN_STRESS_CONCURRENCY=200 scripts/stress.sh
 #
 # 检查项：并发短连接后进程存活 / FD 回落、端口冲突必须报错、上游不可达、
 #        TLS 失败、SIGINT 停止后端口释放与进程不残留。
@@ -11,15 +11,15 @@
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-SCRATCH=${TF_STRESS_SCRATCH:-"$ROOT/.build-bench"}
-OUT=${TF_STRESS_OUT:-"$ROOT/.stress"}
-TFCTL="$SCRATCH/release/tfctl"
-ROUNDS=${TF_STRESS_ROUNDS:-3}
-CONC=${TF_STRESS_CONCURRENCY:-500}
-MIXED_PORT=${TF_STRESS_MIXED_PORT:-17990}
+SCRATCH=${LEAPIN_STRESS_SCRATCH:-"$ROOT/.build-bench"}
+OUT=${LEAPIN_STRESS_OUT:-"$ROOT/.stress"}
+LEAPIN_BIN="$SCRATCH/release/leapin"
+ROUNDS=${LEAPIN_STRESS_ROUNDS:-3}
+CONC=${LEAPIN_STRESS_CONCURRENCY:-500}
+MIXED_PORT=${LEAPIN_STRESS_MIXED_PORT:-17990}
 HTTP_PORT=$((MIXED_PORT + 1))
 SOCKS_PORT=$((MIXED_PORT + 2))
-ORIGIN_PORT=${TF_STRESS_ORIGIN_PORT:-18081}
+ORIGIN_PORT=${LEAPIN_STRESS_ORIGIN_PORT:-18081}
 PROXY_PID=""
 ORIGIN_PID=""
 FAILED=0
@@ -50,8 +50,8 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "$OUT/profiles"
-if [ ! -x "$TFCTL" ]; then
-  echo "缺少 ${TFCTL}；先跑 scripts/bench.sh 或 swift build -c release --product tfctl --scratch-path .build-bench" >&2
+if [ ! -x "$LEAPIN_BIN" ]; then
+  echo "缺少 ${LEAPIN_BIN}；先跑 scripts/bench.sh 或 swift build -c release --product leapin --scratch-path .build-bench" >&2
   exit 1
 fi
 
@@ -77,7 +77,7 @@ gen_profile() { # $1=输出文件，$2=额外段落（含 [Proxy]/[Rule]）
 
 start_proxy() { # $1=profile；0 表示已监听
   local profile=$1 i
-  "$TFCTL" run --profile "$profile" >"$OUT/proxy.log" 2>&1 &
+  "$LEAPIN_BIN" run --profile "$profile" >"$OUT/proxy.log" 2>&1 &
   PROXY_PID=$!
   for i in $(seq 1 50); do
     if nc -z 127.0.0.1 "$MIXED_PORT" 2>/dev/null; then return 0; fi
@@ -120,11 +120,11 @@ ORIGIN_PID=$!
 sleep 1
 gen_profile "$OUT/profiles/stress.surge"
 
-export TF_MIXED_PORT="$MIXED_PORT" TF_ORIGIN_PORT="$ORIGIN_PORT"
+export LEAPIN_MIXED_PORT="$MIXED_PORT" LEAPIN_ORIGIN_PORT="$ORIGIN_PORT"
 cat > "$OUT/request.sh" <<'REQ'
 #!/bin/bash
 t=$(awk -v s="$1" 'BEGIN { srand(s); printf "%.2f", 0.05 + rand() * 0.75 }')
-curl -s -o /dev/null --max-time "$t" -x "http://127.0.0.1:$TF_MIXED_PORT" "http://127.0.0.1:$TF_ORIGIN_PORT/" || true
+curl -s -o /dev/null --max-time "$t" -x "http://127.0.0.1:$LEAPIN_MIXED_PORT" "http://127.0.0.1:$LEAPIN_ORIGIN_PORT/" || true
 REQ
 chmod +x "$OUT/request.sh"
 
@@ -168,7 +168,7 @@ note "2) 端口冲突：第二个实例必须报错退出"
 if start_proxy "$OUT/profiles/stress.surge"; then
   ok "第一个实例已监听 $MIXED_PORT"
   second_log="$OUT/conflict.log"
-  "$TFCTL" run --profile "$OUT/profiles/stress.surge" >"$second_log" 2>&1
+  "$LEAPIN_BIN" run --profile "$OUT/profiles/stress.surge" >"$second_log" 2>&1
   second_status=$?
   if [ "$second_status" -ne 0 ]; then ok "第二个实例退出码 $second_status"; else bad "第二个实例居然启动成功（退出码 0）"; fi
   if grep -q "already in use" "$second_log"; then
@@ -221,7 +221,7 @@ fi
 # ---------- 5. 残留 ----------
 note "5) 残留检查"
 left=$(pgrep -f "$OUT/profiles/" 2>/dev/null | wc -l | tr -d ' ')
-if [ "$left" = 0 ]; then ok "无残留 tfctl 进程"; else bad "仍有 $left 个 tfctl 进程残留"; pgrep -fl "$OUT/profiles/" | sed 's/^/      /'; fi
+if [ "$left" = 0 ]; then ok "无残留 leapin 进程"; else bad "仍有 $left 个 leapin 进程残留"; pgrep -fl "$OUT/profiles/" | sed 's/^/      /'; fi
 if nc -z 127.0.0.1 "$MIXED_PORT" 2>/dev/null; then bad "压测端口 $MIXED_PORT 仍在监听"; else ok "压测端口已释放"; fi
 
 note "汇总：PASS=$PASSES FAIL=${FAILED}（产物：${OUT}）"

@@ -1,13 +1,17 @@
-# TouchFlow
+# Leapin · 一跃
+
+> One leap. No detour. —— 一跃即达，不必绕路。
 
 融合 Surge / Clash 能力的 macOS 网络工具：规则分流、去广告、抓包、SSH、NAS 快速挂载、从 App 列表或截图学习分流规则，并把隐私保护做进默认行为。
 
 > v1 为 macOS 原生 App（SwiftUI）+ 跨平台核心库（SwiftPM）。iOS 版需要 NetworkExtension 权限，暂未打包。
+>
+> **v1.8 起由 TouchFlow 更名为 Leapin**；旧数据目录、设备身份与 CA 会自动迁移（见 [docs/BRAND.md](docs/BRAND.md)）。
 
 ## 界面
 
-原生 SwiftUI，单窗口 + 菜单栏常驻，浅色/深色自适应。自绘设计系统（`Sources/TouchFlowApp/Design/Theme.swift`）：
-半透明面板 + 细描边、品牌蓝紫渐变、等宽数字与网络元数据、轻微网格与光斑背景；侧栏常驻运行状态与端口，
+原生 SwiftUI，单窗口 + 菜单栏常驻，浅色/深色自适应。自绘设计系统（`Sources/LeapinApp/Design/Theme.swift`）：
+半透明面板 + 细发丝线、墨色阶与朱红强调、等宽数字与网络元数据；侧栏常驻运行状态与端口，
 顶栏固定系统代理开关，总览页一眼看到端点、命中规则与最近连接。
 
 - **总览**：状态 hero + 5 个指标 + 本地端点 + 分流解释器 + 最近连接
@@ -42,20 +46,20 @@
 ./scripts/build-app.sh
 
 # 2) 启动
-open dist/TouchFlow.app
+open dist/Leapin.app
 ```
 
 首次使用：
 
 1. 打开 App → 总览 → **启动**。
 2. 打开 **系统代理**（自动执行 `networksetup` 设置 HTTP/HTTPS/SOCKS 代理）。
-3. 需要抓 HTTPS 时：设置 → 开启 **HTTPS 解密** → 总览点 **安装 CA** → 在“钥匙串访问”中把 `TouchFlow CA` 加入“系统”并设为“始终信任”（这一步必须手动确认，App 不会静默信任根证书）。
+3. 需要抓 HTTPS 时：设置 → 开启 **HTTPS 解密** → 总览点 **安装 CA** → 在“钥匙串访问”中把 `Leapin Root CA` 加入“系统”并设为“始终信任”（这一步必须手动确认，App 不会静默信任根证书）。
 4. 不需要时随时关闭系统代理；App 退出不会留下系统代理设置（可在总览/菜单栏关闭）。
 
-## 命令行 tfctl
+## 命令行 leapin
 
 ```bash
-BIN=dist/TouchFlow.app/Contents/MacOS/tfctl
+BIN=dist/Leapin.app/Contents/MacOS/leapin
 
 $BIN run                       # 前台启动代理
 $BIN rules api.spotify.com     # 解释命中哪条规则、走哪个出站
@@ -73,10 +77,10 @@ $BIN sync pull 192.0.2.9:7901                 # 拉取并收敛
 $BIN sync panel                # 只读面板链接与令牌（--rotate 轮换）
 ```
 
-控制面（默认 `127.0.0.1:7900`，token 在 `$TF_PROFILE_ROOT/control-token`）：
+控制面（默认 `127.0.0.1:7900`，token 在 `$LEAPIN_PROFILE_ROOT/control-token`）：
 
 ```bash
-TOKEN=$(cat "${TF_PROFILE_ROOT:-$HOME/Library/Application Support/TouchFlow}/control-token")
+TOKEN=$(cat "${LEAPIN_PROFILE_ROOT:-$HOME/Library/Application Support/Leapin}/control-token")
 curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:7900/v1/status
 curl -sN -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:7900/v1/events?since=0"
 ```
@@ -86,15 +90,15 @@ curl -sN -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:7900/v1/events?sinc
 ## 目录
 
 ```
-Sources/TouchFlowCore            模型、协议、YAML 子集、日志脱敏、Keychain
-Sources/TouchFlowPolicy          规则解析/分流/策略组/去广告
-Sources/TouchFlowNet             代理服务器、出站协议、DNS、MITM、HAR
-Sources/TouchFlowIntegrations    SSH、NAS、OCR 学习、系统代理、隐私审计
-Sources/TouchFlowControl         控制面 HTTP/SSE/鉴权/审计
-Sources/TouchFlowSync            设备身份、版本存储、局域网同步、只读面板
-Sources/TouchFlowRuntime         引擎装配、配置存储、导入导出
-Sources/TouchFlowApp             SwiftUI 界面
-Sources/tfctl                    命令行
+Sources/LeapinCore            模型、协议、YAML 子集、日志脱敏、Keychain
+Sources/LeapinPolicy          规则解析/分流/策略组/去广告
+Sources/LeapinNet             代理服务器、出站协议、DNS、MITM、HAR
+Sources/LeapinIntegrations    SSH、NAS、OCR 学习、系统代理、隐私审计
+Sources/LeapinControl         控制面 HTTP/SSE/鉴权/审计
+Sources/LeapinSync            设备身份、版本存储、局域网同步、只读面板
+Sources/LeapinRuntime         引擎装配、配置存储、导入导出
+Sources/LeapinApp             SwiftUI 界面
+Sources/leapin                    命令行
 docs/ARCHITECTURE.md             契约与设计
 ```
 
@@ -103,7 +107,7 @@ docs/ARCHITECTURE.md             契约与设计
 - 配置文件不保存任何密码；SSH / NAS 密码只在内存或用户明确选择后写入钥匙串。
 - 日志、HAR、抓包详情统一经过 `Redactor`：`Authorization` / `Cookie` / `token=` / `user:pass@` 等全部替换为 `<redacted>`。
 - 默认 DNS 走 DoH（`https://1.1.1.1/dns-query`，回退 DoT），可切系统 DNS。
-- 默认不开 HTTPS 解密；开启后仅对 `mitmHosts` 匹配的站点签发证书，CA 私钥保存在 `~/Library/Application Support/TouchFlow/ca`（0600）。
+- 默认不开 HTTPS 解密；开启后仅对 `mitmHosts` 匹配的站点签发证书，CA 私钥保存在 `~/Library/Application Support/Leapin/ca`（0600）。
 - 可与 Little Snitch / LuLu（进程级出站）、NextDNS（网络级 DoH）叠加使用，互不冲突。
 
 ## 已知限制（v1）
@@ -113,13 +117,13 @@ docs/ARCHITECTURE.md             契约与设计
 - 不支持 VMess / VLESS / Hysteria / WireGuard；支持 DIRECT / HTTP / SOCKS5 / Shadowsocks(AEAD) / Trojan。
 - 抓包不做 pcap 级重组，不解析 WebSocket 帧。
 - NAS 挂载使用系统 `mount_smb`，需要 macOS 允许的 SMB 共享与凭据。
-- 无自签公证：`dist/TouchFlow.app` 为 ad-hoc 签名，首次打开如被 Gatekeeper 拦截，右键 → 打开。
-- 同步是局域网明文 HTTP + 手动 `tfctl sync pull`：同一 WiFi 下两台自己的机器可用；没有后台自动同步、没有云端 E2EE、没有 iOS 客户端。
+- 无自签公证：`dist/Leapin.app` 为 ad-hoc 签名，首次打开如被 Gatekeeper 拦截，右键 → 打开。
+- 同步是局域网明文 HTTP + 手动 `leapin sync pull`：同一 WiFi 下两台自己的机器可用；没有后台自动同步、没有云端 E2EE、没有 iOS 客户端。
 - 只读面板只出元数据（版本/指针/设备），不含规则与凭据；令牌在 URL 里，可随时 `sync panel --rotate`。
 
 ## 验证情况
 
-真实跑过的构建、测试（201 条通过 / 1 skip）、控制面 e2e（22/22）、同步 e2e（36/36）、端到端代理（10/10）、
+真实跑过的构建、测试（205 条通过 / 1 skip）、控制面 e2e（22/22）、同步 e2e（36/36）、端到端代理（10/10）、
 系统代理开关与 GUI 截图记录见 [`docs/VERIFICATION.md`](docs/VERIFICATION.md)，
 其中包括**明确未做端到端验证**的项目（真实双机 LAN、MITM 安装 CA、真实 SSH/NAS 设备等）。
 
@@ -134,7 +138,7 @@ docs/ARCHITECTURE.md             契约与设计
 ```bash
 swift build                       # 全部 target
 swift test                        # 全部测试
-swift build --target TouchFlowPolicy   # 单模块
+swift build --target LeapinPolicy   # 单模块
 ./scripts/build-app.sh debug      # debug 版 App
 ```
 

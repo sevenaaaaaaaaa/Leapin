@@ -1,4 +1,4 @@
-# TouchFlow P4 设计：TUN/VIF 全流量接管 → 网关 + DHCP
+# Leapin P4 设计：TUN/VIF 全流量接管 → 网关 + DHCP
 
 > 状态：**仅设计，未实现**。本文不修改任何代码，仓库内 TUN/Network Extension 实现为 0。
 > 依据：`docs/ROADMAP-v3.md`（P4 目标与 §8 度量）、`docs/ARCHITECTURE.md`（三层与硬规则）、
@@ -13,21 +13,21 @@
 | ad-hoc 签名，无任何 entitlements 文件 | `scripts/build-app.sh:32-34`（`codesign --sign -`）；仓库内 `**/*.entitlements` 为 0 个 | 系统扩展无法激活，NE 全链路不可测 |
 | 无 TUN/NE 代码 | `grep -r "NEPacketTunnel\|NetworkExtension" Sources` = 0 | P4 从零开始，不是改造 |
 | 平台下限 macOS 14，包内无扩展 target | `Package.swift:6`、`Package.swift:18-37` | 需要新增扩展 target + bundle 组装脚本 |
-| 系统代理回滚有先例但会静默失败 | `Sources/TouchFlowRuntime/TouchFlowEngine.swift:200-209`、`:215-228`（失败时保留 `systemProxyActive`，调用方忽略返回值） | TUN 回滚必须升级为"逐项结果 + 显式 UI + 审计" |
-| Fake-IP 只有分配，没有反查消费方 | `Sources/TouchFlowNet/DNS/FakeIPPool.swift:38` `ip(for:)` 有调用；`:60` `host(for:)` 在 `Sources/` 内 **0 调用** | TUN 数据面必须补上"假 IP → 域名"这一跳，否则 fake-IP 模式在 TUN 下不可用 |
-| DNS 服务只绑 127.0.0.1 | `Sources/TouchFlowNet/DNS/FakeIPPool.swift:139`、`:171`（`requiredLocalEndpoint` 固定 127.0.0.1） | TUN 的 DNS 不能直接复用该监听，需抽应答核心 |
-| DNS fake-IP 对 AAAA 查询也回 A 记录 | `Sources/TouchFlowNet/DNS/FakeIPPool.swift:321-330` | 现状缺陷，TUN 下会放大；P4a 前修（Engine 层，不在本文实现） |
-| SSE 事件类型写死 `event: flow` | `Sources/TouchFlowControl/ControlServer.swift:247-251`；回放缓冲是 `[ControlEvent]` `:186-192` | 新增 tunnel/routes 事件需要通用帧类型 |
-| 控制面动作表是显式 switch + 方法白名单 | `Sources/TouchFlowControl/ControlServer.swift:325-419`、`:777-787` | 新动作必须同时改两处，否则 404/405 |
-| 控制面后台调用默认 10s 超时 | `Sources/TouchFlowControl/ControlServer.swift:435-439` | tunnel start/stop 不能阻塞在该超时内，需异步受理 |
-| 审计记录是固定字段 | `Sources/TouchFlowControl/ControlContract.swift:186-209` | 需要追加可选字段（向后兼容）承载 tunnel 取证 |
-| Surface 目前直接调 Engine 方法 | `Sources/TouchFlowApp/TouchFlowApp.swift:75`、`:279-282` 等 | 隧道动作必须走 Control action，不能再加直连方法 |
+| 系统代理回滚有先例但会静默失败 | `Sources/LeapinRuntime/LeapinEngine.swift:200-209`、`:215-228`（失败时保留 `systemProxyActive`，调用方忽略返回值） | TUN 回滚必须升级为"逐项结果 + 显式 UI + 审计" |
+| Fake-IP 只有分配，没有反查消费方 | `Sources/LeapinNet/DNS/FakeIPPool.swift:38` `ip(for:)` 有调用；`:60` `host(for:)` 在 `Sources/` 内 **0 调用** | TUN 数据面必须补上"假 IP → 域名"这一跳，否则 fake-IP 模式在 TUN 下不可用 |
+| DNS 服务只绑 127.0.0.1 | `Sources/LeapinNet/DNS/FakeIPPool.swift:139`、`:171`（`requiredLocalEndpoint` 固定 127.0.0.1） | TUN 的 DNS 不能直接复用该监听，需抽应答核心 |
+| DNS fake-IP 对 AAAA 查询也回 A 记录 | `Sources/LeapinNet/DNS/FakeIPPool.swift:321-330` | 现状缺陷，TUN 下会放大；P4a 前修（Engine 层，不在本文实现） |
+| SSE 事件类型写死 `event: flow` | `Sources/LeapinControl/ControlServer.swift:247-251`；回放缓冲是 `[ControlEvent]` `:186-192` | 新增 tunnel/routes 事件需要通用帧类型 |
+| 控制面动作表是显式 switch + 方法白名单 | `Sources/LeapinControl/ControlServer.swift:325-419`、`:777-787` | 新动作必须同时改两处，否则 404/405 |
+| 控制面后台调用默认 10s 超时 | `Sources/LeapinControl/ControlServer.swift:435-439` | tunnel start/stop 不能阻塞在该超时内，需异步受理 |
+| 审计记录是固定字段 | `Sources/LeapinControl/ControlContract.swift:186-209` | 需要追加可选字段（向后兼容）承载 tunnel 取证 |
+| Surface 目前直接调 Engine 方法 | `Sources/LeapinApp/LeapinApp.swift:75`、`:279-282` 等 | 隧道动作必须走 Control action，不能再加直连方法 |
 
 ## 1. 目标与非目标
 
 ### 1.1 P4 目标（以可测为准）
 
-1. 本机**不认系统代理的进程**也被接管（路线图 §5 P4 验收原话）：`curl --noproxy '*'`、`nc`、`git`、任意 App 的 TCP 出站都经过 TouchFlow 的规则与出站。
+1. 本机**不认系统代理的进程**也被接管（路线图 §5 P4 验收原话）：`curl --noproxy '*'`、`nc`、`git`、任意 App 的 TCP 出站都经过 Leapin 的规则与出站。
 2. 单机模式（P4a）可独立开关，开关一次不改变用户对"网络是否正常"的感知；停用/崩溃后**默认路由回到原接口**。
 3. 可选网关（P4b）：让**用户显式指定的专用接口**上的设备经本机出网，且默认关闭、失败可回滚。
 4. 新增能力全部以 Control action 暴露，Surface 只发动作（承接 `docs/ROADMAP-v3.md` §2 硬规则）。
@@ -50,7 +50,7 @@
 | C. pf 把流量重定向到本地透明代理端口 | 大概率不行：macOS 用户态缺透明 socket 语义，**需验证** | 中 | 不纳入 |
 | D. packet tunnel + **"够用栈"**（只服务本机→扩展这一段） | 能 | 2.5–3.5k 行 | **选它** |
 
-D 的关键论证：TUN 里的 TCP 只跨 **本地 VIF**（RTT < 1ms、丢包近似 0、路径无中间盒），真正的公网传输由 `OutboundDialer` 的系统 socket 承担（`Sources/TouchFlowNet/Outbound/OutboundDialer.swift`）。
+D 的关键论证：TUN 里的 TCP 只跨 **本地 VIF**（RTT < 1ms、丢包近似 0、路径无中间盒），真正的公网传输由 `OutboundDialer` 的系统 socket 承担（`Sources/LeapinNet/Outbound/OutboundDialer.swift`）。
 因此栈只需要：三次握手/序号确认、固定接收窗口、RTO 重传、MSS 协商、IPv4 分片重组、半关闭与 RST；
 不需要慢启动调参、不需要 SACK/DSACK、不需要应对公网乱序。代价是端到端语义被"TCP 拆分"改变（应用测到的 RTT 是本地 RTT），需在文档与 UI 说明。
 
@@ -63,7 +63,7 @@ D 的关键论证：TUN 里的 TCP 只跨 **本地 VIF**（RTT < 1ms、丢包近
 | Apple Developer Program（付费） | 申请 NE entitlement、创建 development/Developer ID profile | 个人或组织；组织需 D-U-N-S。免费账号不含 NE |
 | Developer ID Application 证书 | 站外分发（本项目的唯一现实路径） | 配合 hardened runtime + 公证 |
 | development provisioning profile | **开发期唯一可激活 NE 的路径**，无需公证 | 必须在 P4 第一周打通，否则后续全空转 |
-| App Group（如 `group.com.touchflow.app`） | App 与扩展共享配置快照/会话标记 | 需 `com.apple.security.application-groups` |
+| App Group（如 `group.com.leapin.app`） | App 与扩展共享配置快照/会话标记 | 需 `com.apple.security.application-groups` |
 | NE entitlement | `com.apple.developer.networking.networkextension` | App 与扩展都要有；Developer ID 路径需 Apple 单独批准，**审批周期需验证** |
 
 ### 2.2 entitlement 取舍
@@ -76,9 +76,9 @@ D 的关键论证：TUN 里的 TCP 只跨 **本地 VIF**（RTT < 1ms、丢包近
 
 ### 2.3 打包与首次授权流程
 
-1. App 内嵌扩展：`TouchFlow.app/Contents/Library/SystemExtensions/<bundle-id>.systemextension`（SwiftPM 不产出该形态，需脚本组装，参照 `scripts/build-app.sh` 现有组装逻辑扩展）。
+1. App 内嵌扩展：`Leapin.app/Contents/Library/SystemExtensions/<bundle-id>.systemextension`（SwiftPM 不产出该形态，需脚本组装，参照 `scripts/build-app.sh` 现有组装逻辑扩展）。
 2. App 用 `OSSystemExtensionRequest.activationRequest` 提交激活 → 用户在「系统设置 → 通用 → 登录项与扩展 → 网络扩展」批准（macOS 14/15/26 的入口位置需逐版本验证）。
-3. `NETunnelProviderManager` 保存 VPN 配置 → 系统弹「TouchFlow 想要添加 VPN 配置」→ 允许。
+3. `NETunnelProviderManager` 保存 VPN 配置 → 系统弹「Leapin 想要添加 VPN 配置」→ 允许。
 4. 才能 `startVPNTunnel`。任一环节被拒，状态必须是可读的 `failed(reason)`，不是无声无息。
 5. 升级：提升扩展与 App 的 `CFBundleVersion`，对已安装旧版本发起替换激活；是否需要二次审批**需验证**。升级前先停隧道，安装后跑 1 分钟冒烟再删旧副本。
 
@@ -94,12 +94,12 @@ D 的关键论证：TUN 里的 TCP 只跨 **本地 VIF**（RTT < 1ms、丢包近
 | 能测（不需要 NE） | 不能测 | 折中（dev-only，禁止进发布） |
 | --- | --- | --- |
 | 包解析/构造、TCP 状态机（内存 pipe 注入 IP 包） | 系统扩展安装/审批/替换 | 付费账号 + development profile：**唯一**能完整验证 NE 的路径 |
-| DNS 应答核心、Fake-IP 分配与反查 | `packetFlow` 真实读写、`setTunnelNetworkSettings` 的路由语义 | root 手工建 utun + 双半默认路由（`0.0.0.0/1`+`128.0.0.0/1`）让开发构建读真实流量（当前 macOS 上是否仍可由 root 创建 utun **需验证**），`#if DEBUG` + `TF_TUN_DEV=1`，带 trap 清理 |
+| DNS 应答核心、Fake-IP 分配与反查 | `packetFlow` 真实读写、`setTunnelNetworkSettings` 的路由语义 | root 手工建 utun + 双半默认路由（`0.0.0.0/1`+`128.0.0.0/1`）让开发构建读真实流量（当前 macOS 上是否仍可由 root 创建 utun **需验证**），`#if DEBUG` + `LEAPIN_TUN_DEV=1`，带 trap 清理 |
 | 路由快照/差分/恢复（只读采集 + 测试机手工注入恢复） | 扩展进程是否具备写 sysctl/pf 的权限 | `pfctl -n -f` 干跑校验规则语法（不 `-e`） |
-| DHCP 编解码与租约状态机（回环 UDP） | 公证后的 Gatekeeper 首次启动路径 | 用 `tfctl` 子命令做无 UI 的包路径压测 |
+| DHCP 编解码与租约状态机（回环 UDP） | 公证后的 Gatekeeper 首次启动路径 | 用 `leapin` 子命令做无 UI 的包路径压测 |
 | 控制面 action/SSE/审计（沿用 `docs/VERIFICATION.md` §0.4 的 178 条测试做法） | 升级迁移与审批状态机 | — |
 
-自签（`codesign --sign "TouchFlow Dev"`）**不能**解锁 NE：NE 校验 Team ID 与 provisioning profile，自签没有 Team ID，激活会失败（具体错误码**需验证**）。自签只让 Keychain/TCC 身份稳定，与本任务无关。
+自签（`codesign --sign "Leapin Dev"`）**不能**解锁 NE：NE 校验 Team ID 与 provisioning profile，自签没有 Team ID，激活会失败（具体错误码**需验证**）。自签只让 Keychain/TCC 身份稳定，与本任务无关。
 
 ### 2.6 开工检查表（全绿才进入 P4a-0）
 
@@ -115,11 +115,11 @@ D 的关键论证：TUN 里的 TCP 只跨 **本地 VIF**（RTT < 1ms、丢包近
 
 | 进程 | 职责 | 禁止 |
 | --- | --- | --- |
-| App（现有 `TouchFlowEngine`） | Profile、系统代理、DNS 127.0.0.1 监听、Control 7900、快照/审计单写者 | 不处理 IP 包 |
-| 扩展（新 `TouchFlowTunnel`） | `packetFlow` 读写、TCP/UDP 处理、出站拨号 | 不监听任何 TCP 端口、不写审计文件、不读 `$TF_PROFILE_ROOT` |
+| App（现有 `LeapinEngine`） | Profile、系统代理、DNS 127.0.0.1 监听、Control 7900、快照/审计单写者 | 不处理 IP 包 |
+| 扩展（新 `LeapinTunnel`） | `packetFlow` 读写、TCP/UDP 处理、出站拨号 | 不监听任何 TCP 端口、不写审计文件、不读 `$LEAPIN_PROFILE_ROOT` |
 | Control（App 内） | 动作/SSE/审计/鉴权 | 不自作主张改系统状态 |
 
-扩展与 App 是**两个进程**：扩展拿不到 `@MainActor` 的 `TouchFlowEngine`（`TouchFlowEngine.swift:36-38`），也不该读 `ProfileStore`（`ProfileStore.swift:23-38` 的 Application Support 路径在沙箱下不可达）。因此：
+扩展与 App 是**两个进程**：扩展拿不到 `@MainActor` 的 `LeapinEngine`（`LeapinEngine.swift:36-38`），也不该读 `ProfileStore`（`ProfileStore.swift:23-38` 的 Application Support 路径在沙箱下不可达）。因此：
 
 - App 启动隧道前，把**已解析的运行时快照**（含已合并的 rule-set）写入 App Group；扩展只读该快照，版本/hash 不匹配就拒绝启动。
 - 命令走 `NETunnelProviderSession.sendProviderMessage`（start/stop/reload/stats），响应体限长 JSON。
@@ -154,15 +154,15 @@ App 字节 → utun → packetFlow.readPackets → IPv4 解析
 
 | 现有件 | 复用方式 | 结论 |
 | --- | --- | --- |
-| `RouterBox`/`ResolverBox`/`BlockerBox`（`Sources/TouchFlowRuntime/ControlWiring.swift:14/33/52`） | 直接注入数据面，热切换语义不变 | 直接用 |
+| `RouterBox`/`ResolverBox`/`BlockerBox`（`Sources/LeapinRuntime/ControlWiring.swift:14/33/52`） | 直接注入数据面，热切换语义不变 | 直接用 |
 | `OutboundDialer` | `connect(via:host:port:)` 原样调用 | 直接用，**但需新增"绑定物理接口"能力**，否则扩展自身出站会被自己的默认路由抓回（回环） |
-| `BytePump`（`Sources/TouchFlowNet/Proxy/BytePump.swift`） | 作为"TCP 栈 ↔ upstream"的搬运与空闲超时 | 复用逻辑，需 `ByteStream` 适配层 |
-| `ProxyServer`（`Sources/TouchFlowNet/Proxy/ProxyServer.swift:13`） | 依赖 NWListener + HTTP/SOCKS 嗅探，TUN 下没有这些语义 | **不复用**，系统代理路径保持不变 |
+| `BytePump`（`Sources/LeapinNet/Proxy/BytePump.swift`） | 作为"TCP 栈 ↔ upstream"的搬运与空闲超时 | 复用逻辑，需 `ByteStream` 适配层 |
+| `ProxyServer`（`Sources/LeapinNet/Proxy/ProxyServer.swift:13`） | 依赖 NWListener + HTTP/SOCKS 嗅探，TUN 下没有这些语义 | **不复用**，系统代理路径保持不变 |
 | `DNSServer` | 监听绑 127.0.0.1 | 抽 `DNSResponderCore` 后复用 |
 | `FakeIPPool` | 需单实例共享（DNS 分配 + 数据面反查） | 改造：由 Engine 持有并注入两处 |
 | `ProcessAttributor` | TUN 下用 5 元组（源端口）反查 PID，与现状同源 | 复用，命中率受 1s 快照限制 |
 | `MITMHandler` | 期望 `ByteStream` + CONNECT 语义 | P4 不做；后续可在栈上套 `ByteStream` 适配再评估 |
-| `SystemProxy`（`Sources/TouchFlowIntegrations/System/SystemProxy.swift:47-89`） | 与 TUN 共存，纳入统一停止序列 | 保留 |
+| `SystemProxy`（`Sources/LeapinIntegrations/System/SystemProxy.swift:47-89`） | 与 TUN 共存，纳入统一停止序列 | 保留 |
 | `HealthProber` | 出站健康检查 | 直接用 |
 
 ### 3.5 TCP / UDP / ICMP 策略
@@ -201,7 +201,7 @@ P4a 的 UDP 明确短板要写进 UI 与 `docs`：`docs/net.md` §2 已声明 ss
 采集：`route -n get default -inet/-inet6`、`netstat -rn -f inet/-f inet6`、`ifconfig -a`、`sysctl net.inet.ip.forwarding net.inet6.ip6.forwarding`、`pfctl -s info`（enabled 状态）、`pfctl -s Anchors`、`scutil --dns`、`scutil --nc list`。
 
 格式：JSON + 整体 SHA-256；字段含 `schemaVersion/snapshotId/takenAt/osBuild/routesV4/routesV6/interfaces/sysctls/pf/dnsResolvers/vpnConfigs`。
-落盘：`$TF_PROFILE_ROOT/tunnel/snapshots/<ts>-<hash8>.json`，沿用 `ProfileStore.save` 的原子写习惯（`Sources/TouchFlowRuntime/ProfileStore.swift:59-65`）。保留最近 10 份 + 1 份手工标记的 last-good。
+落盘：`$LEAPIN_PROFILE_ROOT/tunnel/snapshots/<ts>-<hash8>.json`，沿用 `ProfileStore.save` 的原子写习惯（`Sources/LeapinRuntime/ProfileStore.swift:59-65`）。保留最近 10 份 + 1 份手工标记的 last-good。
 快照只读；恢复必须引用 `snapshotId`，不允许"按当前状态猜"。
 
 ### 4.3 启动顺序（失败即回退）
@@ -221,7 +221,7 @@ P4a 的 UDP 明确短板要写进 UI 与 `docs`：`docs/net.md` §2 已声明 ss
 3. 校验默认路由已离开 utun、resolver 复原、canary 直连成功。
 4. P4b 若动过全局状态：按逆序 CAS 恢复（DHCP 监听 → pf anchor → sysctl），逐项校验。
 5. 写 `phase:"disabled"` + 审计 `tunnel.stop`（含每步耗时）。
-6. 再走系统代理回滚与监听器拆除。**新顺序：TUN → 系统代理 → 监听器**；现有 `TouchFlowEngine.stop()`（`Sources/TouchFlowRuntime/TouchFlowEngine.swift:200-209`）是"系统代理 → 监听器"，需插入 TUN 步骤而不是改写它。
+6. 再走系统代理回滚与监听器拆除。**新顺序：TUN → 系统代理 → 监听器**；现有 `LeapinEngine.stop()`（`Sources/LeapinRuntime/LeapinEngine.swift:200-209`）是"系统代理 → 监听器"，需插入 TUN 步骤而不是改写它。
 
 ### 4.5 崩溃与断电
 
@@ -292,7 +292,7 @@ LAN 客户端 → en0 →（`net.inet.ip.forwarding=1`）→ 默认路由 utun �
 | POST | `/v1/tunnel/recover` | 幂等清理残留 | ≤15s |
 | GET | `/v1/tunnel/entitlement` | 签名/entitlement/审批状态，供 UI 引导 | 快 |
 
-落地位置：`ControlBackend` 协议（`Sources/TouchFlowControl/ControlContract.swift:255-264`）加方法；`ControlServer` 的路由 switch（`:325-419`）、`actionName`（`:762-771`）、`allowedMethods`（`:777-787`）三处同步登记，否则 404/405。start/stop 必须"受理即返回"，不能踩 `callBackend` 的 10s 超时（`:435-439`）。
+落地位置：`ControlBackend` 协议（`Sources/LeapinControl/ControlContract.swift:255-264`）加方法；`ControlServer` 的路由 switch（`:325-419`）、`actionName`（`:762-771`）、`allowedMethods`（`:777-787`）三处同步登记，否则 404/405。start/stop 必须"受理即返回"，不能踩 `callBackend` 的 10s 超时（`:435-439`）。
 
 ### 6.2 SSE 事件
 
@@ -309,13 +309,13 @@ LAN 客户端 → en0 →（`net.inet.ip.forwarding=1`）→ 默认路由 utun �
 
 ### 6.3 审计字段
 
-现有 `ControlAuditRecord`（`Sources/TouchFlowControl/ControlContract.swift:186-209`）保持字段不变，**追加可选**：`kind`（control/tunnel/routes/dhcp）、`sessionId`、`snapshotId`、`outcome`（ok/partial/failed）、`detailJSON`。可选字段用 `decodeIfPresent` 解码，旧行不受影响。
+现有 `ControlAuditRecord`（`Sources/LeapinControl/ControlContract.swift:186-209`）保持字段不变，**追加可选**：`kind`（control/tunnel/routes/dhcp）、`sessionId`、`snapshotId`、`outcome`（ok/partial/failed）、`detailJSON`。可选字段用 `decodeIfPresent` 解码，旧行不受影响。
 单写者：Engine 持有 `AuditLog`，ControlServer 委托它写；扩展**永不**写该文件（避免多进程交错）。
 
 ### 6.4 Surface 约束与状态机
 
-- 视图只发 action：即使 App 与 Engine 同进程，也走同一 `ControlBackend`（本地门面），保证远端面板/iOS 未来同语义。禁止再往 `TouchFlowEngine` 上加"给视图用的隧道方法"。
-- 状态机：`disabled → installing → starting → running → stopping → disabled`，另有 `failed(reason)` 与 `rollback-failed(failedItems)`；`running` 下可有 `degraded`（DNS 正常、UDP 降级）。状态与 `EngineState`（`Sources/TouchFlowRuntime/TouchFlowEngine.swift:9-23`）分开，因为代理可以运行而隧道未启动。
+- 视图只发 action：即使 App 与 Engine 同进程，也走同一 `ControlBackend`（本地门面），保证远端面板/iOS 未来同语义。禁止再往 `LeapinEngine` 上加"给视图用的隧道方法"。
+- 状态机：`disabled → installing → starting → running → stopping → disabled`，另有 `failed(reason)` 与 `rollback-failed(failedItems)`；`running` 下可有 `degraded`（DNS 正常、UDP 降级）。状态与 `EngineState`（`Sources/LeapinRuntime/LeapinEngine.swift:9-23`）分开，因为代理可以运行而隧道未启动。
 - `ControlStatus` 只**追加** `tunnelState` 字段，不改既有字段，避免破坏 `/v1/status` 消费者。
 
 ## 7. 性能预算与验收标准
@@ -329,7 +329,7 @@ LAN 客户端 → en0 →（`net.inet.ip.forwarding=1`）→ 默认路由 utun �
 | 正常停止到路由复原 | p95 < 500ms | 本文提出 | 停止到默认路由离开 utun |
 | 异常退出的路由复原 | ≤ 2s | 本文提出（§5 只写"原子完成"） | `kill -9` 扩展，10 次，取最大 |
 | 回滚残留 | 0 项 | 本文提出 | `route/sysctl/pf/DHCP/扩展配置` 逐项对比快照 |
-| DNS 缓存命中 | p95 < 2ms | 本文提出（对照 `docs/perf.md` §4 的 16ms） | `tfctl dns --trace` × 200 |
+| DNS 缓存命中 | p95 < 2ms | 本文提出（对照 `docs/perf.md` §4 的 16ms） | `leapin dns --trace` × 200 |
 | DNS 首查 | p95 < 150ms | 本文提出（对照 37ms 基线） | 同上，冷缓存 |
 | Fake-IP 应答 | p95 < 1ms | 本文提出 | 解析侧计时 200 次 |
 | 单流吞吐（direct，LAN 对端） | ≥ 200Mbps 且 ≥ 系统代理基线 60% | 本文提出，实现后校准 | 对端 `python3 -m http.server` + `curl --noproxy '*' -o /dev/null`，3 次取中位 |
@@ -359,7 +359,7 @@ LAN 客户端 → en0 →（`net.inet.ip.forwarding=1`）→ 默认路由 utun �
 
 ### P4a-0（约 1 周）扩展骨架 + 控制面状态机（无数据面）
 
-- 交付：`TouchFlowTunnel` target（空 provider）、App Group 快照、`/v1/tunnel/*` 动作、`tunnel.status` SSE、审计可选字段、只读隧道面板。
+- 交付：`LeapinTunnel` target（空 provider）、App Group 快照、`/v1/tunnel/*` 动作、`tunnel.status` SSE、审计可选字段、只读隧道面板。
 - 验收：development profile 下能激活/停用；`includedRoutes` 只含测试网段（禁止 0/0）；启动后默认路由指向 utun ≤ 2s，停止后复原 ≤ 500ms；`kill -9` 后路由复原 ≤ 2s 且审计有 `tunnel.failed`；注入一次恢复失败 → banner + `rollback-failed` 审计可复现。
 - 未实现：任何 IP 包处理（此时是黑洞，所以只允许测试网段）。
 
@@ -404,10 +404,10 @@ TUN/VIF、NEPacketTunnelProvider、系统扩展打包、entitlement/公证、路
 这两处会改到 P1 已交付代码，但不做就无法承载 tunnel 事件与回滚取证。建议在 P4a-0 开工前单独评审：
 
 1. **SSE 帧泛化**：`ControlServer.sseFrame(_:)` 把 `event: flow` 写死，回放缓冲是 `[ControlEvent]`
-   （`Sources/TouchFlowControl/ControlServer.swift:186-192`、`:247-251`）。P4 需要 `tunnel.status` / `routes.changed`
+   （`Sources/LeapinControl/ControlServer.swift:186-192`、`:247-251`）。P4 需要 `tunnel.status` / `routes.changed`
    等新事件类型，必须先把回放缓冲与帧构造抽成通用事件（保留 `flow` 的线上格式不变）。
 2. **审计单写者 + 可选字段**：现在审计由 `ControlServer.appendAudit` 直接写文件，字段固定
-   （`Sources/TouchFlowControl/ControlContract.swift:186-209`）。P4 的回滚失败、路由快照、DHCP 拒绝需要
+   （`Sources/LeapinControl/ControlContract.swift:186-209`）。P4 的回滚失败、路由快照、DHCP 拒绝需要
    结构化取证并保证与动作同序；建议改为 Engine 单一写者、`ControlAuditRecord` 追加可选字段（向后兼容旧读取方）。
 
 两项都**未实现**；本文只记录取舍与影响面。

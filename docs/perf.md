@@ -1,4 +1,4 @@
-# TouchFlow 性能基准（P4）
+# Leapin 性能基准（P4）
 
 - 机器：Apple M2 Max / macOS 27.3 / Swift 6.4.2 (swiftlang-6.4.2.1.9)，arm64
 - 采集时间：2026-11-05
@@ -10,13 +10,13 @@
 ## 复跑命令
 
 ```bash
-# 首次（含 release 构建 tfctl，约 1-2 分钟）
+# 首次（含 release 构建 leapin，约 1-2 分钟）
 bash scripts/bench.sh
 bash scripts/stress.sh
 
 # 已构建过、只想重测数字
-TF_BENCH_SKIP_BUILD=1 bash scripts/bench.sh
-TF_BENCH_SKIP_BUILD=1 bash scripts/stress.sh
+LEAPIN_BENCH_SKIP_BUILD=1 bash scripts/bench.sh
+LEAPIN_BENCH_SKIP_BUILD=1 bash scripts/stress.sh
 ```
 
 原始数据落在 `.bench/`（profiles/ timings.txt proxy.log origin.log）、`.build-bench/`（构建产物）。
@@ -24,7 +24,7 @@ TF_BENCH_SKIP_BUILD=1 bash scripts/stress.sh
 
 ## 1. 规则引擎（RuleEngine）
 
-`tfctl run --profile <n 条规则>` 从进程启动到 mixed 端口就绪的 wall clock，3 次取最小：
+`leapin run --profile <n 条规则>` 从进程启动到 mixed 端口就绪的 wall clock，3 次取最小：
 
 | 规则数 | 总耗时 ms | 启动基线 ms | 净增 ms/万条 |
 | --- | --- | --- | --- |
@@ -96,13 +96,13 @@ cosmetic 规则从「`[(domain, selectors)]` 数组 + `firstIndex(where:)` 去�
 2. 端口冲突：同端口起第二个实例必须非 0 退出，日志含 `already in use`。
 3. 上游不可达（`[Proxy] Dead = http, 127.0.0.1, 9` + `FINAL,Dead`）：返回 000/502 且进程存活。
 4. TLS 失败（`curl https://127.0.0.1:1`）：非 0 退出且失败连接不累积 FD。
-5. 结束无残留 `tfctl` 进程、端口已释放。
+5. 结束无残留 `leapin` 进程、端口已释放。
 
 ### 稳定性修复对应项
 
 | 问题 | 修复 | 验证 |
 | --- | --- | --- |
-| `stop()` 不回滚系统代理 → 停代理即断网 | `TouchFlowEngine.stop()` 先 `rollbackSystemProxyIfNeeded()`，失败保留 `systemProxyActive` 供重试 | 手动 + build |
+| `stop()` 不回滚系统代理 → 停代理即断网 | `LeapinEngine.stop()` 先 `rollbackSystemProxyIfNeeded()`，失败保留 `systemProxyActive` 供重试 | 手动 + build |
 | 系统代理端口用 `general.httpPort`（可能未监听） | 改用 `proxy.listeningPort`（mixed），并校验 1...65535 | 手动 |
 | `SystemProxy.enable` 半开配置 | 6 次写 + 回读包进 do/catch，失败 `try? disable()` 再 rethrow | 代码 + build |
 | DNS 端口冲突静默成功 | `DNSServer.start()` 用 ListenerGate 等 `.ready`，失败抛 `DNS port N is already in use`；两 listener 都 cancel | bench / stress 端口冲突项 |
@@ -112,7 +112,7 @@ cosmetic 规则从「`[(domain, selectors)]` 数组 + `firstIndex(where:)` 去�
 | `CommandRunner` 对运行中 Process 读 `terminationStatus` | 超时未退出时用 `-1` 并记日志，不再取值 | 代码 + build |
 | `NASMounter` `share=".."` 逃逸到家目录 | 拒绝 `.`/`..`/`/`，并校验 standardized 父目录 | 代码 + build |
 | 日志每行 5 次正则编译 | `Redactor` 预编译 + 关键字预筛 | 代码 + build |
-| 日志/抓包数组 `removeFirst` O(n) | `TFLog` 环形缓冲；Engine `trim` 滞后裁剪 | 代码 + build |
+| 日志/抓包数组 `removeFirst` O(n) | `LPLog` 环形缓冲；Engine `trim` 滞后裁剪 | 代码 + build |
 | 每事件 2 个 `Task { @MainActor }` | EngineSink 16 ms / 批量 flush（上限 4096） | 代码 + build |
 
 ## 6. 已知未修（下一轮）

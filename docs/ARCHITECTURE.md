@@ -1,4 +1,4 @@
-# TouchFlow — v1 架构与契约
+# Leapin — v1 架构与契约
 
 ## 0. 产品定位（v1）
 macOS 菜单栏 + 主窗口网络工具，融合 Surge/Clash 式能力：
@@ -16,16 +16,16 @@ macOS 菜单栏 + 主窗口网络工具，融合 Surge/Clash 式能力：
 
 ## 1. 目录与归属（禁止越界编辑）
 ```
-Sources/TouchFlowCore/          lead（共享类型/协议/日志/YAML/Keychain）
-Sources/TouchFlowPolicy/        worker-policy：Rules/ AdBlock/（可加 Policy 子目录）
-Sources/TouchFlowNet/           worker-net：Proxy/ DNS/ Capture/
-Sources/TouchFlowIntegrations/  worker-int：SSH/ NAS/ Learn/ Privacy/
-Sources/TouchFlowRuntime/       lead：引擎装配、Profile 存储、CaptureStore
-Sources/TouchFlowApp/           lead：SwiftUI
-Sources/tfctl/                  lead：CLI
-Tests/TouchFlowPolicyTests/     worker-policy
-Tests/TouchFlowNetTests/        worker-net
-Tests/TouchFlowIntegrationsTests/ worker-int
+Sources/LeapinCore/          lead（共享类型/协议/日志/YAML/Keychain）
+Sources/LeapinPolicy/        worker-policy：Rules/ AdBlock/（可加 Policy 子目录）
+Sources/LeapinNet/           worker-net：Proxy/ DNS/ Capture/
+Sources/LeapinIntegrations/  worker-int：SSH/ NAS/ Learn/ Privacy/
+Sources/LeapinRuntime/       lead：引擎装配、Profile 存储、CaptureStore
+Sources/LeapinApp/           lead：SwiftUI
+Sources/leapin/                  lead：CLI
+Tests/LeapinPolicyTests/     worker-policy
+Tests/LeapinNetTests/        worker-net
+Tests/LeapinIntegrationsTests/ worker-int
 docs/                           lead（各 worker 可写自己模块的 README.md）
 ```
 每个 worker 只 `swift build --target <自己的 target>`（会连带编译 Core），必须保证零 error；测试用 `swift test --filter <自己的测试类>`。
@@ -35,10 +35,10 @@ docs/                           lead（各 worker 可写自己模块的 README.m
 - `OutboundType/.direct/.reject`, `OutboundConfig`, `RuleKind`, `Rule`, `PolicyGroup`, `PolicyGroupType`, `DNSConfig/DNSMode`, `AdBlockConfig`, `GeneralConfig`, `Profile`
 - `ConnectionMeta`, `RouteDecision`, `FlowEvent/FlowPhase`, `BlockVerdict`, `CapturedRequest`, `LogLevel`
 - 协议：`ByteStream`（NWByteStream 实现）、`RouteDeciding`、`DomainBlocking`、`FlowRecording`、`CaptureSink`、`NameResolving`
-- `TFLog.shared`（自动脱敏）、`Redactor`、`MiniYAML`、`Keychain`
+- `LPLog.shared`（自动脱敏）、`Redactor`、`MiniYAML`、`Keychain`
 
 ## 3. 模块契约（public API，必须逐字实现，可增加但不可改名）
-### TouchFlowPolicy
+### LeapinPolicy
 ```swift
 public struct RuleMatch: Sendable {
     public var matchedRule: Rule?
@@ -85,7 +85,7 @@ public final class GeoIPDatabase: @unchecked Sendable {  // 内置最小 CN 段�
 要点：规则匹配顺序＝文件顺序，首个命中即返回；`no-resolve` 表示不做 DNS；`PROCESS-NAME` 大小写不敏感匹配 `meta.sourceApp`；`IP-CIDR` 命中 `destinationIP`（无则返回 false）；`MATCH` 兜底；目标策略先经 `PolicyResolver` 解析成 `OutboundConfig`，`REJECT` → `isBlocked=true`。
 AdBlock 匹配：ABP `||domain^`、`|http://`、`@@` 例外优先、`$third-party`、hosts 行；纯域名后缀匹配用反转标签 Trie，10 万条 < 50ms 加载。
 
-### TouchFlowNet
+### LeapinNet
 ```swift
 public final class ProxyServer: @unchecked Sendable {
     public struct Options: Sendable {
@@ -133,7 +133,7 @@ public enum HARExporter {
 ```
 要点：协议嗅探按首字节（0x05 SOCKS5 / 大写方法 HTTP）；CONNECT 后用 `BytePump` 双向转发并统计字节；HTTPS MITM 仅 HTTP/1.1，证书用 openssl 生成、SecPKCS12Import 载入；所有失败必须写日志并关闭连接，不得 crash；DNS 支持 DoH(URLSession)/DoT(NWConnection TLS)/UDP、缓存 TTL、hosts、blocker 返回 NXDOMAIN。10 万条规则下 decide 已由 Policy 保证，Net 只调用一次。
 
-### TouchFlowIntegrations
+### LeapinIntegrations
 ```swift
 public struct NASDevice: Sendable, Identifiable, Hashable {
     public var id: String; public var name: String; public var host: String
@@ -187,7 +187,7 @@ public enum PrivacyAudit {
     public static func audit(flows: [FlowEvent], trackerDomains: Set<String>) -> PrivacyReport
 }
 ```
-要点：SSH 用 `/usr/bin/ssh -tt`；密码走 `SSH_ASKPASS` 临时脚本 + `SSH_ASKPASS_REQUIRE=force` + `DISPLAY=:0`，脚本 0600 且会话结束即删；`knownHosts` 支持 `accept-new`。OCR 用 Vision（`VNRecognizeTextRequest`，`.accurate`，中英双语）。所有命令行工具调用必须设超时、捕获 stderr、错误转 `TouchFlowError`。
+要点：SSH 用 `/usr/bin/ssh -tt`；密码走 `SSH_ASKPASS` 临时脚本 + `SSH_ASKPASS_REQUIRE=force` + `DISPLAY=:0`，脚本 0600 且会话结束即删；`knownHosts` 支持 `accept-new`。OCR 用 Vision（`VNRecognizeTextRequest`，`.accurate`，中英双语）。所有命令行工具调用必须设超时、捕获 stderr、错误转 `LeapinError`。
 
 ## 4. 构建与验收
 - `swift build --target <target>` 零 error；警告尽量清零

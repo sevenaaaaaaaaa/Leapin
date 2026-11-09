@@ -1,4 +1,4 @@
-# TouchFlow v1.1 提升计划与交付报告（五项）
+# Leapin v1.1 提升计划与交付报告（五项）
 
 > 来源：用户清单（2026-11-05）——再做一次完整的交互提升 / 最后做一次入口优化 / 把所有格式支持做一下提升 / 做一次性能优化 / 做一次稳定性提升。
 > 约束：不新增 SPM 依赖（本机无 github.com）；只用 Foundation / Network / Security / Vision / CryptoKit / AppKit / SwiftUI；不改 Package.swift 的 target 结构；所有改动必须 `swift build` 零 error、`swift test` 全绿。
@@ -7,7 +7,7 @@
 ## 执行顺序（实际）
 
 P1 交互 + P2 入口（同属 App 层，lead 串行，避免并行改同一批文件）
-→ P3 格式（format-auditor 并行，写 `Sources/TouchFlowPolicy/Format/**`、`ProfileStore`）
+→ P3 格式（format-auditor 并行，写 `Sources/LeapinPolicy/Format/**`、`ProfileStore`）
 → P4 性能 + P5 稳定性（runtime-auditor 串行，同一批网络文件）
 → lead 收口：导出/远程订阅补齐、App 接线、全量验证、文档。
 
@@ -15,18 +15,18 @@ P1 交互 + P2 入口（同属 App 层，lead 串行，避免并行改同一批�
 
 - [x] `⌘1…⌘0` 切换 10 个页签；`⌘K` 命令面板（20+ 项：页签 / 动作 / 6 种格式导出 / 订阅导入，模糊搜索 + 分组 + 快捷键角标）
 - [x] `⌘F` 聚焦当前页搜索；面板 `↑/↓` 移动、`↩` 执行、`esc` 关闭（`CommandPalette.swift:134-136` 的 `onKeyPress`）
-- [x] 交互原语：`TFToast`（success/warning/error + 动作按钮）、`TFConfirmDialog`（`Interactions.swift:210`，破坏性操作二次确认）、`TFSwitch`（自绘，含空格/回车切换与焦点环）、`TFChip`（单行不换行）
+- [x] 交互原语：`LPToast`（success/warning/error + 动作按钮）、`LPConfirmDialog`（`Interactions.swift:210`，破坏性操作二次确认）、`LPSwitch`（自绘，含空格/回车切换与焦点环）、`LPChip`（单行不换行）
 - [x] 规则页：搜索 + 类型/策略过滤计数、行选择、右键菜单、新增规则表单实时校验、`⌘R` 重载
 - [x] 抓包页：暂停/继续、状态筛选拆独立行（`filterRow`）+ 搜索 210pt、`⌘F` 聚焦、复制为 cURL、清空确认、HAR 导出
 - [x] 空态带 CTA、长操作有 ProgressView 与禁用态、失败 toast 带可读原因
-- [x] 减弱动态效果（`TFMotion` 读取 `NSWorkspace.accessibilityDisplayShouldReduceMotion`）、1040×700 无裁切（截图回归）
-- [x] 11 处 `accessibilityLabel`（面板入口、toast、清空/复制按钮等）；`TFSwitch` 支持键盘聚焦
+- [x] 减弱动态效果（`LPMotion` 读取 `NSWorkspace.accessibilityDisplayShouldReduceMotion`）、1040×700 无裁切（截图回归）
+- [x] 11 处 `accessibilityLabel`（面板入口、toast、清空/复制按钮等）；`LPSwitch` 支持键盘聚焦
 
 ## P2 入口优化 ✅
 
-- [x] 首启引导（3 步 + 跳过，`tf.onboarded` 记忆，菜单「重新显示上手引导」可重放）
+- [x] 首启引导（3 步 + 跳过，`lp.onboarded` 记忆，菜单「重新显示上手引导」可重放）
 - [x] 菜单栏面板：启停代理、系统代理、实时计数（连接/请求/拦截/流量）、复制端点、直达页签、退出
-- [x] URL scheme `touchflow://section/<id>` 深链直达；Dock 菜单条目
+- [x] URL scheme `leapin://section/<id>` 深链直达；Dock 菜单条目
 - [x] 全局快捷键 `⌘⇧Space` 从任意 App 唤起命令面板（`Platform.swift:30`）
 - [x] 首页建议与「启动后优先打开的页签」偏好持久化（`startSection`）；登录时自动启动（`LaunchAtLogin` + 设置页开关）
 - [x] 总览页「下一步建议」单步 CTA（未启动 / 未开系统代理 / 未装 CA / 未开去广告）
@@ -34,14 +34,14 @@ P1 交互 + P2 入口（同属 App 层，lead 串行，避免并行改同一批�
 
 ## P3 格式支持提升 ✅
 
-- [x] 导入：Clash YAML（proxy-groups 参数、rule-providers、nameserver-policy、fake-ip-filter、BOM）、Surge conf、TouchFlow JSON、base64 订阅（ss SIP002 / 旧式 ss / trojan / vless / vmess / hysteria2）、hosts、ABP、纯规则文本、rule-set（yaml / list）
+- [x] 导入：Clash YAML（proxy-groups 参数、rule-providers、nameserver-policy、fake-ip-filter、BOM）、Surge conf、Leapin JSON、base64 订阅（ss SIP002 / 旧式 ss / trojan / vless / vmess / hysteria2）、hosts、ABP、纯规则文本、rule-set（yaml / list）
 - [x] 导出：Clash / Surge / JSON / **hosts** / **ABP** / **Clash rule-set**（后三项本轮补齐，见 `ProfileExporter` 扩展）；HAR 保持既有契约
-- [x] 远程 `http(s)://` 订阅：`TouchFlowEngine.importRemoteProfile`（20s 超时、只允许 http/https、UTF-8→isoLatin1 兜底、空体/非 2xx 可读报错）
+- [x] 远程 `http(s)://` 订阅：`LeapinEngine.importRemoteProfile`（20s 超时、只允许 http/https、UTF-8→isoLatin1 兜底、空体/非 2xx 可读报错）
 - [x] 解析诊断不静默丢：`ImportReport` / `ImportIssue`（kind + 行号 + 原文 + display），导入后 toast →「导入报告」sheet，可复制
 - [x] 未知出站协议保留 `rawType` 与额外字段，导出原样写回（vmess/vless/hysteria/hysteria2/tuic/wireguard/snell/unsupported）
 - [x] 往返等价：Clash→Profile→Clash→Profile、Surge 同理（`FormatTests` 20 条）；导出方向 `ExportFormatTests` 5 条（只搬 REJECT、后缀不误拦、hosts 每行两字段）
 - [x] 大文件：5 万行规则导入 216ms（-O）/ 459ms（-Onone）
-- [x] `tfctl` 支持 `--input-format` 别名（`ProfileFormat.cliName`）与 `--help`
+- [x] `leapin` 支持 `--input-format` 别名（`ProfileFormat.cliName`）与 `--help`
 
 ## P4 性能优化 ✅
 

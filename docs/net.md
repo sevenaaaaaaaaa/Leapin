@@ -1,15 +1,15 @@
-# TouchFlowNet 交付说明
+# LeapinNet 交付说明
 
 > 目标：不新增任何 SPM 依赖（只用 Foundation / Network / Security / CryptoKit），
-> 实现 `docs/ARCHITECTURE.md` 第 3 节 TouchFlowNet 段的 public API（签名逐字一致），
+> 实现 `docs/ARCHITECTURE.md` 第 3 节 LeapinNet 段的 public API（签名逐字一致），
 > 并对超出本轮范围的行为做**诚实降级**——所有简化、近似、未实现点都列在本文，
-> 没有静默偏离。`swift build --target TouchFlowNet` 零 error 零 warning；
-> `swift test --filter TouchFlowNetTests` 69 个用例全绿（全部真实起监听 / 真实收发字节）。
+> 没有静默偏离。`swift build --target LeapinNet` 零 error 零 warning；
+> `swift test --filter LeapinNetTests` 69 个用例全绿（全部真实起监听 / 真实收发字节）。
 
 ## 0. 文件布局
 
 ```
-Sources/TouchFlowNet/
+Sources/LeapinNet/
   _Target.swift                     模块版本号占位（原有）
   Support/NetSocket.swift           NetSocket: ByteStream + WriteHalfClosable（NWConnection 封装，FIFO 读队列）
   Support/Bytes.swift               HexCoding / NetAddress / IPv4CIDR / HostGlob / BufferedStream / DataUtil
@@ -28,7 +28,7 @@ Sources/TouchFlowNet/
   Capture/CertificateAuthority.swift openssl 生成 CA / 按域名叶证书 + p12 → SecPKCS12Import → sec_identity_t
   Capture/MITMHandler.swift         TLS 终结 + HTTP/1.1 解析转发 + cosmetic 注入 + CapturedRequest
   Capture/HARExporter.swift         HAR 1.2 导出 + 脱敏 + 大 body 截断
-Tests/TouchFlowNetTests/
+Tests/LeapinNetTests/
   TestSupport.swift                 假服务器矩阵：EchoServer / HTTPOriginServer / FakeSOCKS5Server /
                                     FakeHTTPConnectServer / FakeDNSServer / RawSOCKS5Client / 各类收集器
   ProxyServerTests.swift            URLSession 走代理、CONNECT 隧道、手写 SOCKS5、403、端口占用、优雅停止…
@@ -67,7 +67,7 @@ Tests/TouchFlowNetTests/
   子密钥 = HKDF-SHA1(salt, info "ss-subkey")，每连接随机 salt，长度块与载荷块分别 AEAD，
   块上限 `0x3FFF`（协议 `0xFFFF` 内取更保守值），nonce 每块自增两次（小端）。
 - `trojan`：`NWProtocolTLS` + SNI（`outbound.sni ?? host`）+ `SHA224(password)` hex + CRLF + 命令 + SOCKS5 风格地址 + CRLF。
-- `reject`：抛 `TouchFlowError.blocked(...)`（不建连）。
+- `reject`：抛 `LeapinError.blocked(...)`（不建连）。
 
 ### P2 DNS
 
@@ -89,7 +89,7 @@ Tests/TouchFlowNetTests/
 - `MITMHandler`（`options.mitm` 且 host 命中 `mitmHosts` glob）：`200 Connection Established` → TLS 终结 →
   HTTP/1.1 请求解析（`Content-Length` / `chunked`）→ 上游转发（明文或 TLS）→ 响应体（CL / chunked / 读到 EOF）
   → `text/html` 且 `Content-Encoding: identity` 时注入
-  `<style id="touchflow-cosmetic-hide">selector{display:none!important}</style>` → 回写 → `capture?.capture(CapturedRequest)`。
+  `<style id="leapin-cosmetic-hide">selector{display:none!important}</style>` → 回写 → `capture?.capture(CapturedRequest)`。
 - `HARExporter`：标准 HAR 1.2（`log.version = "1.2"`，entries 含 timings / cache / content）；
   `redact=true` 时 Authorization / Proxy-Authorization / Cookie / Set-Cookie 的值改写为 `<redacted>`，
   URL 与 body 中的口令字段同样脱敏；body > 1 MB 截断并写 `comment`，`content.size` / `bodySize` 保留原始大小。
@@ -133,9 +133,9 @@ Tests/TouchFlowNetTests/
 
 ## 4. 测试与验收证据
 
-`swift build --target TouchFlowNet`：0 error / 0 warning（除仓库既有的 "unhandled file" 提示）。
+`swift build --target LeapinNet`：0 error / 0 warning（除仓库既有的 "unhandled file" 提示）。
 
-`swift test --filter TouchFlowNetTests`：**69 tests, 0 failures**（约 9s）。分布：
+`swift test --filter LeapinNetTests`：**69 tests, 0 failures**（约 9s）。分布：
 
 | 测试文件 | 用例 | 覆盖点 |
 | --- | --- | --- |

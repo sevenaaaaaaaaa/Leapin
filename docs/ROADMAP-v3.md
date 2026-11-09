@@ -1,4 +1,4 @@
-# TouchFlow 路线图 v3 · 从「代理客户端」到「可控的流量网关」
+# Leapin 路线图 v3 · 从「代理客户端」到「可控的流量网关」
 
 > 2026-11-05。取代 docs/PLAN-v2.md 的定位部分（那份是 v1.1 五项提升的交付报告，保留作历史）。
 > 本文回答三个问题：我们和 Surge 的差距到底在哪、哪些必须补、按什么顺序补才不会白烧。
@@ -102,8 +102,8 @@
 
 | 项 | 交付 | 证据 |
 | --- | --- | --- |
-| AUTO 真测速 | `HealthProber` 每 15s 对 url-test/fallback 成员做 TCP 握手，结果进 `TFHealth`；`PolicyResolver` 用 180s 内实测延迟选最快，50ms 容差滞回 | 规则页显示「当前 DIRECT / 最快 DIRECT 698 ms」，停代理回落「未运行 / 尚未测速」 |
-| PROCESS 接上 | 新增 C target `CTouchFlowProc`（libproc 枚举 ESTABLISHED TCP）+ `ProcessAttributor`（1s 快照、缓存 256） | 抓包详情与总览显示 `curl`；`PROCESS-NAME` 规则参与裁决 |
+| AUTO 真测速 | `HealthProber` 每 15s 对 url-test/fallback 成员做 TCP 握手，结果进 `LPHealth`；`PolicyResolver` 用 180s 内实测延迟选最快，50ms 容差滞回 | 规则页显示「当前 DIRECT / 最快 DIRECT 698 ms」，停代理回落「未运行 / 尚未测速」 |
+| PROCESS 接上 | 新增 C target `CLeapinProc`（libproc 枚举 ESTABLISHED TCP）+ `ProcessAttributor`（1s 快照、缓存 256） | 抓包详情与总览显示 `curl`；`PROCESS-NAME` 规则参与裁决 |
 | SRC-IP 接上 | `ConnectionMeta.sourceIP` 由 `ClientOrigin` 贯穿到 `RouteDecision` | `SRC-IP-CIDR` 单测命中；抓包详情显示客户端地址 |
 | 规则链 | `RuleChain`/`RuleChain.Step` 常驻 `RouteDecision.chain`，rule-set 成员各成一步，MATCH 标 final | 抓包详情「第 9 / 9 条 · FINAL,PROXY · 兜底 MATCH」 |
 | 不可拨协议 | `ImportReport.notDialable` + `annotateDialability`；导入报告与 `validate()` 双向提示 | `HonestyTests` vmess 不可拨 / 导入计数；报告页 amber 提示条 |
@@ -116,13 +116,13 @@
 | 项 | 交付 | 证据 |
 | --- | --- | --- |
 | 控制面 API | `ControlServer`（Network.framework，127.0.0.1:7900）：GET status/connections/policies/audit/events(SSE)，POST policies/select、reload、explain、dns/trace、http/probe | `scripts/control-e2e.sh` 22/22；curl status/connections/select/reload/events 全部通过 |
-| token 鉴权 + 审计 | `$TF_PROFILE_ROOT/control-token`（0700 目录 / 0600 文件 / 64 hex / 原子写）；`control-audit.jsonl` >5MB 轮转，记录 method/remote/allowed/action/status/path | e2e：无 token 401、错 token 401、权限 600、被拒请求与 reload 均落审计 |
+| token 鉴权 + 审计 | `$LEAPIN_PROFILE_ROOT/control-token`（0700 目录 / 0600 文件 / 64 hex / 原子写）；`control-audit.jsonl` >5MB 轮转，记录 method/remote/allowed/action/status/path | e2e：无 token 401、错 token 401、权限 600、被拒请求与 reload 均落审计 |
 | 局部 diff reload | `POST /v1/reload` 按 diff 应用，监听器不变；慢速下载贯穿 reload 不断流 | e2e：120000B 传输中 reload，`restarted=false`，连接保留；新规则立即生效 |
-| CLI 三件套 | `tfctl rules`（explain / --diagnose / --measure）、`dns --trace`、`http-probe`（3 跳重定向、逐跳地址、不走系统代理） | smoke 10/10；dns trace 输出 source/upstream/elapsedMs/cacheTTL；HTTPProbeTests 6 条本地测试 |
+| CLI 三件套 | `leapin rules`（explain / --diagnose / --measure）、`dns --trace`、`http-probe`（3 跳重定向、逐跳地址、不走系统代理） | smoke 10/10；dns trace 输出 source/upstream/elapsedMs/cacheTTL；HTTPProbeTests 6 条本地测试 |
 | 配置局部 diff | Clash / Surge 双向导入导出 `control-port` / `control-allow-lan`；GeneralConfig 宽容解码 | 导入导出测试与 e2e 实测 |
 | 规则索引 | 后缀反向标签 Trie + 精确域名字典 + AC 关键字 + IPv4/IPv6 前缀树 + PROCESS 字典；alwaysCheck 兜底 negate/AND/OR/NOT/GEOIP/REGEX | `RuleIndexDifferentialTests`：320 组随机规则集 × 12 meta（3840+ 次）与线性参考全字段一致 |
-| 10 万规则性能 | release 下 decide 走索引，首命中即停 | rules=100001、load=99.6ms、**p95=0.006ms**、p99=0.009ms（阈值 2ms / 300ms）；tfctl release 复核 p95=0.001ms |
-| 永不命中诊断 | `RuleEngine.diagnostics()` 五类（duplicate/shadowed/unreachable/never-match/rule-set-missing）；RulesView 侧栏 + 行徽标 + AddRuleSheet 预检 | `RuleDiagnosticsTests` 15 条；`tfctl rules --diagnose` 输出 #2 与被 #1 遮蔽 |
+| 10 万规则性能 | release 下 decide 走索引，首命中即停 | rules=100001、load=99.6ms、**p95=0.006ms**、p99=0.009ms（阈值 2ms / 300ms）；leapin release 复核 p95=0.001ms |
+| 永不命中诊断 | `RuleEngine.diagnostics()` 五类（duplicate/shadowed/unreachable/never-match/rule-set-missing）；RulesView 侧栏 + 行徽标 + AddRuleSheet 预检 | `RuleDiagnosticsTests` 15 条；`leapin rules --diagnose` 输出 #2 与被 #1 遮蔽 |
 
 测试：178 条（Core 1 / Policy 75 / Net 75 / Integrations 11 / Control 16），0 failures；control-e2e 22/22；smoke 10/10。
 未做 / 未验证：JavaScript 脚本沙箱（P3 第三项）未开始；编辑器诊断未做真实窗口目视取证；`diagnostics()` 不递归 RULE-SET 成员；
@@ -136,15 +136,15 @@ P3 剩余：JavaScript 脚本沙箱（JSC 常驻 context + 50ms 硬超时）。
 
 | 项 | 交付 | 证据 |
 | --- | --- | --- |
-| 设备身份 | Ed25519（CryptoKit），只存 32 字节 seed；默认登录钥匙串，回落 0600 文件；`deviceID` = SHA-256(公钥) 前 16 字节，`fingerprint` 按 4-hex 分组 | `tfctl device`；DeviceIdentityTests 5 条（签名/篡改/±300s/0600/重载稳定） |
+| 设备身份 | Ed25519（CryptoKit），只存 32 字节 seed；默认登录钥匙串，回落 0600 文件；`deviceID` = SHA-256(公钥) 前 16 字节，`fingerprint` 按 4-hex 分组 | `leapin device`；DeviceIdentityTests 5 条（签名/篡改/±300s/0600/重载稳定） |
 | 版本模型 | content-addressed（规范化 JSON 的 SHA-256，排除本地 UUID 与 sourcePath）；只增不改；`ingest` 重算 hash 拒绝损坏内容 | ProfileVersionStoreTests 6 条；e2e 首版本 + 离线版本 |
 | 指针与 override | 每设备 LWW 指针（updatedAtMs → deviceID 破平局，单调）；本机 override 永不同步 | 单测 monotonic/tie-break/override；e2e override 固定回 v1 且 A 不受影响 |
 | 局域网同步 | 明文 HTTP/1.1：`/v1/info`、`/v1/pair`、`/v1/manifest`、`/v1/versions/<id>`、`/v1/announce`；Ed25519 签名信封（method+path+bodyHash+ts+nonce），±300s + nonce 缓存，重放 409；配对码 6 位/300s/单次/常量时间 | SyncTransportTests 8 条；`scripts/sync-e2e.sh` 36/36；配对→拉取→应用 0.19s（阈值 5s） |
 | 只读远端面板 | `GET /panel`（HTML）+ `/panel.json`；令牌 32 字节 CSPRNG（0600、目录 0700、每请求重读、`--rotate` 即时生效）；只出元数据不出规则/凭据；无脚本无外链；写方法 405 | SyncPanelTests 5 条；e2e 面板 10 项断言（401/405/0600/不含规则值/版本数/生效版本） |
-| CLI | `tfctl device`、`sync status/versions/record/serve/pair/pull/apply/override/peers/unpair/panel` | e2e 全流程；`tfctl sync --help` |
+| CLI | `leapin device`、`sync status/versions/record/serve/pair/pull/apply/override/peers/unpair/panel` | e2e 全流程；`leapin sync --help` |
 | 修复的真实缺陷 | `PeerRegistry.upsert/touch` 持有 NSLock 时重入 `peer(deviceID:)` → 首次配对死锁、全量测试挂起；改 `peerLocked` + 3s 回归测试 | `sample` 栈指向 `PeerRegistry.upsert`；tests 201 passed 全绿 |
 
-未做：App 内同步页与面板开关（当前入口是 `tfctl sync serve`，前台进程、无后台自动同步）、真实双机 LAN 验证、
+未做：App 内同步页与面板开关（当前入口是 `leapin sync serve`，前台进程、无后台自动同步）、真实双机 LAN 验证、
 iPhone 浏览器渲染取证、配对码失败退避、`SyncPeer.scopes` 强制、云端 E2EE；
 路线图 P2 验收里的「iPhone 切节点不影响 Mac」未验证（没有 iOS 客户端，只读面板不能切换节点；设备级 override 只验证了本机固定版本）。详见 docs/SYNC.md §8。
 
@@ -159,3 +159,14 @@ iPhone 浏览器渲染取证、配对码失败退避、`SyncPeer.scopes` 强制�
 - 需拍板的两项 P1 接口变更：SSE 回放缓冲泛化（ControlServer.swift:186-192/247-251）、
   审计改 Engine 单写者 + `ControlAuditRecord` 可选字段（ControlContract.swift:186-209）。
 - 交付边界：P4/P5/P6 **零实现**；等 Developer ID + NE entitlement 到位后才进入 P4a。
+
+## 13. 改名：TouchFlow → Leapin（v1.8，2026-11-10）
+
+- 品牌：`LEAPIN` / `Leapin` / `leapin`；中文「一跃」；口号 `One leap. No detour.`。理由与用法见 docs/BRAND.md。
+- 范围：Swift 模块/类型、`TF`→`LP`、`tfctl`→`leapin`、bundle id `com.leapin.app`、App `Leapin.app`、
+  数据目录、钥匙串 service、URL scheme、环境变量 `TF_*`→`LEAPIN_*`。
+- 兼容：旧数据目录一次性复制（保留旧目录）、设备身份自动迁移（deviceID 不变）、旧命名广告列表迁移、
+  旧 CA 继续沿用（CN 暂保留 `TouchFlow Root CA`，避免用户重装证书）。
+- 验证：fresh build 0 warning；205 passed / 1 skipped；sync-e2e 36/36、control-e2e 22/22、smoke 10/10；
+  `dist/Leapin.app` 的 bundle id / executable / 签名已核对。详见 docs/VERIFICATION.md §0.6。
+- 后续：工作区目录仍叫 `TouchFlow`（会话 cwd，未动）；GitHub 仓库名与推送待定；真实钥匙串凭据迁移未验证。

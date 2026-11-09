@@ -1,4 +1,4 @@
-# TouchFlowPolicy 交付说明
+# LeapinPolicy 交付说明
 
 > 目标：在不新增任何 SPM 依赖的前提下，实现 rules / policy group / adblock 三块的
 > public API（签名见 `docs/ARCHITECTURE.md` 第 3 节），并对超出本轮范围的行为做**诚实降级**——
@@ -7,7 +7,7 @@
 ## 0. 文件布局
 
 ```
-Sources/TouchFlowPolicy/
+Sources/LeapinPolicy/
   _Target.swift                 模块版本号占位（原有）
   Support/IPAddress.swift       IPParse(ipv4/ipv6) / CIDR / HostNormalizer
   Rules/RuleParser.swift        RuleParser + RuleParseError
@@ -17,13 +17,13 @@ Sources/TouchFlowPolicy/
   Rules/RuleSetLoader.swift     RuleSetLoader（本地 + http(s) + 磁盘缓存）
   AdBlock/FilterParser.swift    FilterRule / CosmeticRule / FilterParser
   AdBlock/AdBlockEngine.swift   AdBlockEngine（反转标签 Trie）
-Tests/TouchFlowPolicyTests/
+Tests/LeapinPolicyTests/
   PolicyTests.swift             14 个用例（见第 8 节）
   PlaceholderTests.swift        模块可加载冒烟用例（原有，保留）
 ```
 
-依赖：仅 `TouchFlowCore`（`OutboundConfig`/`Profile`/`Rule`/`ConnectionMeta`/`RouteDecision`/
-`BlockVerdict`/`TFLog`）。`Foundation` 之外无第三方库。
+依赖：仅 `LeapinCore`（`OutboundConfig`/`Profile`/`Rule`/`ConnectionMeta`/`RouteDecision`/
+`BlockVerdict`/`LPLog`）。`Foundation` 之外无第三方库。
 
 ## 1. RuleParser
 
@@ -90,7 +90,7 @@ Clash 的 `MATCH` 省略策略写法；`DOMAIN-WILDCARD` 降级成 `DOMAIN-SUFFI
 4. 都没有 → `OutboundConfig.direct`。
 
 - 组内成员可以是另一个组名：递归展开，带路径栈防环；命中环时 `resolve` 回落 DIRECT 并
-  `TFLog.warn("policy", "policy group cycle detected: …")`。
+  `LPLog.warn("policy", "policy group cycle detected: …")`。
 - `reject` 类型组直接返回 `OutboundConfig.reject`；成员名 `DIRECT`/`REJECT` 直接映射到对应
   outbound；其余名字按 `profile.outbound(named:)`（大小写不敏感）找具体 outbound。
 - 未知策略名（既不是组也不是 outbound）→ 回落 DIRECT，`validate()` 会报告。
@@ -151,7 +151,7 @@ AdBlockEngine：
 - 本地路径（`~` 展开；相对路径先按当前目录，失败再按 cacheDirectory）；
 - `http(s)://` URL：`URLSession.shared` 拉取，成功写缓存
   `<cacheDirectory>/rule-sets/<FNV-1a64(source)>.<ext>`；
-- 网络失败/非 2xx → 退回缓存文件（`TFLog.warn`），缓存也没有 → 空数组（`TFLog.warn`），不崩；
+- 网络失败/非 2xx → 退回缓存文件（`LPLog.warn`），缓存也没有 → 空数组（`LPLog.warn`），不崩；
 - 内容过 `RuleParser.parseRules`，单行错误只记一条汇总 warn（`skipped N line(s) — <首个错误>`）；
 - 返回 `[名字: [Rule]]`，名字 = 文件名去扩展名（小写）。
 
@@ -180,7 +180,7 @@ AdBlockEngine：
 
 ## 8. 测试
 
-`swift test --filter TouchFlowPolicyTests`：**14 个用例全绿**。
+`swift test --filter LeapinPolicyTests`：**14 个用例全绿**。
 
 覆盖：Surge 样例、Clash 样例 + 大小写不敏感 + YAML 引号、AND/OR/NOT（含嵌套）、顺序与
 `explain` trace、CIDR v4/v6 与 no-resolve、PROCESS-NAME/GEOIP、策略组（select/url-test/fallback/

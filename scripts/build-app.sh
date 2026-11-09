@@ -1,21 +1,21 @@
 #!/bin/bash
-# Build TouchFlow.app + tfctl into ./dist
+# Build Leapin.app + leapin into ./dist
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONFIG="${1:-release}"
-APP="dist/TouchFlow.app"
+APP="dist/Leapin.app"
 
 echo "==> swift build -c ${CONFIG}"
-swift build -c "${CONFIG}" --product TouchFlowApp
-swift build -c "${CONFIG}" --product tfctl
+swift build -c "${CONFIG}" --product LeapinApp
+swift build -c "${CONFIG}" --product leapin
 BIN="$(swift build -c "${CONFIG}" --show-bin-path)"
 
 echo "==> assemble ${APP}"
 rm -rf "${APP}"
 mkdir -p "${APP}/Contents/MacOS" "${APP}/Contents/Resources"
-cp "${BIN}/TouchFlowApp" "${APP}/Contents/MacOS/TouchFlowApp"
-cp "${BIN}/tfctl" "${APP}/Contents/MacOS/tfctl"
+cp "${BIN}/LeapinApp" "${APP}/Contents/MacOS/LeapinApp"
+cp "${BIN}/leapin" "${APP}/Contents/MacOS/leapin"
 cp scripts/Info.plist "${APP}/Contents/Info.plist"
 if [ -f Assets/AppIcon.icns ]; then
     mkdir -p "${APP}/Contents/Resources"
@@ -24,7 +24,7 @@ if [ -f Assets/AppIcon.icns ]; then
       || /usr/libexec/PlistBuddy -c "Set :CFBundleIconFile AppIcon" "${APP}/Contents/Info.plist"
 fi
 
-# SwiftPM resource bundles (TouchFlow_TouchFlowRuntime.bundle etc.)
+# SwiftPM resource bundles (Leapin_LeapinRuntime.bundle etc.)
 for b in "${BIN}"/*.bundle; do
     [ -e "$b" ] && cp -R "$b" "${APP}/Contents/Resources/"
 done
@@ -34,5 +34,5 @@ codesign --force --deep --sign - "${APP}" >/dev/null 2>&1 || echo "warn: codesig
 codesign -dv "${APP}" 2>&1 | head -3 || true
 
 echo "==> done: ${APP}"
-echo "   open dist/TouchFlow.app"
-echo "   dist/TouchFlow.app/Contents/MacOS/tfctl run"
+echo "   open dist/Leapin.app"
+echo "   dist/Leapin.app/Contents/MacOS/leapin run"

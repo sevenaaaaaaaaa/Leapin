@@ -5,7 +5,7 @@
 
 ## 0. 范围
 
-**已交付**：Ed25519 设备身份、content-addressed 配置版本、局域网配对与签名同步、设备级 override、只读 Web 面板、tfctl 子命令、单元测试与双存储端到端脚本。
+**已交付**：Ed25519 设备身份、content-addressed 配置版本、局域网配对与签名同步、设备级 override、只读 Web 面板、leapin 子命令、单元测试与双存储端到端脚本。
 
 **未交付（明确不做）**：App 内同步页、自动后台同步、局域网发现（Bonjour）、云端 E2EE、设备权限 scope 的执行（记录但未强制）、iOS 客户端。P4+ 需要 Network Extension 签名，本期只做设计。
 
@@ -20,15 +20,16 @@
 ## 2. 设备身份
 
 - 密钥：Ed25519（CryptoKit `Curve25519.Signing`），只持久化 32 字节 seed。
-- 默认存登录钥匙串：service `com.touchflow.device`，account `identity.ed25519`。
-- CLI/CI 无钥匙串权限时回落到 `$TF_PROFILE_ROOT/device/device.key`（目录 0700、文件 0600、原子写）；测试用内存实现，绝不碰真实钥匙串。
+- 默认存登录钥匙串：service `com.leapin.device`，account `identity.ed25519`。v1.8 改名后首次运行会从
+  `com.touchflow.device` 迁移一次，deviceID 不变，已配对设备与版本指针不受影响。
+- CLI/CI 无钥匙串权限时回落到 `$LEAPIN_PROFILE_ROOT/device/device.key`（目录 0700、文件 0600、原子写）；测试用内存实现，绝不碰真实钥匙串。
 - `deviceID` = SHA-256(公钥) 前 16 字节的 hex（32 字符）。
 - `fingerprint` = 同一摘要前 8 字节，按 4 个 hex 一组：`0b22-21b8-7708-9a61`。
 - 配对时只交换**公钥**与指纹；私钥永不离开本机，也不进日志。
 
 ```bash
-tfctl device               # 设备 ID / 指纹 / 名称 / 公钥
-tfctl device --json
+leapin device               # 设备 ID / 指纹 / 名称 / 公钥
+leapin device --json
 ```
 
 指纹用于带外核对（两台设备各自读屏）：配对握手本身不防「中间人替换公钥」，指纹比对是最后一道人工校验。
@@ -39,7 +40,7 @@ tfctl device --json
 
 **排除**：profile 的本地 UUID、`sourcePath`、磁盘文件名。因此同一个订阅在英国导入与在国内导入会得到同一个版本 id；本机 UUID 由版本 id 前 32 个 hex 确定性派生（`ProfileSyncService.stableUUID`），重复 apply 不会产生重复配置。
 
-目录（`$TF_PROFILE_ROOT/sync/`）：
+目录（`$LEAPIN_PROFILE_ROOT/sync/`）：
 
 | 路径 | 内容 | 权限 |
 | --- | --- | --- |
@@ -69,7 +70,7 @@ Mutations：`put`（本地新版本，幂等）、`ingest`（对端版本，先�
 | GET | `/panel`、`/panel.json` | 面板令牌（query 或 Bearer） |
 | 其它方法 | `/panel*` | 405（面板只读） |
 
-签名信封覆盖 `TF-SYNC-1\nMETHOD\nPATH\nSHA256(body)\nTIMESTAMP_MS\nNONCE`，请求头 `X-TF-Device` / `X-TF-Timestamp` / `X-TF-Nonce` / `X-TF-Signature`。服务端：
+签名信封覆盖 `LP-SYNC-1\nMETHOD\nPATH\nSHA256(body)\nTIMESTAMP_MS\nNONCE`，请求头 `X-LP-Device` / `X-LP-Timestamp` / `X-LP-Nonce` / `X-LP-Signature`。服务端：
 
 - 时间戳容差 ±300 秒（`stale_timestamp` → 401）；
 - nonce 缓存 600 秒、上限 8192 条，重复即 `replay` → 409；
@@ -92,29 +93,29 @@ Mutations：`put`（本地新版本，幂等）、`ingest`（对端版本，先�
 ## 6. CLI
 
 ```bash
-tfctl device [--json]                          # 设备身份
-tfctl sync status [--json]                     # 版本数、生效版本、已应用、已配对
-tfctl sync versions                            # 全量历史（* = 来源指针，▶ = 生效）
-tfctl sync record [--profile file.surge]       # 把当前/指定配置记为新版本
-tfctl sync serve [--port N] [--lan] [--no-panel]   # 启动同步服务，打印端口/配对码/面板链接
-tfctl sync pair <host:port> --code NNNNNN      # 首次配对（单次、5 分钟）
-tfctl sync pull <host:port>                    # 拉取 + 收敛 + 自动应用生效版本
-tfctl sync apply [--version <id>]              # 应用指定/生效版本
-tfctl sync override <id>|--clear               # 本机固定版本 / 取消
-tfctl sync peers                               # 列出已配对设备
-tfctl sync unpair <id|名称>                    # 解除配对（撤销该设备签名权限）
-tfctl sync panel [--rotate] [--port N] [--json]   # 只读面板链接与令牌
+leapin device [--json]                          # 设备身份
+leapin sync status [--json]                     # 版本数、生效版本、已应用、已配对
+leapin sync versions                            # 全量历史（* = 来源指针，▶ = 生效）
+leapin sync record [--profile file.surge]       # 把当前/指定配置记为新版本
+leapin sync serve [--port N] [--lan] [--no-panel]   # 启动同步服务，打印端口/配对码/面板链接
+leapin sync pair <host:port> --code NNNNNN      # 首次配对（单次、5 分钟）
+leapin sync pull <host:port>                    # 拉取 + 收敛 + 自动应用生效版本
+leapin sync apply [--version <id>]              # 应用指定/生效版本
+leapin sync override <id>|--clear               # 本机固定版本 / 取消
+leapin sync peers                               # 列出已配对设备
+leapin sync unpair <id|名称>                    # 解除配对（撤销该设备签名权限）
+leapin sync panel [--rotate] [--port N] [--json]   # 只读面板链接与令牌
 ```
 
 退出即停；`serve` 是前台进程，Ctrl-C 停止（SIGINT handler 保证 listener 关闭）。
 
 ## 7. 只读面板
 
-`tfctl sync serve` 默认同时开启，`--no-panel` 关闭。
+`leapin sync serve` 默认同时开启，`--no-panel` 关闭。
 
 - URL：`http://<host>:<port>/panel?token=<64-hex>`；也接受 `Authorization: Bearer <token>`。
-- 令牌：32 字节 CSPRNG，hex 编码；文件 `$TF_PROFILE_ROOT/sync/panel-token`（0600，目录 0700）。
-- 每次请求重新读令牌文件，因此 `tfctl sync panel --rotate` **即时生效**，无需重启服务。
+- 令牌：32 字节 CSPRNG，hex 编码；文件 `$LEAPIN_PROFILE_ROOT/sync/panel-token`（0600，目录 0700）。
+- 每次请求重新读令牌文件，因此 `leapin sync panel --rotate` **即时生效**，无需重启服务。
 - 内容：设备名/ID/指纹、版本历史（id 前缀、名称、规则数、来源设备、时间、生效标记）、每台设备指针、已配对设备与最近可见时间。**不含规则、出站、DNS 配置、凭据。**
 - 纯静态 HTML + 内联 CSS：无脚本、无外链、无表单；所有插值 HTML-escape；任何写方法 405。
 - 风险：令牌放在 URL 里会进浏览器历史/代理日志；只读且可轮换，属于可接受的折中。面板默认只绑定 127.0.0.1，`--lan` 才绑 0.0.0.0。
@@ -136,7 +137,7 @@ tfctl sync panel [--rotate] [--port N] [--json]   # 只读面板链接与令牌
 ```bash
 swift build --scratch-path .build
 swift test --scratch-path .build
-TFCTL=.build/debug/tfctl ./scripts/sync-e2e.sh
+LEAPIN_BIN=.build/debug/leapin ./scripts/sync-e2e.sh
 ```
 
-`scripts/sync-e2e.sh` 用两个隔离的 `TF_PROFILE_ROOT` 建两台设备（A/B），验证：首版本、配对、5 秒内收敛、离线改动、重连推送、override、错误配对码、面板鉴权/只读/元数据。所有密钥走 0600 文件（`TF_SYNC_FILE_KEY=1`），不碰真实钥匙串。
+`scripts/sync-e2e.sh` 用两个隔离的 `LEAPIN_PROFILE_ROOT` 建两台设备（A/B），验证：首版本、配对、5 秒内收敛、离线改动、重连推送、override、错误配对码、面板鉴权/只读/元数据。所有密钥走 0600 文件（`LEAPIN_SYNC_FILE_KEY=1`），不碰真实钥匙串。
