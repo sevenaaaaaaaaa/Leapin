@@ -15,6 +15,7 @@ struct CaptureView: View {
     @State private var showMITMWarning = false
     @State private var showClearConfirm = false
     @State private var paused = false
+    @State private var showObservation = false
     @State private var frozen: [CapturedRequest] = []
     @State private var statusFilter: StatusFilter = .all
     @FocusState private var searchFocused: Bool
@@ -123,6 +124,18 @@ struct CaptureView: View {
             .padding(.bottom, 24)
         }
         .onExitCommand { selected = nil }
+        .sheet(isPresented: $showObservation) {
+            NavigationStack {
+                ObservationView()
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("关闭") { showObservation = false }
+                        }
+                    }
+            }
+            .environmentObject(app)
+            .frame(minWidth: 1000, minHeight: 720)
+        }
         .navigationTitle("抓包")
         .alert("HTTPS 解密需要信任证书", isPresented: $showMITMWarning) {
             Button("去安装 CA") { app.installCA() }
@@ -196,6 +209,19 @@ struct CaptureView: View {
             }
 
             Rectangle().fill(LP.strokeStrong.opacity(0.6)).frame(width: 1, height: 16)
+
+            Button {
+                showObservation = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("观测")
+                        .font(.system(size: 12, weight: .medium))
+                }
+            }
+            .buttonStyle(LPGhostButtonStyle())
+            .help("实时观测：连接、流量与规则链路")
 
             Button { exportHAR() } label: {
                 HStack(spacing: 4) {

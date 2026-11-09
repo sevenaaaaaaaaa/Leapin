@@ -145,7 +145,7 @@ final class AppModel: ObservableObject {
 
         var subtitle: String {
             switch self {
-            case .dashboard: return "实时状态、端点与分流解释"
+            case .dashboard: return "功能入口与当前配置"
             case .rules: return "Clash / Surge 规则、策略组与规则集"
             case .adblock: return "过滤列表、拦截统计与白名单"
             case .capture: return "HTTP(S) 请求抓取与 HAR 导出"
@@ -369,7 +369,7 @@ final class AppModel: ObservableObject {
 @MainActor
 struct RootView: View {
     @EnvironmentObject private var app: AppModel
-    @ObservedObject private var engine = LeapinEngine.shared
+    private let engine = LeapinEngine.shared
 
     var body: some View {
         GeometryReader { geo in
