@@ -643,7 +643,7 @@ struct AddRuleSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            LPEyebrow(text: "新建规则 / NEW RULE")
+            LPEyebrow(text: "新建规则 / New rule")
                 .padding(.bottom, 7)
             Text("添加分流规则")
                 .font(LPFont.display(20, weight: .semibold))

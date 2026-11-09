@@ -59,12 +59,6 @@ enum LP {
         LinearGradient(colors: [accent, dyn(hex(0x8E2606), hex(0xD9502A))],
                        startPoint: .topLeading, endPoint: .bottomTrailing)
     }
-    // Ambient light behind the glass. Very low chroma: enough for the material to
-    // refract and for edges to read, never enough to become decoration.
-    static let bloomCool = dyn(hex(0xCBDFF6), hex(0x14243C))
-    static let bloomWarm = dyn(hex(0xF2DADD), hex(0x2E1A20))
-    static let bloomViolet = dyn(hex(0xD9D9F2), hex(0x1F1E3E))
-
     // Metrics — 8pt rhythm.
     static let radius: CGFloat = 10
     static let radiusSmall: CGFloat = 6
@@ -108,15 +102,8 @@ struct LPBackground: View {
                 // this wash is the only thing between the wallpaper and the text.
                 LP.bg.opacity(0.40)
             }
-            RadialGradient(colors: [LP.bloomCool.opacity(0.55), .clear],
-                           center: UnitPoint(x: 0.08, y: 0.0),
-                           startRadius: 40, endRadius: 720)
-            RadialGradient(colors: [LP.bloomWarm.opacity(0.32), .clear],
-                           center: UnitPoint(x: 0.98, y: 0.06),
-                           startRadius: 20, endRadius: 520)
-            RadialGradient(colors: [LP.bloomViolet.opacity(0.38), .clear],
-                           center: UnitPoint(x: 0.45, y: 1.08),
-                           startRadius: 40, endRadius: 760)
+            LinearGradient(colors: [LP.bgDeep.opacity(0.55), .clear],
+                           startPoint: .topTrailing, endPoint: .center)
         }
         .ignoresSafeArea()
     }
@@ -154,12 +141,7 @@ private struct LPGlassSurface<S: InsettableShape>: ViewModifier {
             content
                 .glassEffect(glass, in: shape)
                 .overlay(
-                    shape.strokeBorder(
-                        LinearGradient(colors: [.white.opacity(0.92), .white.opacity(0.34),
-                                                .black.opacity(0.05), .white.opacity(0.26)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing),
-                        lineWidth: 1
-                    )
+                    shape.strokeBorder(LP.stroke, lineWidth: 1)
                     .allowsHitTesting(false)
                 )
                 .shadow(color: .black.opacity(shadow), radius: 20, x: 0, y: 9)
@@ -243,7 +225,7 @@ extension View {
         self.frame(maxWidth: 1180, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .top)
             .padding(.horizontal, 32)
-            .padding(.vertical, 26)
+            .padding(.vertical, 24)
     }
 
     /// Hover feedback for interactive cards/rows. Subtle: 1pt lift, not a bounce.
@@ -359,7 +341,7 @@ struct LPEyebrow: View {
     var body: some View {
         Text(text)
             .font(LPFont.mono(10, weight: .medium))
-            .tracking(1.5)
+            .tracking(0.5)
             .foregroundStyle(tint)
     }
 }

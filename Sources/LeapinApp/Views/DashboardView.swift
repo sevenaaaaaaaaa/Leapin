@@ -21,7 +21,7 @@ struct DashboardView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 22) {
+            VStack(spacing: 24) {
                 hero.lpAppear(0)
                 // 首屏只留「现在在发生什么」：状态 + 计数 + 最近的连接。
                 // 引导条仅在 hero 推断不出下一步时出现（启动失败 / 已启动但系统代理未接管）。
@@ -30,7 +30,7 @@ struct DashboardView: View {
                 }
                 instrumentPanel.lpAppear(0.08)
                 recentFlows.lpAppear(0.12)
-                HStack(alignment: .top, spacing: 22) {
+                HStack(alignment: .top, spacing: 24) {
                     endpoints
                     explainer
                 }
@@ -69,8 +69,8 @@ struct DashboardView: View {
     private var hero: some View {
         HStack(alignment: .top, spacing: 28) {
             VStack(alignment: .leading, spacing: 0) {
-                LPEyebrow(text: "当前配置 / ACTIVE PROFILE")
-                    .padding(.bottom, 9)
+                LPEyebrow(text: "当前配置 / Active profile")
+                    .padding(.bottom, 8)
 
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text(engine.profile.name)
@@ -85,9 +85,8 @@ struct DashboardView: View {
 
                 Text(statusLine)
                     .font(LPFont.serif(13.5))
-                    .italic()
                     .foregroundStyle(LP.textSecondary)
-                    .padding(.top, 7)
+                    .padding(.top, 8)
 
                 HStack(spacing: 6) {
                     StatusChip(state: engine.state, plain: true)
@@ -114,13 +113,13 @@ struct DashboardView: View {
 
             Spacer(minLength: 12)
 
-            VStack(alignment: .trailing, spacing: 13) {
+            VStack(alignment: .trailing, spacing: 12) {
                 Button {
                     app.toggle()
                 } label: {
                     HStack(spacing: 7) {
                         Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 12, weight: .bold))
                         Text(engine.state == .running ? "停止代理" : "启动代理")
                             .font(.system(size: 12, weight: .semibold))
                     }
@@ -143,7 +142,7 @@ struct DashboardView: View {
                 }
             }
         }
-        .padding(.horizontal, 26)
+        .padding(.horizontal, 24)
         .padding(.vertical, 20)
         .lpGlass(radius: LPGlass.panelRadius,
                  fallbackFill: LP.panel,
@@ -153,7 +152,7 @@ struct DashboardView: View {
             Capsule()
                 .fill(LP.accent)
                 .frame(width: 44, height: 2)
-                .padding(.leading, 26)
+                .padding(.leading, 24)
         }
         .shadow(color: .black.opacity(0.04), radius: 18, y: 8)
     }
@@ -254,7 +253,7 @@ struct DashboardView: View {
                     LPMotion.run(LPMotion.quick) { _ = dismissedHints.insert(step.id) }
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(LP.textTertiary)
                         .padding(5)
                         .contentShape(Rectangle())
@@ -308,7 +307,7 @@ struct DashboardView: View {
     private var trafficSeismograph: some View {
         HStack(alignment: .center, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
-                LPEyebrow(text: "流量 / 60S")
+                LPEyebrow(text: "流量 / 60s")
                 HStack(spacing: 14) {
                     legend(color: LP.text.opacity(0.85), dashed: false, text: "↓ \(rateInText)")
                     legend(color: LP.textTertiary, dashed: true, text: "↑ \(rateOutText)")
@@ -419,7 +418,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: primary ? 8 : 7) {
             LPEyebrow(text: label, tint: primary ? LP.textSecondary : LP.textTertiary)
             Text(value)
-                .font(LPFont.num(primary ? 34 : 21, weight: primary ? .medium : .regular))
+                .font(LPFont.num(primary ? 28 : 21, weight: primary ? .medium : .regular))
                 .foregroundStyle(LP.text)
                 .lineLimit(1)
                 .truncationMode(.tail)
@@ -428,7 +427,7 @@ struct DashboardView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 18)
-        .padding(.vertical, 15)
+        .padding(.vertical, 16)
     }
 
     // MARK: Endpoints
@@ -436,7 +435,7 @@ struct DashboardView: View {
     private var endpoints: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                LPEyebrow(text: "本地端点 / ENDPOINTS")
+                LPEyebrow(text: "本地端点 / Endpoints")
                 Spacer()
                 Text("点击复制")
                     .font(LPFont.mono(10))
@@ -458,7 +457,7 @@ struct DashboardView: View {
 
             HStack(spacing: 9) {
                 Image(systemName: "checkmark.shield")
-                    .font(.system(size: 10))
+                    .font(.system(size: 12))
                     .foregroundStyle(LP.mint)
                 Text("本机流量不离开 127.0.0.1，除非命中规则")
                     .font(.system(size: 10))
@@ -510,16 +509,16 @@ struct DashboardView: View {
     private var explainer: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                LPEyebrow(text: "分流解释器 / RESOLVE")
+                LPEyebrow(text: "分流解释器 / Resolve")
                 Spacer()
                 Image(systemName: "point.topleft.down.curvedto.point.bottomright.up")
-                    .font(.system(size: 10))
+                    .font(.system(size: 12))
                     .foregroundStyle(LP.textTertiary)
             }
 
             HStack(spacing: 9) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 10))
+                    .font(.system(size: 12))
                     .foregroundStyle(probeFocused ? LP.accent : LP.textTertiary)
                 TextField("例如 api.spotify.com", text: $probeHost)
                     .textFieldStyle(.plain)
@@ -533,7 +532,7 @@ struct DashboardView: View {
                         probeVerdict = nil
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 9))
+                            .font(.system(size: 12))
                             .foregroundStyle(LP.textTertiary)
                     }
                     .buttonStyle(.plain)
@@ -542,7 +541,7 @@ struct DashboardView: View {
                 Button(action: runProbe) {
                     HStack(spacing: 4) {
                         Text("判断").font(.system(size: 12, weight: .semibold))
-                        Image(systemName: "arrow.right").font(.system(size: 9, weight: .bold))
+                        Image(systemName: "arrow.right").font(.system(size: 12, weight: .bold))
                     }
                     .foregroundStyle(probeReady ? LP.accent : LP.textTertiary)
                 }
@@ -560,7 +559,7 @@ struct DashboardView: View {
 
             if probe == nil {
                 VStack(alignment: .leading, spacing: 7) {
-                    LPEyebrow(text: "快速样例 / SAMPLE")
+                    LPEyebrow(text: "快速样例 / Sample")
                     HStack(spacing: 6) {
                         sample("api.spotify.com")
                         sample("github.com")
@@ -584,7 +583,7 @@ struct DashboardView: View {
                     }
                     if let verdict = probeVerdict, verdict.blocked {
                         HStack(spacing: 5) {
-                            Image(systemName: "nosign").font(.system(size: 9, weight: .bold))
+                            Image(systemName: "nosign").font(.system(size: 12, weight: .bold))
                             Text("去广告拦截：\(verdict.reason ?? "")")
                                 .font(.system(size: 10, weight: .medium))
                         }
@@ -613,7 +612,7 @@ struct DashboardView: View {
                 Spacer(minLength: 0)
             } else if !app.isRunning {
                 HStack(spacing: 6) {
-                    Image(systemName: "info.circle").font(.system(size: 10))
+                    Image(systemName: "info.circle").font(.system(size: 12))
                     Text("启动代理后可用；判断在本地完成，不会发出请求。")
                         .font(.system(size: 10))
                 }
@@ -621,7 +620,7 @@ struct DashboardView: View {
                 Spacer(minLength: 0)
             } else {
                 HStack(spacing: 6) {
-                    Image(systemName: "return").font(.system(size: 9))
+                    Image(systemName: "return").font(.system(size: 12))
                     Text("输入后按 ↩ 立即判断，只在本地计算。")
                         .font(.system(size: 10))
                 }
@@ -670,7 +669,7 @@ struct DashboardView: View {
     private var recentFlows: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                LPEyebrow(text: "最近连接 / RECENT")
+                LPEyebrow(text: "最近连接 / Recent")
                 Spacer()
                 if !engine.flows.isEmpty {
                     Button("打开抓包") { app.go(to: .capture) }

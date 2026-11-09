@@ -73,7 +73,7 @@ struct ProfilesView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 16) {
                 VStack(alignment: .leading, spacing: 7) {
-                    LPEyebrow("当前配置 / ACTIVE PROFILE")
+                    LPEyebrow("当前配置 / Active profile")
 
                     Text(engine.profile.name)
                         .font(LPFont.display(20, weight: .semibold))

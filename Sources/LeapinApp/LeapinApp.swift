@@ -508,7 +508,7 @@ private struct SidebarView: View {
             brand
                 .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
                 .padding(.horizontal, compact ? 0 : 18)
-                .padding(.top, 22)
+                .padding(.top, 24)
                 .padding(.bottom, 20)
 
             paletteEntry
@@ -592,7 +592,7 @@ private struct SidebarView: View {
             } else {
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(LP.textTertiary)
                     Text("搜索或跳转")
                         .font(.system(size: 12))
@@ -637,7 +637,7 @@ private struct SidebarView: View {
                         .tracking(-0.2)
                         .foregroundStyle(LP.text)
                     Text("ONE LEAP · NO DETOUR")
-                        .font(LPFont.mono(7, weight: .medium))
+                        .font(LPFont.mono(8, weight: .medium))
                         .tracking(1.5)
                         .foregroundStyle(LP.textTertiary)
                 }

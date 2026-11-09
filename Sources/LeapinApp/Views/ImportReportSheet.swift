@@ -39,7 +39,7 @@ struct ImportReportSheet: View {
                 .frame(width: 22, height: 22)
 
             VStack(alignment: .leading, spacing: 5) {
-                LPEyebrow(blocking ? "IMPORT REPORT · BLOCKED" : "IMPORT REPORT", tint: LP.textTertiary)
+                LPEyebrow(blocking ? "Import report · blocked" : "Import report", tint: LP.textTertiary)
                 Text(blocking ? "导入未完成" : report.isClean ? "导入成功" : "导入完成，有需要留意的地方")
                     .font(LPFont.display(15, weight: .semibold))
                     .foregroundStyle(LP.text)

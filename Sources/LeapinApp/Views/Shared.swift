@@ -395,7 +395,7 @@ struct LPCopyButton: View {
             }
         } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.system(size: 9, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(copied ? LP.mint : LP.textTertiary)
                 .frame(width: 18, height: 18)
                 .contentShape(Rectangle())

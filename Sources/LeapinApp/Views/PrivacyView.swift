@@ -56,7 +56,7 @@ struct PrivacyView: View {
         return VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 30) {
                 VStack(alignment: .leading, spacing: 10) {
-                    LPEyebrow(text: "隐私健康度 / PRIVACY SCORE")
+                    LPEyebrow(text: "隐私健康度 / Privacy score")
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         if hasSample {
                             Text("\(r.score)")

@@ -77,7 +77,7 @@ struct CaptureView: View {
                             list
                             VStack(spacing: 0) {
                                 HStack(spacing: 8) {
-                                    LPEyebrow(text: "请求详情 / REQUEST")
+                                    LPEyebrow(text: "请求详情 / Request")
                                     Spacer(minLength: 6)
                                     Text("esc")
                                         .font(LPFont.mono(10))
