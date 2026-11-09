@@ -57,7 +57,7 @@ public final class ProfileStore: @unchecked Sendable {
 
     @discardableResult
     public func save(_ profile: Profile) throws -> Profile {
-        var p = profile
+        let p = profile
         let data = try JSONEncoder.touchflow.encode(p)
         try data.write(to: profileURL(p.id), options: .atomic)
         TFLog.shared.info("profile", "saved \(p.name) (\(p.rules.count) rules)")

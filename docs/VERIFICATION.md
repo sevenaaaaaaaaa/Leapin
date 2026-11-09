@@ -1,10 +1,11 @@
-# TouchFlow 验收记录（v1.6，macOS 27.3 / arm64）
+# TouchFlow 验收记录（v1.7，macOS 27.3 / arm64）
 
 本文件只记录**真实跑过**的命令与结果，以及明确未验证的部分。所有结论都可用下方命令复现。
 v1.3 在 v1.2 视觉基础上只动 App 层：动效令牌化 + 全量 reduceMotion、按钮焦点环、设置页窄窗单列；网络/策略/Runtime 行为未变。
 v1.4 把视觉层迁到 macOS 26 Liquid Glass（窗口 behind-window 材质 + 功能层玻璃 + 内容层 clear glass），仍是纯 App 层改动，网络与策略行为未变。
 v1.5 开始 v3 路线图的 P0（诚实性）：AUTO 真测速、PROCESS/SRC-IP 接上、每条连接带裁决链、导入报告单列不可拨协议。
 v1.6 交付 P1 控制面（action API / SSE / token / 审计 / diff reload / CLI）与 P3 规则索引 + 永不命中诊断。
+v1.7 交付 P2 设备身份 + 局域网同步 + 只读 Web 面板；P4+ 需 NE 签名，本轮只交付设计 docs/P4-DESIGN.md。
 
 ## 0. 视觉重构验证（v1.2）
 
@@ -126,6 +127,94 @@ P3 规则索引与诊断（后缀 Trie / AC keyword / IP radix + 10 万规则门
 3. 遮蔽只覆盖可证明场景（同 matcher、后缀祖先、CIDR 包含），regex / geo / keyword 跨 matcher 不判定。
 4. control 热重载不覆盖监听器变更（MITM / capture / bypass 变更列 skipped，需手动重启）。
 5. 真机 120Hz 动画与 VoiceOver 走查仍沿用 v1.4 结论，本轮未重做。
+
+## 0.5 P2 设备身份 + 同步 + 只读面板验证（v1.7，2026-11-09）
+
+P2 不在本轮点名的 P1/P3 里，但它是路线图中 P1 之后、且不依赖 Network Extension 签名的下一期；
+上一轮残留的设备身份/同步半成品未提交，本轮把它做完并纳入验收，避免工作区长期挂着一份未验证的代码。
+
+- 构建：`swift build --scratch-path .build-verify`（全新 scratch）→ Build complete，**0 error / 0 warning**；
+  `./scripts/build-app.sh debug` 成功（ad-hoc 签名，App 内暂无同步页）。
+- 测试：`swift test --scratch-path .build-lead` → **201 passed / 1 skipped / 0 failures**
+  （Core 1 / Policy 75（1 skip）/ Net 75 / Integrations 11 / Control 16 / **Sync 24**）。
+  新增 `Tests/TouchFlowSyncTests`：DeviceIdentity 5、ProfileVersionStore 6、SyncTransport 8、SyncPanel 5。
+- 端到端：`TFCTL=.build-lead/debug/tfctl ./scripts/sync-e2e.sh` → **pass=36 fail=0**；
+  `control-e2e.sh` → **pass=22 fail=0**；`smoke.sh` → **pass=10 fail=0**。
+- 收敛：隔离双存储 A/B 从「配对」到「B 应用 A 的版本」实测 **0.19 s**（路线图阈值 5 s）。
+
+### 设备身份
+- Ed25519（CryptoKit），只持久化 32 字节 seed；默认登录钥匙串（service `com.touchflow.device`），
+  无钥匙串权限时回落 `$TF_PROFILE_ROOT/device/device.key`（0700 目录 / 0600 文件 / 原子写）。
+- `deviceID` = SHA-256(公钥) 前 16 字节 hex；`fingerprint` = 前 8 字节按 4 hex 分组（`0b22-21b8-7708-9a61`）。
+- 单测覆盖：签名/验签、tamper 拒绝、±300s 时间戳拒绝、文件 0600、创建后重载身份稳定。
+
+### 版本与收敛
+- 版本 id = 规范化 JSON（sortedKeys、ISO-8601）的 SHA-256；`ProfileContent` 排除本地 UUID 与 `sourcePath`，
+  因此同一订阅在两端哈希一致；`ingest` 重算 hash，不匹配直接拒绝。
+- 指针 LWW（updatedAtMs → deviceID 破平局），单调不回退；`override.json` 本机固定版本、永不同步。
+- `SyncClient.syncOnce()` 一次完成：拉 manifest → 拉缺失版本 → merge 指针 → announce 发布 → 对端缺内容时 3 MiB 内联推送。
+- e2e 步骤：首版本 → 配对 → 拉取/应用 → 停服离线编辑（B 新建版本）→ 重启 A → 重新配对 → A 收到 B 的离线版本
+  → override 固定回 v1（A 不受影响）→ 清除 override → 错误配对码被拒。
+
+### 协议与鉴权
+- 明文 HTTP/1.1（`Connection: close`），路由 `/v1/info`、`/v1/pair`、`/v1/manifest`、`/v1/versions/<64hex>`、`/v1/announce`、`/panel`。
+- 签名覆盖 `TF-SYNC-1\nMETHOD\nPATH\nSHA256(body)\nTS_MS\nNONCE`；服务端 ±300s + nonce 缓存（600s / 8192 上限）→ 重放 409。
+- 配对码 6 位 / 300s / 单次 / 常量时间比较；请求体上限 4 MiB，响应 8 MiB，内联推送 3 MiB。
+- e2e 覆盖：无签名 401、错误配对码拒绝、重放拒绝、未配对设备拒绝、未知版本 404（均见 SyncTransportTests + sync-e2e）。
+
+### 只读面板
+- `GET /panel`（HTML）与 `GET /panel.json`；令牌 32 字节 CSPRNG，`$TF_PROFILE_ROOT/sync/panel-token`（0600 / 目录 0700），
+  每次请求重新读文件，`tfctl sync panel --rotate` **即时生效**。
+- 只展示元数据（设备、指纹、版本历史、指针、已配对设备），**不含规则/出站/DNS/凭据**；无脚本、无外链、插值全部 HTML-escape。
+- 所有写方法 405；无令牌或错令牌 401；`--no-panel` 时路由 404。
+- e2e 面板断言 10 项：令牌存在/0600、无令牌 401、错令牌 401、HTML 200、含只读横幅、不含规则值、
+  panel.json 版本数、`readOnly=true`、POST 405、第二轮版本数与生效版本一致。
+
+### 本轮修掉的真实缺陷
+- `PeerRegistry.upsert` / `touch` 在持有 NSLock 时又调用会加锁的 `peer(deviceID:)`；NSLock 不可重入，
+  首次配对即**死锁**——全量测试挂起，`sample` 显示 `com.touchflow.sync.server` 队列停在 `PeerRegistry.upsert`。
+  修复：新增 `peerLocked` 私有函数（调用方已持锁），`upsert`/`touch` 改用它；新增
+  `testPeerUpsertAndTouchDoNotDeadlock`（3 s 信号量超时）防止回归。
+- **控制面 select 偶发空响应**：`TouchFlowEngine.saveProfile()` 在 P2 里同步调用了 `syncService.recordActiveProfile()`，
+  首次访问设备身份可能走 Keychain（或 0600 文件回落）；控制面 `POST /v1/policies/select` 在这条路径上被拖住，
+  curl 5 秒超时后拿到空 body（状态其实已改），表现为 `select PROXY→REJECT` 偶发失败（fresh 全链路第一次 20/22、单跑 21/22）。
+  修复：`syncService` 改为 init 时构造（不再是 lazy），版本记录移到 utility 队列异步执行，保存路径不等 Keychain；
+  连续 3 次 `control-e2e.sh` 均 22/22。
+- 顺带清掉 fresh build 暴露的全部编译警告：`ProfileStore.save` var→let、`TouchFlowEngine.saveProfile` 的 `_ = try?`、
+  `ProfileVersionStore.setOverride` 多余 `try`、`MiniYAML` var→let、`ControlServer` 的 `_ = try?`，
+  以及 `ByteStream` 的 NSLock 跨 await（改同步快照 + 一次性 ResumeGate，消除 Swift 6 并发诊断）。
+
+### 未验证 / 限制
+1. 两台**真实物理机**的局域网配对未做；e2e 与传输测试都在 127.0.0.1、两个隔离 store 上跑。
+2. 只读面板只验证了 HTTP 层与 HTML 文本；没有在 iPhone/Safari 实际渲染取证。
+3. App 内没有同步页/面板开关；`tfctl sync serve` 是当前唯一入口，且是前台进程，无后台自动同步。
+4. 配对码无失败退避（6 位 + 5 分钟 + 单次，但局域网内可反复尝试）；`SyncPeer.scopes` 只记录未强制。
+5. 跨公网/云端 E2EE 未做；P2 的 scope 是「同一 WiFi 下两台自己的机器」。
+6. 路线图 P2 验收里的「iPhone 切节点不影响 Mac」未验证：没有 iOS 客户端，只读面板不能切换节点；
+   设备级 override 只验证了本机固定版本、A 不受影响。
+
+### P1 / P3 复核（本轮代码状态，2026-11-09）
+
+- P1 控制面：`control-e2e.sh` 复跑 **22/22**（连续 3 次均通过）、`smoke.sh` 10/10；
+  token 401/0600、SSE、select、传输中 diff reload、审计、404/405 全部复验。
+- P3 规则索引：release 重建当前源码后
+  `.build-verify/release/tfctl rules example.com --profile .bench/profiles/rules-100000.surge --measure 2000`
+  → rules=100001、**p50 0.001 ms、p95 0.002 ms**（阈值 p95<2ms），匹配到 #100001/100001；
+  `tfctl rules --diagnose` 与编辑器诊断路径仍由 smoke / Policy 单测覆盖。
+
+### P4+ 设计交付（只设计，未实现）
+
+- 文档：[docs/P4-DESIGN.md](P4-DESIGN.md)（11 章，含现状核查、entitlement 取舍、TUN 数据路径、路由原子回滚、
+  网关 + DHCP、Control/SSE/审计扩展、性能预算、风险、分阶段与未实现清单）。
+- 事实核查（写入文档前逐条 grep）：仓库内 `*.entitlements` = 0、NE/TUN 代码 = 0、`FakeIPPool.host(for:)` 在 Sources 内 0 调用、
+  DNS 监听固定 127.0.0.1、fake-IP 对 AAAA 也回 A 记录、SSE 只有 `event: flow`、审计字段固定。
+- 设计结论：P4a 用 packet tunnel + 只服务本地 VIF 的"够用 TCP 栈"，不手工写系统路由（交给 NE settings），
+  但回滚必须逐项结果 + UI + 审计；P4b 网关/DHCP 默认关闭且需第二台设备实测。
+- 明确未实现：TUN/VIF、NEPacketTunnelProvider、扩展打包、entitlement/公证、路由快照恢复、网关、DHCP、
+  `tunnel.*`/`routes.*` action 与 SSE、审计新字段。
+- 待拍板（会改 P1 代码，本文未实施）：SSE 帧泛化、审计改 Engine 单写者 + 可选字段。
+- 实现前最需要验证：① 付费账号 + development profile 能否真正激活 packet tunnel、扩展能否写 sysctl/pf；
+  ② "够用 TCP 栈"与 Fake-IP 反查/DNS 应答核心的断链；③ NE 路由在扩展被杀/断电时是否随接口消失（需 14/15/26 三档实测）。
 
 ## 1. 构建
 

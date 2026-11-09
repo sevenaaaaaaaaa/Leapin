@@ -40,18 +40,18 @@ public final class NWByteStream: ByteStream, @unchecked Sendable {
     public func start() async throws {
         let connection = self.connection
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            let resumeLock = NSLock()
-            var resumed = false
+            // The state handler is called on a Network queue, so the resume
+            // guard must live in a reference type captured by value; a
+            // captured `var` would be a data race under Swift 6 checking.
+            let gate = ResumeGate()
             connection.stateUpdateHandler = { state in
-                resumeLock.lock(); defer { resumeLock.unlock() }
-                guard !resumed else { return }
                 switch state {
                 case .ready:
-                    resumed = true; cont.resume()
+                    if gate.claim() { cont.resume() }
                 case .failed(let err):
-                    resumed = true; cont.resume(throwing: TouchFlowError.connectionFailed("\(err)"))
+                    if gate.claim() { cont.resume(throwing: TouchFlowError.connectionFailed("\(err)")) }
                 case .cancelled:
-                    resumed = true; cont.resume(throwing: TouchFlowError.connectionFailed("cancelled"))
+                    if gate.claim() { cont.resume(throwing: TouchFlowError.connectionFailed("cancelled")) }
                 case .waiting(let err):
                     TFLog.shared.debug("stream", "waiting \(self.remoteDescription): \(err)")
                 default: break
@@ -74,16 +74,18 @@ public final class NWByteStream: ByteStream, @unchecked Sendable {
     }
 
     public func read(maxLength: Int) async throws -> Data? {
-        lock.lock()
-        if !pending.isEmpty {
-            let chunk = pending.prefix(maxLength)
-            pending.removeFirst(chunk.count)
-            lock.unlock()
-            return Data(chunk)
+        // Keep NSLock strictly inside a synchronous closure: manual
+        // lock()/unlock() across an async function is a Swift 6 error.
+        let snapshot: (chunk: Data?, closed: Bool) = lock.withLock {
+            if !pending.isEmpty {
+                let chunk = pending.prefix(maxLength)
+                pending.removeFirst(chunk.count)
+                return (Data(chunk), isClosed)
+            }
+            return (nil, isClosed)
         }
-        let closed = isClosed
-        lock.unlock()
-        if closed { return nil }
+        if let chunk = snapshot.chunk { return chunk }
+        if snapshot.closed { return nil }
 
         let connection = self.connection
         return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Data?, Error>) in
@@ -112,6 +114,20 @@ public final class NWByteStream: ByteStream, @unchecked Sendable {
     public func close() {
         lock.withLock { isClosed = true }
         connection.cancel()
+    }
+}
+
+/// One-shot resume gate for callback-based continuations.
+private final class ResumeGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+
+    func claim() -> Bool {
+        lock.withLock {
+            guard !claimed else { return false }
+            claimed = true
+            return true
+        }
     }
 }
 

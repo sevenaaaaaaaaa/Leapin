@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "TouchFlowIntegrations", targets: ["TouchFlowIntegrations"]),
         .library(name: "TouchFlowRuntime", targets: ["TouchFlowRuntime"]),
         .library(name: "TouchFlowControl", targets: ["TouchFlowControl"]),
+        .library(name: "TouchFlowSync", targets: ["TouchFlowSync"]),
         .executable(name: "tfctl", targets: ["tfctl"]),
         .executable(name: "TouchFlowApp", targets: ["TouchFlowApp"]),
     ],
@@ -23,7 +24,8 @@ let package = Package(
         .target(name: "TouchFlowNet", dependencies: ["TouchFlowCore", "CTouchFlowProc"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(name: "TouchFlowIntegrations", dependencies: ["TouchFlowCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .target(name: "TouchFlowControl", dependencies: ["TouchFlowCore", "TouchFlowNet"], swiftSettings: [.swiftLanguageMode(.v5)]),
-        .target(name: "TouchFlowRuntime", dependencies: ["TouchFlowCore", "TouchFlowPolicy", "TouchFlowNet", "TouchFlowIntegrations", "TouchFlowControl"], resources: [.copy("Resources")], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "TouchFlowSync", dependencies: ["TouchFlowCore", "TouchFlowPolicy", "TouchFlowNet"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .target(name: "TouchFlowRuntime", dependencies: ["TouchFlowCore", "TouchFlowPolicy", "TouchFlowNet", "TouchFlowIntegrations", "TouchFlowControl", "TouchFlowSync"], resources: [.copy("Resources")], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "tfctl", dependencies: ["TouchFlowRuntime", "TouchFlowControl"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .executableTarget(name: "TouchFlowApp", dependencies: ["TouchFlowRuntime", "TouchFlowPolicy", "TouchFlowNet", "TouchFlowIntegrations"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "TouchFlowCoreTests", dependencies: ["TouchFlowCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
@@ -31,5 +33,6 @@ let package = Package(
         .testTarget(name: "TouchFlowNetTests", dependencies: ["TouchFlowNet"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "TouchFlowIntegrationsTests", dependencies: ["TouchFlowIntegrations"], swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "TouchFlowControlTests", dependencies: ["TouchFlowControl", "TouchFlowCore"], swiftSettings: [.swiftLanguageMode(.v5)]),
+        .testTarget(name: "TouchFlowSyncTests", dependencies: ["TouchFlowSync", "TouchFlowCore", "TouchFlowPolicy", "TouchFlowNet"], swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )

@@ -365,12 +365,11 @@ final class CaptureTests: XCTestCase {
         let parameters = NWParameters(tls: nil, tcp: NWProtocolTCP.Options())
         let listener = try NWListener(using: parameters, on: .any)
         let queue = DispatchQueue(label: "test.mitm.relay")
-        let lock = NSLock()
-        var held: [NetSocket] = []
+        let held = SocketRetainer()
 
         listener.newConnectionHandler = { connection in
             let client = NetSocket(connection: connection, description: "relay-client")
-            lock.withLock { held.append(client) }
+            held.retain(client)
             Task {
                 do {
                     try await client.start(timeout: 5)
@@ -379,7 +378,7 @@ final class CaptureTests: XCTestCase {
                                                                  port: proxyPort,
                                                                  timeout: 5,
                                                                  tls: nil)
-                    lock.withLock { held.append(proxySocket) }
+                    held.retain(proxySocket)
                     try await proxySocket.write(preamble)
                     let proxyStream = BufferedStream(proxySocket)
                     let head = try await HTTPCodec.readResponseHead(proxyStream)
@@ -442,5 +441,18 @@ final class CaptureTests: XCTestCase {
                 + String(decoding: errorOutput, as: UTF8.self))
         }
         return String(decoding: output, as: UTF8.self)
+    }
+}
+
+/// Keeps relay sockets alive for the duration of the test without mutating a
+/// captured `var` from a @Sendable listener callback.
+private final class SocketRetainer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var sockets: [NetSocket] = []
+
+    func retain(_ socket: NetSocket) {
+        lock.lock()
+        sockets.append(socket)
+        lock.unlock()
     }
 }

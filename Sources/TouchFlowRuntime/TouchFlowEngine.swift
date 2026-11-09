@@ -50,6 +50,12 @@ public final class TouchFlowEngine: ObservableObject {
     @Published public var mitmActive: Bool = false
 
     public let store: ProfileStore
+    /// P2 device identity + content-addressed version history for this store.
+    public let syncService: ProfileSyncService
+    /// Version recording runs off the control/UI path: the first identity
+    /// access may touch the Keychain (or its 0600 file fallback), and a save
+    /// must never wait on that.
+    private let syncRecordQueue = DispatchQueue(label: "com.touchflow.sync.record", qos: .utility)
     private var proxies: [ProxyServer] = []
     /// The primary mixed-port listener (kept for introspection helpers).
     private var proxy: ProxyServer? { proxies.first }
@@ -76,6 +82,7 @@ public final class TouchFlowEngine: ObservableObject {
 
     public init(store: ProfileStore = .shared) {
         self.store = store
+        self.syncService = ProfileSyncService(root: store.root, profileStore: store)
         self.profile = store.activeProfile()
         sink.engine = self
         installLogObserver()
@@ -311,6 +318,14 @@ public final class TouchFlowEngine: ObservableObject {
     public func saveProfile() -> Bool {
         do {
             _ = try store.save(profile)
+            // P2: every manual save becomes an immutable, content-addressed
+            // version so it can be synced to other devices. Recording is
+            // queued: the first call may open the Keychain, and a control
+            // request must not block on it. Failure never breaks the save.
+            let service = syncService
+            syncRecordQueue.async {
+                _ = try? service.recordActiveProfile()
+            }
             return true
         } catch {
             lastError = error.localizedDescription

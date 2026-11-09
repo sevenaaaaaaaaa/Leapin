@@ -67,9 +67,9 @@
 | --- | --- | --- | --- |
 | **P0** | 诚实性：AUTO 真测速或改名；PROCESS/SRC-IP 接上或隐藏；导入报告单列「不可拨协议」；ruleChain 数据结构 | 1 周 | 导入一个含 7 种协议的订阅，报告明确写「4 个可用 / 3 个不可拨」；任意连接可读出命中链 |
 | **P1** ✅ | 控制面：动作 API + SSE + token + 审计；CLI 扩 rule explain / dns trace / http probe；局部 reload（diff apply） | 2 周 | 改一条规则不断开现有连接；远端 curl 能列连接、能切策略、能重载 |
-| **P2** | 设备身份 + 同步 + 只读远端面板 | 3 周 | 两台设备 5s 内收敛同一 profile 版本；离线改动不丢；iPhone 切节点不影响 Mac |
+| **P2** ✅ 核心（iOS 客户端 / App 内同步页未做） | 设备身份 + 同步 + 只读远端面板 | 3 周 | 两台设备 5s 内收敛同一 profile 版本；离线改动不丢；iPhone 切节点不影响 Mac（无 iOS 客户端，未验证） |
 | **P3**（索引/诊断 ✅，脚本沙箱未做） | 规则超越 + 脚本沙箱 + 编辑器诊断 | 3 周 | 10 万规则 p95 < 2ms；编辑器能报「这条规则永不命中」；脚本超时 50ms 强制中断 |
-| **P4** | TUN/VIF 全流量接管 → 网关 + DHCP | 4–6 周 | 不遵守系统代理的进程也被接管；断网回滚原子完成 |
+| **P4**（仅设计） | TUN/VIF 全流量接管 → 网关 + DHCP；设计见 docs/P4-DESIGN.md | 4–6 周 | 不遵守系统代理的进程也被接管；断网回滚原子完成（需 NE 签名，本期只设计） |
 | **P5** | Tailscale 策略 | 4 周 | tailnet 内域名/IP 走规则系统 |
 | **P6** | Ponte / MTProto / 授权商业化 | 依赖基础设施 | 另行立项 |
 
@@ -128,5 +128,34 @@
 未做 / 未验证：JavaScript 脚本沙箱（P3 第三项）未开始；编辑器诊断未做真实窗口目视取证；`diagnostics()` 不递归 RULE-SET 成员；
 遮蔽只判定可证明场景；control 热重载不含监听器级变更（MITM/capture/bypass 需重启）。
 
-下一期：P2 设备身份 + 同步（Ed25519 + content-addressed profile + 版本只增不改），P4 之后需 NE 签名，只做设计。
+P2 已完成（见 §11）。下一期：P4 设计（docs/P4-DESIGN.md）——TUN/VIF 全流量接管、路由原子回滚、网关 + DHCP；
+实现需要 Developer ID + Network Extension entitlement，本机 ad-hoc 签名下只做设计不交付。
+P3 剩余：JavaScript 脚本沙箱（JSC 常驻 context + 50ms 硬超时）。
 
+## 11. P2 交付（2026-11-09）
+
+| 项 | 交付 | 证据 |
+| --- | --- | --- |
+| 设备身份 | Ed25519（CryptoKit），只存 32 字节 seed；默认登录钥匙串，回落 0600 文件；`deviceID` = SHA-256(公钥) 前 16 字节，`fingerprint` 按 4-hex 分组 | `tfctl device`；DeviceIdentityTests 5 条（签名/篡改/±300s/0600/重载稳定） |
+| 版本模型 | content-addressed（规范化 JSON 的 SHA-256，排除本地 UUID 与 sourcePath）；只增不改；`ingest` 重算 hash 拒绝损坏内容 | ProfileVersionStoreTests 6 条；e2e 首版本 + 离线版本 |
+| 指针与 override | 每设备 LWW 指针（updatedAtMs → deviceID 破平局，单调）；本机 override 永不同步 | 单测 monotonic/tie-break/override；e2e override 固定回 v1 且 A 不受影响 |
+| 局域网同步 | 明文 HTTP/1.1：`/v1/info`、`/v1/pair`、`/v1/manifest`、`/v1/versions/<id>`、`/v1/announce`；Ed25519 签名信封（method+path+bodyHash+ts+nonce），±300s + nonce 缓存，重放 409；配对码 6 位/300s/单次/常量时间 | SyncTransportTests 8 条；`scripts/sync-e2e.sh` 36/36；配对→拉取→应用 0.19s（阈值 5s） |
+| 只读远端面板 | `GET /panel`（HTML）+ `/panel.json`；令牌 32 字节 CSPRNG（0600、目录 0700、每请求重读、`--rotate` 即时生效）；只出元数据不出规则/凭据；无脚本无外链；写方法 405 | SyncPanelTests 5 条；e2e 面板 10 项断言（401/405/0600/不含规则值/版本数/生效版本） |
+| CLI | `tfctl device`、`sync status/versions/record/serve/pair/pull/apply/override/peers/unpair/panel` | e2e 全流程；`tfctl sync --help` |
+| 修复的真实缺陷 | `PeerRegistry.upsert/touch` 持有 NSLock 时重入 `peer(deviceID:)` → 首次配对死锁、全量测试挂起；改 `peerLocked` + 3s 回归测试 | `sample` 栈指向 `PeerRegistry.upsert`；tests 201 passed 全绿 |
+
+未做：App 内同步页与面板开关（当前入口是 `tfctl sync serve`，前台进程、无后台自动同步）、真实双机 LAN 验证、
+iPhone 浏览器渲染取证、配对码失败退避、`SyncPeer.scopes` 强制、云端 E2EE；
+路线图 P2 验收里的「iPhone 切节点不影响 Mac」未验证（没有 iOS 客户端，只读面板不能切换节点；设备级 override 只验证了本机固定版本）。详见 docs/SYNC.md §8。
+
+## 12. P4 设计交付（2026-11-09，仅设计）
+
+- 文档：docs/P4-DESIGN.md（11 章）。覆盖签名/entitlement 前置、packet tunnel + "够用 TCP 栈"取舍、
+  VIF 与 DNS/Fake-IP 语义、路由接管与原子回滚、网关 + DHCP、Control action/SSE/审计扩展、性能预算、风险与分阶段验收。
+- 事实核查：仓库无 entitlements、无 NE/TUN 代码、`FakeIPPool.host(for:)` 无调用方、DNS 只绑 127.0.0.1、
+  fake-IP 对 AAAA 回 A、SSE 只有 `flow` —— 这些是 P4 开工前必须补的断链。
+- 实现前三大风险：① 付费账号 + development profile 激活 NE、扩展写 sysctl/pf 的权限；② "够用 TCP 栈"与 DNS 应答核心；
+  ③ NE 路由在扩展被杀/断电/升级时是否随接口消失（macOS 14/15/26 三档实测）。
+- 需拍板的两项 P1 接口变更：SSE 回放缓冲泛化（ControlServer.swift:186-192/247-251）、
+  审计改 Engine 单写者 + `ControlAuditRecord` 可选字段（ControlContract.swift:186-209）。
+- 交付边界：P4/P5/P6 **零实现**；等 Developer ID + NE entitlement 到位后才进入 P4a。

@@ -76,7 +76,7 @@ public enum MiniYAML {
             var number = 0
             for raw in text.components(separatedBy: .newlines) {
                 number += 1
-                var line = raw.replacingOccurrences(of: "\t", with: "  ")
+                let line = raw.replacingOccurrences(of: "\t", with: "  ")
                 if line.trimmingCharacters(in: .whitespaces).isEmpty { continue }
                 let indent = line.prefix { $0 == " " }.count
                 var body = String(line.dropFirst(indent))

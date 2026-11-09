@@ -637,7 +637,7 @@ public final class ControlServer: @unchecked Sendable {
             ensureAuditFile()
             guard let handle = FileHandle(forWritingAtPath: configuration.auditFile.path) else { return }
             defer { _ = try? handle.close() }
-            try? handle.seekToEnd()
+            _ = try? handle.seekToEnd()
             try? handle.write(contentsOf: line)
         }
     }

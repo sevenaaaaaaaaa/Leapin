@@ -26,7 +26,7 @@ final class OutboundDialerTests: XCTestCase {
     }
 
     private func roundTrip(_ stream: ByteStream, payload: Data) async throws -> Data {
-        let buffered = stream as? BufferedStream ?? BufferedStream(stream)
+        let buffered = BufferedStream(stream)
         try await buffered.write(payload)
         return try await buffered.readExactly(payload.count)
     }
