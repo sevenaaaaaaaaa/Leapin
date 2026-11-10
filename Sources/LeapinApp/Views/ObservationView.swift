@@ -84,7 +84,7 @@ struct ObservationView: View {
                 }
 
                 Text(statusLine)
-                    .font(LPFont.serif(13.5))
+                    .font(.system(size: 14))
                     .foregroundStyle(LP.textSecondary)
                     .padding(.top, 8)
 

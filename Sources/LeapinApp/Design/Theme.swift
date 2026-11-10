@@ -27,7 +27,6 @@ enum LP {
     /// Tint laid over a clear glass card so content surfaces sit a step above the
     /// window material instead of dissolving into it.
     static let cardTint = dyn(hex(0xFFFFFF, 0.34), hex(0xFFFFFF, 0.05))
-    static let bgDeep = dyn(hex(0xEFEBE3), hex(0x050506))
     static let panel = dyn(hex(0xFCFBF8), hex(0x151517))
     static let panelSolid = dyn(hex(0xFFFFFF), hex(0x171719))
     static let panelRaised = dyn(hex(0xFFFFFF), hex(0x1F1F22))
@@ -81,10 +80,6 @@ enum LPFont {
     static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .monospaced)
     }
-    /// Editorial accent, used sparingly for the one human sentence on a page.
-    static func serif(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
-        .system(size: size, weight: weight, design: .serif)
-    }
     static let overline = Font.system(size: 9, weight: .semibold)
 }
 
@@ -102,8 +97,6 @@ struct LPBackground: View {
                 // this wash is the only thing between the wallpaper and the text.
                 LP.bg.opacity(0.40)
             }
-            LinearGradient(colors: [LP.bgDeep.opacity(0.55), .clear],
-                           startPoint: .topTrailing, endPoint: .center)
         }
         .ignoresSafeArea()
     }
@@ -322,7 +315,7 @@ struct PageHeader: View {
 
 // MARK: - Editorial eyebrow
 
-/// Small uppercase mono label used above a block of data.
+/// Small mono label used above a block of data.
 struct LPEyebrow: View {
     var text: String
     var tint: Color = LP.textTertiary
@@ -340,7 +333,7 @@ struct LPEyebrow: View {
 
     var body: some View {
         Text(text)
-            .font(LPFont.mono(10, weight: .medium))
+            .font(LPFont.mono(12, weight: .medium))
             .tracking(0.5)
             .foregroundStyle(tint)
     }
@@ -358,16 +351,12 @@ struct LPPrimaryButtonStyle: ButtonStyle {
             configuration.label
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(.white)
-                .padding(.horizontal, 15)
-                .padding(.vertical, 7)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
                 .background(Capsule(style: .continuous).fill(fill))
                 .overlay(
                     Capsule(style: .continuous)
-                        .strokeBorder(
-                            LinearGradient(colors: [.white.opacity(0.34), .white.opacity(0.06)],
-                                           startPoint: .top, endPoint: .bottom),
-                            lineWidth: 1
-                        )
+                        .strokeBorder(.white.opacity(0.18), lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.10), radius: 8, y: 3)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
@@ -390,6 +379,20 @@ struct LPGhostButtonStyle: ButtonStyle {
                          fallbackFill: LP.panel,
                          fallbackMaterial: .thinMaterial)
                 .opacity(configuration.isPressed ? 0.7 : 1)
+        }
+    }
+}
+
+/// Card-style button: press compression + the same visible keyboard focus ring
+/// as the primary/ghost styles. Used by overview cards and index rows.
+struct LPCardButtonStyle: ButtonStyle {
+    var radius: CGFloat = 16
+    func makeBody(configuration: Configuration) -> some View {
+        LPButtonFocusRing(shape: RoundedRectangle(cornerRadius: radius, style: .continuous)) {
+            configuration.label
+                .scaleEffect(configuration.isPressed ? 0.992 : 1)
+                .opacity(configuration.isPressed ? 0.92 : 1)
+                .lpAnimation(LPMotion.press, value: configuration.isPressed)
         }
     }
 }

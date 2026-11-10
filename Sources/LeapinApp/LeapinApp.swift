@@ -615,11 +615,10 @@ private struct SidebarView: View {
     private var brand: some View {
         HStack(spacing: 10) {
             ZStack(alignment: .bottomTrailing) {
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(LP.text)
-                Text("T")
-                    .font(LPFont.serif(18, weight: .semibold))
-                    .italic()
+                Text("L")
+                    .font(LPFont.display(16, weight: .bold))
                     .foregroundStyle(LP.bg)
                     .offset(y: -1)
                 Circle()
@@ -633,12 +632,12 @@ private struct SidebarView: View {
             if !compact {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Leapin")
-                        .font(LPFont.display(14.5, weight: .semibold))
+                        .font(LPFont.display(14, weight: .semibold))
                         .tracking(-0.2)
                         .foregroundStyle(LP.text)
-                    Text("ONE LEAP · NO DETOUR")
-                        .font(LPFont.mono(8, weight: .medium))
-                        .tracking(1.5)
+                    Text("One leap. No detour.")
+                        .font(.system(size: 12))
+                        .tracking(0.1)
                         .foregroundStyle(LP.textTertiary)
                 }
             }
