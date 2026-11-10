@@ -62,6 +62,9 @@ public final class LeapinEngine: ObservableObject {
     private var dnsServer: DNSServer?
     private var resolver: DNSResolver?
     private var ruleEngine: RuleEngine?
+    /// Rule-set members from the last successful load. Kept after a stop so the
+    /// editor and /v1/explain can still resolve references while the engine is down.
+    private var loadedRuleSets: [String: [Rule]]?
     private var adblock: AdBlockEngine?
     private var ca: CertificateAuthority?
     private var healthProber: HealthProber?
@@ -110,6 +113,7 @@ public final class LeapinEngine: ObservableObject {
         do {
             let ruleSets = await RuleSetLoader.load(sources: ruleSetSources(for: profile),
                                                     cacheDirectory: store.cacheDirectory)
+            loadedRuleSets = ruleSets
             let engine = RuleEngine(profile: profile, ruleSets: ruleSets)
             ruleEngine = engine
             let routerBox = RouterBox(engine)
@@ -647,11 +651,19 @@ public extension LeapinEngine {
 // MARK: - Control-plane backend (P1)
 
 extension LeapinEngine: ControlBackend {
-    /// Rule diagnostics shown by `/v1/explain`. Uses the indexed engine while it runs,
-    /// otherwise the cheap profile scanner in ControlWiring.swift.
+    /// Rule diagnostics shown by `/v1/explain`. Uses the indexed engine while it
+    /// runs, otherwise the same shared analyzer over the last loaded rule-sets.
     public func ruleDiagnostics() -> [RuleDiagnostic] {
-        if let engine = ruleEngine { return engine.diagnostics() }
-        return RuleDiagnosticsScanner.scan(profile: profile)
+        ruleDiagnostics(for: nil)
+    }
+
+    /// Diagnostics for an unsaved rule list (the editor previews `rules + draft`).
+    /// Passing nil analyzes the current profile; that path prefers the live engine
+    /// so it reports exactly what routing will do.
+    public func ruleDiagnostics(for overrideRules: [Rule]? = nil) -> [RuleDiagnostic] {
+        if overrideRules == nil, let engine = ruleEngine { return engine.diagnostics() }
+        let rules = overrideRules ?? profile.rules
+        return RuleDiagnosticsAnalyzer.analyze(rules, ruleSets: loadedRuleSets)
     }
 
     public func controlStatus() async -> ControlStatus {
@@ -810,6 +822,7 @@ extension LeapinEngine: ControlBackend {
 
         let ruleSets = await RuleSetLoader.load(sources: ruleSetSources(for: loaded),
                                                 cacheDirectory: store.cacheDirectory)
+        loadedRuleSets = ruleSets
         let newEngine = RuleEngine(profile: loaded, ruleSets: ruleSets)
         ruleEngine = newEngine
         if let routerBox {

@@ -125,7 +125,14 @@ struct RulesView: View {
     /// Recomputes dead-rule diagnostics. Only called when the rule set changes
     /// (open / add / delete / reload) — never from `body`, which must stay cheap.
     private func refreshDiagnostics() {
-        diagnostics = RuleDiagnosticsScan.scan(engine.profile.rules)
+        diagnostics = Self.indexed(engine.ruleDiagnostics())
+    }
+
+    private static func indexed(_ list: [RuleDiagnostic]) -> [Int: RuleDiagnostic] {
+        var out: [Int: RuleDiagnostic] = [:]
+        out.reserveCapacity(list.count)
+        for item in list { out[item.index] = item }
+        return out
     }
 
     private var toolbar: some View {
@@ -636,8 +643,9 @@ struct AddRuleSheet: View {
         let raw = "\(kind.rawValue.uppercased()),\(trimmedValue),\(policy)" + (noResolve ? ",no-resolve" : "")
         let draft = Rule(kind: kind, value: trimmedValue, policy: policy,
                          modifiers: noResolve ? ["no-resolve"] : [], raw: raw)
-        let scan = RuleDiagnosticsScan.scan(engine.profile.rules + [draft])
-        guard let diagnostic = scan[engine.profile.rules.count] else { return nil }
+        let position = engine.profile.rules.count
+        let scan = engine.ruleDiagnostics(for: engine.profile.rules + [draft])
+        guard let diagnostic = scan.first(where: { $0.index == position }) else { return nil }
         return "添加后永不命中：\(diagnostic.reason)"
     }
 

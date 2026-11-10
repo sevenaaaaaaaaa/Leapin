@@ -136,13 +136,16 @@ final class RuleDiagnosticsTests: XCTestCase {
     }
 
     func testNegatedFinalDoesNotStopEvaluation() throws {
-        // "!MATCH" evaluates true then flips to false, so it never fires and the
-        // rule after it is still reachable.
+        // "!MATCH" evaluates true then flips to false, so it never fires; it is
+        // reported as dead itself, and the rule after it stays reachable.
         let rules = [
             rawRule(.match, "", "DIRECT", negate: true),
             rawRule(.domain, "example.com", "PROXY"),
         ]
-        XCTAssertTrue(engine(rules).diagnostics().isEmpty)
+        let out = engine(rules).diagnostics()
+        XCTAssertEqual(out.map(\.index), [0])
+        XCTAssertEqual(out[0].kind, .neverMatch)
+        XCTAssertTrue(out[0].reason.contains("取反"))
     }
 
     // MARK: - never-match
@@ -160,6 +163,19 @@ final class RuleDiagnosticsTests: XCTestCase {
         XCTAssertTrue(out.allSatisfy { $0.kind == .neverMatch })
     }
 
+    func testNegatedEmptyMatchersAreLiveCatchAlls() {
+        // Each inner matcher is always false, and negation flips it into a
+        // catch-all. Calling these dead would be a false alarm.
+        let rules = [
+            rawRule(.domain, "", negate: true),
+            rawRule(.ipCIDR, "999.1.1.1/8", negate: true),
+            rawRule(.domainRegex, "[", negate: true),
+            rawRule(.or, "", negate: true),
+            rawRule(.not, "", negate: true),
+        ]
+        XCTAssertTrue(engine(rules).diagnostics().isEmpty)
+    }
+
     // MARK: - rule-set-missing
 
     func testMissingRuleSetIsReported() throws {
@@ -174,6 +190,100 @@ final class RuleDiagnosticsTests: XCTestCase {
         XCTAssertEqual(out[0].index, 1)
         XCTAssertEqual(out[0].kind, .ruleSetMissing)
         XCTAssertNil(out[0].shadowedByIndex)
+    }
+
+    // MARK: - rule-set reachability
+
+    func testRuleSetWithOnlyDeadMembersIsNeverMatch() {
+        let rules = [rawRule(.ruleSet, "dead", "PROXY")]
+        let sets = ["dead": [rawRule(.domain, ""),
+                              rawRule(.ipCIDR, "999.1.1.1/8")]]
+        let out = engine(rules, sets: sets).diagnostics()
+        XCTAssertEqual(out.map(\.index), [0])
+        XCTAssertEqual(out[0].kind, .neverMatch)
+        XCTAssertTrue(out[0].reason.contains("2 条成员规则"))
+    }
+
+    func testLoadedEmptyRuleSetIsNeverMatch() {
+        let rules = [rawRule(.ruleSet, "empty", "PROXY")]
+        let out = engine(rules, sets: ["empty": []]).diagnostics()
+        XCTAssertEqual(out.map(\.index), [0])
+        XCTAssertEqual(out[0].kind, .neverMatch)
+        XCTAssertTrue(out[0].reason.contains("没有可命中的成员规则"))
+    }
+
+    func testRuleSetWithNegatedEmptyMemberIsNotDead() {
+        // A negated empty matcher inside a set matches everything it is asked
+        // about, so the outer RULE-SET is not dead.
+        let rules = [rawRule(.ruleSet, "catch", "PROXY")]
+        let sets = ["catch": [rawRule(.domain, "", negate: true)]]
+        XCTAssertTrue(engine(rules, sets: sets).diagnostics().isEmpty)
+    }
+
+    func testRuleSetWithOneLiveMemberIsNotFlagged() {
+        let rules = [rawRule(.ruleSet, "mixed", "PROXY")]
+        let sets = ["mixed": [rawRule(.domain, ""),
+                              rawRule(.domainSuffix, "ok.example")]]
+        XCTAssertTrue(engine(rules, sets: sets).diagnostics().isEmpty)
+    }
+
+    func testNestedDeadRuleSetIsNeverMatch() {
+        let rules = [rawRule(.ruleSet, "outer", "PROXY")]
+        let sets = [
+            "outer": [rawRule(.ruleSet, "inner")],
+            "inner": [rawRule(.domain, "")],
+        ]
+        let out = engine(rules, sets: sets).diagnostics()
+        XCTAssertEqual(out.map(\.index), [0])
+        XCTAssertEqual(out[0].kind, .neverMatch)
+        XCTAssertTrue(out[0].reason.contains("outer"))
+    }
+
+    func testRecursiveRuleSetIsTreatedAsLive() {
+        // Self-reference is a runtime cycle; static analysis must stay silent
+        // instead of claiming the set can never match.
+        let rules = [rawRule(.ruleSet, "loop", "PROXY")]
+        let sets = ["loop": [rawRule(.ruleSet, "loop")]]
+        XCTAssertTrue(engine(rules, sets: sets).diagnostics().isEmpty)
+    }
+
+    func testNegatedDeadRuleSetIsNotNeverMatch() {
+        // "!RULE-SET,dead" fires whenever the members do not, so it is not dead.
+        let rules = [rawRule(.ruleSet, "dead", "REJECT", negate: true)]
+        XCTAssertTrue(engine(rules, sets: ["dead": [rawRule(.domain, "")]]).diagnostics().isEmpty)
+    }
+
+    func testUnloadedRuleSetsAreUnknownNotMissing() {
+        // The editor analyzes before the engine has loaded any set; that must
+        // not flag every reference as missing.
+        let rules = [rawRule(.ruleSet, "ads", "PROXY")]
+        XCTAssertTrue(RuleDiagnosticsAnalyzer.analyze(rules, ruleSets: nil).isEmpty)
+        let loaded = RuleDiagnosticsAnalyzer.analyze(rules, ruleSets: [:])
+        XCTAssertEqual(loaded.map(\.kind), [.ruleSetMissing])
+    }
+
+    func testAnalyzerMatchesEngineResults() {
+        let rules = [
+            rawRule(.ruleSet, "dead", "PROXY"),
+            rawRule(.domain, "example.com", "PROXY"),
+            rawRule(.domain, "example.com", "PROXY"),
+            rawRule(.match, "", "DIRECT", negate: true),
+            rawRule(.domain, "late.test", "PROXY"),
+        ]
+        let sets = ["dead": [rawRule(.domain, "")]]
+        let viaEngine = engine(rules, sets: sets).diagnostics()
+        let viaAnalyzer = RuleDiagnosticsAnalyzer.analyze(rules, ruleSets: sets)
+        XCTAssertEqual(viaEngine.map(\.index), viaAnalyzer.map(\.index))
+        XCTAssertEqual(viaEngine.map(\.kind), viaAnalyzer.map(\.kind))
+        XCTAssertEqual(viaEngine.map(\.shadowedByIndex), viaAnalyzer.map(\.shadowedByIndex))
+    }
+
+    func testDraftAppendedAfterProfileIsReportedAtItsPosition() {
+        let profile = [rawRule(.domainSuffix, "example.com", "PROXY")]
+        let draft = rawRule(.domainSuffix, "api.example.com", "DIRECT")
+        let out = RuleDiagnosticsAnalyzer.analyze(profile + [draft], ruleSets: nil)
+        XCTAssertEqual(out.map(\.index), [1])
+        XCTAssertEqual(out[0].kind, .shadowed)
     }
 
     // MARK: - conservative behaviour

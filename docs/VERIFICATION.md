@@ -1,4 +1,4 @@
-# Leapin 验收记录（v1.8，macOS 27.3 / arm64）
+# Leapin 验收记录（v1.9，macOS 27.3 / arm64）
 
 本文件只记录**真实跑过**的命令与结果，以及明确未验证的部分。所有结论都可用下方命令复现。
 v1.3 在 v1.2 视觉基础上只动 App 层：动效令牌化 + 全量 reduceMotion、按钮焦点环、设置页窄窗单列；网络/策略/Runtime 行为未变。
@@ -7,6 +7,7 @@ v1.5 开始 v3 路线图的 P0（诚实性）：AUTO 真测速、PROCESS/SRC-IP 
 v1.6 交付 P1 控制面（action API / SSE / token / 审计 / diff reload / CLI）与 P3 规则索引 + 永不命中诊断。
 v1.7 交付 P2 设备身份 + 局域网同步 + 只读 Web 面板；P4+ 需 NE 签名，只交付设计 docs/P4-DESIGN.md。
 v1.8 把项目从 TouchFlow 更名为 **Leapin**（中文名暂未定）：模块/CLI/App/bundle/数据目录/钥匙串/环境变量全部改名，旧数据自动迁移。
+v1.9 把「永不命中」判定收敛成一份共享分析器（引擎 / 控制面 / 编辑器同一实现），补上 RULE-SET 递归与取反语义；网络与控制面行为未变。
 历史小节（v1.0–v1.7）保留原验收事实，路径与二进制名按现名统一。
 
 ## 0. 视觉重构验证（v1.2）
@@ -121,11 +122,13 @@ P3 规则索引与诊断（后缀 Trie / AC keyword / IP radix + 10 万规则门
 - 编辑器：RulesView 侧栏「诊断 / DIAGNOSTICS」显示永不命中计数与前 4 条（点击跳转并选中），RuleRow 加「永不命中」徽标 + help 原因，
   AddRuleSheet 在添加前预览 draft 是否永不命中；扫描只在 .task / 规则数变化 / 重载 / 增删后触发，不在 body 内计算。
   扫描实现 `RuleDiagnosticsScan.swift`（保守：regex 编译失败、CIDR 非法、父域覆盖、CIDR 包含、MATCH 之后不可达）。
+  （v1.9 起该文件已删除，引擎与编辑器共用 `RuleDiagnosticsAnalyzer`，见 §0.8。）
 
 ### 未验证 / 限制
 
 1. 编辑器诊断只做了编译级与逻辑级验证，未在真实 App 窗口目视取证（本次启动 App 未能可靠截到窗口）。
 2. `diagnostics()` 只看已加载规则，不递归 RULE-SET 成员内部；成员诊断需对 set 引擎调用 `diagnostics(sourceRules:)`。
+   （v1.9 已实现 RULE-SET 递归并统一为共享分析器，见 §0.8；此处保留 v1.6 当时的限制记录。）
 3. 遮蔽只覆盖可证明场景（同 matcher、后缀祖先、CIDR 包含），regex / geo / keyword 跨 matcher 不判定。
 4. control 热重载不覆盖监听器变更（MITM / capture / bypass 变更列 skipped，需手动重启）。
 5. 真机 120Hz 动画与 VoiceOver 走查仍沿用 v1.4 结论，本轮未重做。
@@ -256,6 +259,52 @@ P2 不在本轮点名的 P1/P3 里，但它是路线图中 P1 之后、且不依
 - 原始历史备份保留在仓库外的临时目录（含个人信息，确认无误后删除）；公开仓库已推送（2026-11-10）。
 - 边界：GitHub 账户/仓库所有者仍是可见的托管层信息；本机 `~/Library/Application Support` 与钥匙串里的运行数据未动。
 
+## 0.8 P3 诊断统一 + RULE-SET 递归（v1.9，2026-11-11）
+
+P3 的「编辑器能报永不命中」在 v1.6 落地时存在三份实现：`RuleEngine.diagnostics()`、Runtime 的
+`RuleDiagnosticsScanner`（引擎未启动时的兜底）、App 的 `RuleDiagnosticsScan`（编辑器与草稿预检）。
+三者对 PROCESS / IPv6 / rule-set / 取反的判定并不一致，编辑器会与 CLI、控制面给出不同结论。
+本轮收敛为一份可测试的分析器，并补上 v1.6 明确未做的 RULE-SET 成员递归。
+
+### 实现
+
+- 新增 `Sources/LeapinPolicy/Rules/RuleDiagnosticsAnalyzer.swift`：`RuleDiagnosticsAnalyzer.analyze(_:ruleSets:)`
+  是唯一判定入口；`RuleEngine.diagnostics()` / `diagnostics(_:)` 改为委托它，引擎只保留 `describe()`。
+- `ruleSets` 语义：`nil` = 尚未加载（编辑器在引擎启动前），不报 `rule-set-missing`；`[:]` = 已加载但没有该 set，报 missing。
+  这样「不知道」不会被伪装成「配错了」。
+- RULE-SET 递归：非 negated 外层 set 的成员为空 → `never-match`（reason 明确写「没有可命中的成员规则（文件为空或加载失败）」）；
+  全部成员静态不可命中 → `never-match` 并给出成员数；嵌套 set 用 `visited` 防环；未知 / 递归 / negated set 一律保守视为可命中。
+  任一成员可命中则外层不报。
+- 取反语义修正：`!MATCH` 恒 false，自身报 never-match；反过来，取反的空值 / 非法 CIDR / 编译失败正则 / 空 OR / 空 NOT
+  在运行时是恒 true 的 catch-all，旧实现会误报 never-match，本轮改为不报（宁可漏报不误报）。
+- Runtime：`LeapinEngine` 缓存最近一次 `RuleSetLoader.load` 的原始成员（start / reload 成功后更新），
+  新增 `ruleDiagnostics(for:)`：引擎运行时走 `engine.diagnostics(source)`，未运行时走 analyzer + 缓存；
+  v1.6 的 `ControlWiring` scanner 与 App 的 `RuleDiagnosticsScan.swift` 一并删除。
+- 编辑器：`RulesView.refreshDiagnostics()` 与 `AddRuleSheet.draftWarning` 都调 `engine.ruleDiagnostics(for:)`，
+  新规则按其追加位置取诊断；规则行徽标、侧栏计数、CLI `--diagnose`、控制面 `POST /v1/explain` 里返回的诊断现在同源。
+
+### 可复现验证（2026-11-11 实测）
+
+- 构建（全新 scratch）：`swift build --scratch-path .build-v3` → Build complete，0 error / 0 warning。
+- 测试：`swift test --scratch-path .build-v3` → **216 passed / 1 skipped / 0 failures**
+  （Core 1 / Policy 86（1 skip，perf gate）/ Net 75 / Integrations 11 / Control 16 / Sync 24 / Runtime 4）；
+  新增 `RuleDiagnosticsTests` 11 条（rule-set 全死 / 空 / 有活成员 / 嵌套 / 递归 / negated、nil 与 `[:]` 区别、
+  草稿位置、analyzer↔engine 一致、取反空 matcher 不误报）。
+- 诊断 e2e：`LEAPIN_BIN=.build-v3/debug/leapin ./scripts/diagnostics-e2e.sh` → **pass=9 fail=0**。
+  真实 profile + 落盘 rule-set：live 集合经成员命中 PROXY、空集合与缺失来源各报一次 never-match、后缀遮蔽指到第 4 条、
+  无死规则 profile 打印「没有永不命中的规则」。
+- 回归：`control-e2e.sh` → 22/22；`smoke.sh`（端口 17891）→ 10/10；均 exit 0。
+- 性能（release）：`LEAPIN_PERF=1 swift test -c release --scratch-path .build-v3-release --filter RuleIndexPerf`
+  → rules=100001、load=129.3ms、p50=0.003ms、**p95=0.005ms**、p99=0.006ms（阈值 p95<2ms / load<300ms 通过）。
+
+### 未验证 / 限制
+
+1. 编辑器仍未在真实 App 窗口目视取证（同 §0.4 第 1 条）；本轮只验证到编译、单测与 CLI 同源。
+2. 诊断只从外层 RULE-SET 给出一条结论，不逐条列出成员内部诊断；成员数已写进 reason，需要逐条排查时仍可对 set 引擎单独调用 `diagnostics(sourceRules:)`。
+3. 遮蔽仍只覆盖可证明场景（同 matcher、后缀祖先、CIDR 包含）；regex / geo / keyword 跨 matcher 不判定。
+4. `RuleSetLoader` 把下载失败的 source 物化为空集合（既有契约，PolicyTests 固定断言），因此「文件为空」与「加载失败」在诊断里共用一条 reason，文案已同时写明两种情况。
+5. JavaScript 脚本沙箱仍未开始（P3 第三项），不在本轮范围。
+
 ## 1. 构建
 
 ```
@@ -281,6 +330,9 @@ swift test
 | LeapinNetTests | 69 | 0 failures | 8.8s |
 | LeapinIntegrationsTests | 11 | 0 failures | 0.8s |
 | 合计 | **132** | **0 failures** | ~12s |
+
+> v1.9（2026-11-11）全量复跑：**216 passed / 1 skipped / 0 failures**（Core 1 / Policy 86（1 skip）/ Net 75 /
+> Integrations 11 / Control 16 / Sync 24 / Runtime 4），详见 §0.8；上表为 v1.1 基线。
 
 新增覆盖（v1.1）：
 - `FormatTests`（20 条）：Clash / Surge / 订阅 / rule-set 往返等价、未知协议保留 `rawType`、`$domain` 作用域、诊断字段。
