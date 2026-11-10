@@ -129,7 +129,8 @@
 遮蔽只判定可证明场景；control 热重载不含监听器级变更（MITM/capture/bypass 需重启）。
 
 2026-11-11 更新（v1.9）：`diagnostics()` 已递归 RULE-SET 成员，引擎 / 编辑器 / 控制面改用共享
-`RuleDiagnosticsAnalyzer`（见 §10.1）；脚本沙箱与真实窗口目视取证仍未做。
+`RuleDiagnosticsAnalyzer`（见 §10.1）；编辑器真实窗口目视取证已用隔离 demo profile 补做
+（`docs/assets/p3-diagnostics-demo.png`，VERIFICATION §0.8）；脚本沙箱仍未做。
 
 P2 已完成（见 §11）。下一期：P4 设计（docs/P4-DESIGN.md）——TUN/VIF 全流量接管、路由原子回滚、网关 + DHCP；
 实现需要 Developer ID + Network Extension entitlement，本机 ad-hoc 签名下只做设计不交付。
@@ -142,10 +143,11 @@ P3 剩余：JavaScript 脚本沙箱（JSC 常驻 context + 50ms 硬超时）。
 | 单一判定入口 | `RuleDiagnosticsAnalyzer.analyze(_:ruleSets:)`；引擎 `diagnostics()` 委托；Runtime `ruleDiagnostics(for:)` 缓存已加载成员，引擎未启动也能给编辑器结论 | `RuleDiagnosticsTests` 26 条；analyzer↔engine 一致性用例 |
 | RULE-SET 递归 | 空集合 / 成员全死 / 嵌套 / 递归防环 / negated 保守；reason 带成员数或「文件为空或加载失败」 | 8 条 rule-set 新单测 + `scripts/diagnostics-e2e.sh` 9/9 |
 | 取反诚实性 | `!MATCH` 报 never-match；取反的空值 / 非法 CIDR / 坏正则 / 空 OR/NOT 是 catch-all，不误报 | `testNegatedFinalDoesNotStopEvaluation`、`testNegatedEmptyMatchersAreLiveCatchAlls` |
-| 编辑器同源 | RulesView 侧栏 / 行徽标 / AddRuleSheet 预检统一走 `engine.ruleDiagnostics(for:)`；删除 Runtime scanner 与 App 的 `RuleDiagnosticsScan.swift` | 编译 + 诊断 e2e；编辑器目视取证仍未做 |
+| 编辑器同源 | RulesView 侧栏 / 行徽标 / AddRuleSheet 预检统一走 `engine.ruleDiagnostics(for:)`；删除 Runtime scanner 与 App 的 `RuleDiagnosticsScan.swift` | 编译 + 诊断 e2e；真实窗口目视取证见 VERIFICATION §0.8 |
 | 回归与性能 | 216 passed / 1 skipped；control-e2e 22/22；smoke 10/10；100k 规则 release p95=0.005ms、load=129.3ms | 见 VERIFICATION §0.8 |
 
-未做：JavaScript 脚本沙箱（P3 第三项）；编辑器真实窗口目视取证；成员级诊断明细（外层只给一条结论）。
+未做：JavaScript 脚本沙箱（P3 第三项）；成员级诊断明细（外层只给一条结论）。
+编辑器目视已补做（demo profile 截图，见 VERIFICATION §0.8）。
 
 ## 11. P2 交付（2026-11-09）
 

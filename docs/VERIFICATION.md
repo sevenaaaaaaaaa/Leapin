@@ -126,7 +126,8 @@ P3 规则索引与诊断（后缀 Trie / AC keyword / IP radix + 10 万规则门
 
 ### 未验证 / 限制
 
-1. 编辑器诊断只做了编译级与逻辑级验证，未在真实 App 窗口目视取证（本次启动 App 未能可靠截到窗口）。
+1. 编辑器诊断已用隔离 demo profile 在真实 App 窗口目视取证（2026-11-11，浅色，`docs/assets/p3-diagnostics-demo.png`）：
+   侧栏「3 条永不命中」、行徽标「永不命中 / 被遮蔽」与 CLI 结论一致；未做：深色模式、点击跳转逐项走查。
 2. `diagnostics()` 只看已加载规则，不递归 RULE-SET 成员内部；成员诊断需对 set 引擎调用 `diagnostics(sourceRules:)`。
    （v1.9 已实现 RULE-SET 递归并统一为共享分析器，见 §0.8；此处保留 v1.6 当时的限制记录。）
 3. 遮蔽只覆盖可证明场景（同 matcher、后缀祖先、CIDR 包含），regex / geo / keyword 跨 matcher 不判定。
@@ -299,7 +300,8 @@ P3 的「编辑器能报永不命中」在 v1.6 落地时存在三份实现：`R
 
 ### 未验证 / 限制
 
-1. 编辑器仍未在真实 App 窗口目视取证（同 §0.4 第 1 条）；本轮只验证到编译、单测与 CLI 同源。
+1. 编辑器已补做真实 App 窗口目视取证（2026-11-11，隔离 demo profile，截图 `docs/assets/p3-diagnostics-demo.png`，见 §0.4 第 1 条）；
+   仅覆盖浅色与一次启动，深色、点击跳转、草稿预检仍未逐一截图。
 2. 诊断只从外层 RULE-SET 给出一条结论，不逐条列出成员内部诊断；成员数已写进 reason，需要逐条排查时仍可对 set 引擎单独调用 `diagnostics(sourceRules:)`。
 3. 遮蔽仍只覆盖可证明场景（同 matcher、后缀祖先、CIDR 包含）；regex / geo / keyword 跨 matcher 不判定。
 4. `RuleSetLoader` 把下载失败的 source 物化为空集合（既有契约，PolicyTests 固定断言），因此「文件为空」与「加载失败」在诊断里共用一条 reason，文案已同时写明两种情况。
