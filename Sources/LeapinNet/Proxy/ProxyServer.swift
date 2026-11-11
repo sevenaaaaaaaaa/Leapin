@@ -18,19 +18,21 @@ public final class ProxyServer: @unchecked Sendable {
         public var enableHTTP: Bool
         public var mitm: Bool
         public var mitmHosts: [String]
+        public var socksUDPUpstreamPort: UInt16?
 
         public init(port: UInt16,
                     allowLAN: Bool = false,
                     enableSOCKS5: Bool = true,
                     enableHTTP: Bool = true,
                     mitm: Bool = false,
-                    mitmHosts: [String] = ["*"]) {
+                    mitmHosts: [String] = ["*"], socksUDPUpstreamPort: UInt16? = nil) {
             self.port = port
             self.allowLAN = allowLAN
             self.enableSOCKS5 = enableSOCKS5
             self.enableHTTP = enableHTTP
             self.mitm = mitm
             self.mitmHosts = mitmHosts
+            self.socksUDPUpstreamPort = socksUDPUpstreamPort
         }
     }
 
@@ -605,6 +607,13 @@ public final class ProxyServer: @unchecked Sendable {
         let command = requestHead[1]
         let (host, port) = try await SOCKS5.decodeAddress(stream)
 
+        if command == SOCKS5.Command.udpAssociate.rawValue, let upstreamPort = options.socksUDPUpstreamPort {
+            guard !options.allowLAN else {
+                try await stream.write(SOCKS5.encodeReply(.notAllowed)); return
+            }
+            try await handoffUDP(stream: stream, socket: socket, id: id, port: upstreamPort)
+            return
+        }
         guard command == SOCKS5.Command.connect.rawValue else {
             LPLog.shared.warn("net.proxy", "socks5 unsupported command \(command) for \(host):\(port)")
             try await stream.write(SOCKS5.encodeReply(.commandNotSupported))
@@ -648,6 +657,28 @@ public final class ProxyServer: @unchecked Sendable {
                 "socks5 \(host):\(port) via \(decision.outbound.name) failed: \(error.localizedDescription)")
             try? await stream.write(SOCKS5.encodeReply(.hostUnreachable))
         }
+    }
+
+    /// Datagram packets go directly to the loopback kernel relay. The TCP
+    /// association remains owned by this client and closes on stop/disconnect.
+    private func handoffUDP(stream: BufferedStream, socket: NetSocket, id: UUID, port: UInt16) async throws {
+        let upstream = try await NetSocket.connect(host: "127.0.0.1", port: port, timeout: 5)
+        registerUpstream(upstream, for: id)
+        let control = BufferedStream(upstream)
+        try await control.write(Data([5, 1, 0]))
+        guard Array(try await control.readExactly(2)) == [5, 0] else { throw LeapinError.protocolError("内核拒绝 UDP 关联") }
+        try await control.write(SOCKS5.requestHeader(host: "0.0.0.0", port: 0, command: .udpAssociate)!)
+        let head = Array(try await control.readExactly(4))
+        guard head.count == 4, head[0] == 5, head[1] == 0, head[2] == 0 else {
+            try await stream.write(SOCKS5.encodeReply(.commandNotSupported)); return
+        }
+        let (host, relayPort) = try await SOCKS5.decodeAddress(control, firstType: head[3])
+        guard ["127.0.0.1", "0.0.0.0", "::1", "::"].contains(host), relayPort > 0,
+              let address = SOCKS5.encodeAddress(host: "127.0.0.1", port: relayPort) else {
+            throw LeapinError.protocolError("内核 UDP 中继必须位于本机")
+        }
+        try await stream.write(SOCKS5.encodeReply(.succeeded, boundAddress: address))
+        _ = await BytePump.run(socket, upstream, idleTimeout: 3600)
     }
 
     // MARK: - Shared helpers

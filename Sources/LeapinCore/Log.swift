@@ -73,9 +73,11 @@ public enum Redactor {
     private static let patterns: [(String, String)] = [
         (#"(?i)(authorization|proxy-authorization)\s*:\s*[^\r\n]+"#, "$1: <redacted>"),
         (#"(?i)(cookie|set-cookie)\s*:\s*[^\r\n]+"#, "$1: <redacted>"),
-        (#"(?i)(password|passwd|pwd|token|secret|apikey|api_key)=([^&\s]+)"#, "$1=<redacted>"),
-        (#"(?i)("(password|token|secret|apikey)"\s*:\s*")[^"]*(")"#, "$1<redacted>$3"),
+        (#"(?i)(password|passwd|pwd|token|secret|apikey|api_key|uuid|private-key|private_key|auth-key)=([^&\s]+)"#, "$1=<redacted>"),
+        (#"(?i)("(password|token|secret|apikey|uuid|private-key|private_key|auth-key)"\s*:\s*")[^"]*(")"#, "$1<redacted>$3"),
         (#"(?i)([a-z]+://[^:/\s]+):([^@/\s]+)@"#, "$1:<redacted>@"),
+        (#"(?i)\b(password|passwd|pwd|token|secret|apikey|api_key|uuid|private-key|private_key|auth-key)(\s*:\s*)("[^"]*"|'[^']*'|[^\s,}\]]+)"#, "$1$2<redacted>"),
+        (#"(?i)\b(ss|ssr|vmess|vless|trojan|hysteria2|hy2|tuic)://[^\s]+"#, "$1://<redacted>"),
     ]
 
     private struct CompiledRule: @unchecked Sendable {
@@ -94,7 +96,7 @@ public enum Redactor {
     /// pass is skipped for ordinary log lines ("listening on 127.0.0.1:7890", ...).
     private static let triggers = [
         "authorization", "cookie", "password", "passwd", "pwd",
-        "token", "secret", "apikey", "api_key", "://",
+        "token", "secret", "apikey", "api_key", "uuid", "private-key", "private_key", "auth-key", "://",
     ]
 
     public static func redact(_ text: String) -> String {

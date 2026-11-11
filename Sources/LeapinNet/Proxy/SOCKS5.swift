@@ -59,8 +59,10 @@ public enum SOCKS5 {
         return out
     }
 
-    public static func decodeAddress(_ stream: BufferedStream) async throws -> (host: String, port: UInt16) {
-        guard let atypByte = try await stream.readByte() else {
+    public static func decodeAddress(_ stream: BufferedStream, firstType: UInt8? = nil) async throws -> (host: String, port: UInt16) {
+        let type: UInt8?
+        if let firstType { type = firstType } else { type = try await stream.readByte() }
+        guard let atypByte = type else {
             throw LeapinError.protocolError("socks5: unexpected EOF reading address type")
         }
         let host: String

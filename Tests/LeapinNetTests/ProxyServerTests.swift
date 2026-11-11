@@ -50,6 +50,19 @@ final class ProxyServerTests: XCTestCase {
 
     // MARK: - HTTP through the proxy (URLSession, connectionProxyDictionary)
 
+    func testProxyPathProbeUsesExplicitProxyAndHeadMethod() async throws {
+        let origin = try await HTTPOriginServer.start(mode: .status(204, ""))
+        servers.append(origin)
+        let resolver = MapResolver(["leapin-path-check.invalid": ["127.0.0.1"]])
+        let router = StaticRouter()
+        let server = try makeProxy(router: router, resolver: resolver)
+        let result = await ProxyPathProbe.probe("http://leapin-path-check.invalid:\(origin.port)/", port: server.listeningPort)
+        XCTAssertNil(result.error, result.error ?? "")
+        XCTAssertEqual(result.statusCode, 204)
+        XCTAssertEqual(origin.capturedRequests.first?.method, "HEAD")
+        XCTAssertEqual(router.metas.first?.host, "leapin-path-check.invalid")
+    }
+
     func testURLSessionHTTPThroughProxy() async throws {
         let origin = try await HTTPOriginServer.start(mode: .echo)
         servers.append(origin)
