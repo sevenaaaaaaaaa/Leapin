@@ -154,6 +154,13 @@ struct SettingsView: View {
 
     private var dnsSection: some View {
         Card(title: "DNS", subtitle: "解析策略与缓存", icon: "globe.asia.australia") {
+            if engine.executionKernel == .mihomo {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("当前 DNS 使用 Mihomo 来源策略，并由运行中的内核解析。修改 nameserver-policy 等策略时，请重新导入来源配置。")
+                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                    Button("查看来源方案") { app.go(to: .profiles) }.buttonStyle(LPGhostButtonStyle())
+                }
+            } else {
             VStack(spacing: 8) {
                 FieldRow(label: "模式") {
                     LPSelectField(value: $dnsMode, options: [(DNSMode.system, "系统 DNS"),
@@ -168,6 +175,7 @@ struct SettingsView: View {
                 FieldRow(label: "缓存 TTL", hint: "秒") { NumField(text: $cacheTTL, placeholder: "300") }
                 ToggleRow(label: "劫持 53 端口查询", subtitle: "拦截发往本地 53 的明文查询", isOn: $dnsHijack)
                     .padding(.top, 2)
+            }
             }
         }
     }

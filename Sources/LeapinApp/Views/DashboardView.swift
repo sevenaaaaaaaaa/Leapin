@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import AppKit
 import LeapinCore
 import LeapinRuntime
 
@@ -7,19 +8,22 @@ import LeapinRuntime
 /// configuration flags only. It never subscribes to flows or stats, so the
 /// overview does not re-render on every connection.
 @MainActor
-private final class OverviewModel: ObservableObject {
+final class OverviewModel: ObservableObject {
     @Published var state: EngineState
     @Published var profile: Profile
+    @Published var kernel: ExecutionKernel
     @Published var systemProxyActive: Bool
 
     private var cancellables = Set<AnyCancellable>()
 
     init() {
         let engine = LeapinEngine.shared
+        kernel = engine.executionKernel
         state = engine.state
         profile = engine.profile
         systemProxyActive = engine.systemProxyActive
 
+        engine.$executionKernel.receive(on: RunLoop.main).sink { [weak self] in self?.kernel = $0 }.store(in: &cancellables)
         engine.$state.receive(on: RunLoop.main).sink { [weak self] value in
             Task { @MainActor in self?.state = value }
         }.store(in: &cancellables)
@@ -32,419 +36,224 @@ private final class OverviewModel: ObservableObject {
     }
 }
 
-/// The overview is an index, not a live instrument: state, configuration and
-/// entrances to the tools people use most. Live connections and traffic moved
-/// to the Capture page's Observation sheet.
-///
-/// Hierarchy: one primary card (routing, with the policy rail), two secondary
-/// cards (ad blocking, capture), and a compact index of the remaining tools.
 @MainActor
 struct DashboardView: View {
     @EnvironmentObject private var app: AppModel
+    var body: some View { DashboardContent(scenes: app.scenes, bookmarks: app.bookmarks) }
+}
+
+@MainActor
+private struct DashboardContent: View {
+    @EnvironmentObject private var app: AppModel
     @Environment(\.lpWindowWidth) private var windowWidth
     @StateObject private var model = OverviewModel()
+    @ObservedObject var scenes: NetworkScenes
+    @ObservedObject var bookmarks: NetworkBookmarks
+
+    private var activeScene: NetworkScene? {
+        guard let active = scenes.active, scenes.profileID(for: active) == model.profile.id else { return nil }
+        return active
+    }
+    private var connected: Bool { model.state == .running && model.systemProxyActive }
+    private var columns: [GridItem] { [GridItem(.flexible(), alignment: .top), GridItem(.flexible(), alignment: .top)] }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
-                statusBand
-
-                if windowWidth >= 1100 {
-                    HStack(alignment: .top, spacing: 24) {
-                        mainColumn.frame(maxWidth: .infinity)
-                        sideColumn.frame(width: 300)
+            VStack(alignment: .leading, spacing: 22) {
+                statusBar
+                HStack(spacing: 10) {
+                    Button { app.networkToolPage = 0; app.showNetworkTools = true } label: { Label("分享本地服务", systemImage: "link") }.buttonStyle(LPGhostButtonStyle())
+                    Button { app.networkToolPage = 2; app.showNetworkTools = true } label: { Label("工具与致谢", systemImage: "heart") }.buttonStyle(LPGhostButtonStyle())
+                    Button { app.showCompany = true } label: { Label("公司内网", systemImage: "building.2") }.buttonStyle(LPGhostButtonStyle())
+                    Spacer(minLength: 0)
+                }
+                sceneRail
+                if windowWidth >= 900 {
+                    HStack(alignment: .top, spacing: 18) {
+                        subscriptionWidget.frame(maxWidth: .infinity)
+                        bookmarksWidget.frame(maxWidth: .infinity)
                     }
                 } else {
-                    VStack(spacing: 24) {
-                        mainColumn
-                        sideColumn
-                    }
+                    subscriptionWidget
+                    bookmarksWidget
                 }
-            }
-            .pagePadding()
-            .navigationTitle("总览")
-        }
-    }
-
-    // MARK: - Status
-
-    private var statusBand: some View {
-        HStack(alignment: .top, spacing: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                LPEyebrow("当前配置")
-
-                Text(model.profile.name)
-                    .font(LPFont.display(30, weight: .semibold))
-                    .tracking(-0.8)
-                    .foregroundStyle(LP.text)
-                    .lineLimit(1)
-
-                Text(statusLine)
-                    .font(.system(size: 14))
-                    .foregroundStyle(LP.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                HStack(spacing: 8) {
-                    Circle().fill(statusColor).frame(width: 6, height: 6)
-                    Text(model.state.label)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(LP.textSecondary)
-                    Text("·").font(.system(size: 12)).foregroundStyle(LP.textTertiary)
-                    Text(model.systemProxyActive ? "系统代理 开" : "系统代理 关")
-                        .font(.system(size: 12))
-                        .foregroundStyle(LP.textTertiary)
-                    Text("·").font(.system(size: 12)).foregroundStyle(LP.textTertiary)
-                    Text("127.0.0.1:\(model.profile.general.mixedPort)")
-                        .font(LPFont.mono(12))
-                        .foregroundStyle(LP.textTertiary)
+                HStack {
+                    Text("随手可用").font(.system(size: 15, weight: .semibold))
+                    Spacer()
+                    Text("⌘K 查找更多工具").font(.system(size: 12)).foregroundStyle(LP.textSecondary)
                 }
-            }
-
-            Spacer(minLength: 12)
-
-            VStack(alignment: .trailing, spacing: 12) {
-                Button {
-                    app.toggle()
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: model.state == .running ? "stop.fill" : "play.fill")
-                            .font(.system(size: 12, weight: .bold))
-                        Text(model.state == .running ? "停止代理" : "启动代理")
-                            .font(.system(size: 12, weight: .semibold))
-                    }
-                    .frame(width: 112)
-                }
-                .buttonStyle(LPPrimaryButtonStyle(tint: model.state == .running ? LP.dangerFill : nil))
-                .controlSize(.large)
-
-                HStack(spacing: 8) {
-                    Text("系统代理")
-                        .font(.system(size: 12))
-                        .foregroundStyle(LP.textTertiary)
-                    LPSwitch(isOn: Binding(
-                        get: { model.systemProxyActive },
-                        set: { app.engine.toggleSystemProxy($0) }
-                    ), width: 30)
-                }
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 16)
-        .lpGlass(radius: 16, fallbackFill: LP.panel, shadow: 0.06)
-    }
-
-    private var statusLine: String {
-        if case .failed(let message) = model.state {
-            return "启动失败：\(message)"
-        }
-        if model.state == .starting { return "代理正在启动。" }
-        if model.state == .running {
-            return model.systemProxyActive
-                ? "流量已接管；实时观测在抓包页的「观测」里。"
-                : "代理已就绪，系统流量还没经过它。"
-        }
-        return "代理未启动；先启动，再把系统流量交给它。"
-    }
-
-    private var statusColor: Color {
-        switch model.state {
-        case .running: return LP.mint
-        case .starting: return LP.amber
-        case .failed: return LP.danger
-        case .stopped: return LP.textTertiary
-        }
-    }
-
-    // MARK: - Main column
-
-    private var mainColumn: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            LPEyebrow("核心").padding(.leading, 2)
-
-            RoutingCard(rules: model.profile.rules,
-                        groups: model.profile.groups) {
-                app.go(to: .rules)
-            }
-
-            if windowWidth >= 1100 {
-                HStack(alignment: .top, spacing: 16) {
-                    adblockCard
-                    captureCard
-                }
-            } else {
-                VStack(spacing: 16) {
-                    adblockCard
-                    captureCard
-                }
-            }
-        }
-    }
-
-    private var adblockCard: some View {
-        ToolCard(
-            title: "去广告",
-            detail: "拦截广告与跟踪器，规则来源与白名单在去广告页管理。",
-            status: model.profile.adblock.enabled ? "已开启" : "未开启",
-            icon: "hand.raised.fill",
-            section: .adblock)
-    }
-
-    private var captureCard: some View {
-        ToolCard(
-            title: "抓包与解密",
-            detail: "实时观测、请求详情与 HAR 导出都在抓包页。",
-            status: "抓包 \(model.profile.general.captureEnabled ? "开" : "关") · 解密 \(model.profile.general.mitmEnabled ? "开" : "关")",
-            icon: "waveform.path.ecg",
-            section: .capture)
-    }
-
-    // MARK: - Side column
-
-    private var sideColumn: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            LPEyebrow("工具").padding(.leading, 2)
-
-            IndexRow(title: "智能学习", icon: "brain", section: .learn)
-            IndexRow(title: "NAS", icon: "externaldrive.connected.to.line.below", section: .nas)
-            IndexRow(title: "SSH", icon: "terminal", section: .ssh)
-
-            LPDivider().padding(.vertical, 8)
-
-            LPEyebrow("系统").padding(.leading, 2)
-
-            IndexRow(title: "配置", icon: "doc.on.doc", section: .profiles)
-            IndexRow(title: "隐私", icon: "lock.shield", section: .privacy)
-            IndexRow(title: "设置", icon: "gearshape", section: .settings)
-        }
-    }
-}
-
-// MARK: - Routing card + policy rail
-
-@MainActor
-private struct RoutingCard: View {
-    let rules: [Rule]
-    let groups: [PolicyGroup]
-    let action: () -> Void
-
-    @State private var hovered = false
-    @FocusState private var focused: Bool
-
-    private var active: Bool { hovered || focused }
-
-    /// The last rule is the catch-all in a normal ruleset. Showing its policy is
-    /// honest data: it is where unmatched traffic actually goes.
-    private var exitPolicy: String {
-        displayPolicy(rules.last?.policy ?? (groups.first?.name ?? "DIRECT"))
-    }
-
-    private func displayPolicy(_ raw: String) -> String {
-        switch raw.uppercased() {
-        case "PROXY": return "代理"
-        case "DIRECT": return "直连"
-        case "REJECT": return "拒绝"
-        default: return raw
-        }
-    }
-
-    var body: some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.triangle.branch")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(LP.textTertiary)
-                        .frame(width: 18)
-                    Text("分流规则")
-                        .font(LPFont.display(18, weight: .semibold))
-                        .foregroundStyle(LP.text)
-                    Spacer(minLength: 8)
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(active ? LP.accent : LP.textTertiary)
-                        .offset(x: active ? 2 : 0)
-                }
-
-                Text("按域名、IP、进程或规则集决定每个连接的出口。")
-                    .font(.system(size: 14))
-                    .foregroundStyle(LP.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    LPDivider()
-                    HStack(spacing: 8) {
-                        railNode("\(rules.count) 条规则")
-                        railLine
-                        railNode("\(groups.count) 个策略组")
-                        railLine
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(active ? LP.accent : LP.textTertiary)
-                                .frame(width: 5, height: 5)
-                            Text("出口")
-                                .font(LPFont.mono(12))
-                                .foregroundStyle(LP.textTertiary)
-                            Text(exitPolicy)
-                                .font(LPFont.mono(12, weight: .medium))
-                                .foregroundStyle(active ? LP.accent : LP.textSecondary)
-                                .lineLimit(1)
+                LazyVGrid(columns: columns, spacing: 16) {
+                    CompanyWidget(model: app.company)
+                    widget("开发与 Agent", icon: "curlybraces", note: "终端、App 分流与服务器") {
+                        HStack(spacing: 8) {
+                            Button("复制终端代理") { copyTerminal() }.buttonStyle(LPGhostButtonStyle())
+                            Button("App 分流") { app.go(to: .learn) }.buttonStyle(LPGhostButtonStyle())
                         }
-                        .fixedSize()
+                        textAction("连接服务器", icon: "terminal") { app.go(to: .ssh) }
+                    }
+                    HomeWidget(home: app.home)
+                    widget("HTTPS 调试通道", icon: "curlybraces.square", note: "mitmproxy 解密 · Mihomo 出站") {
+                        Button("调试一个网站") { app.networkToolPage = 1; app.showNetworkTools = true }.buttonStyle(LPGhostButtonStyle())
+                        Text("独立入口，限定网站，保留证书校验。").font(.system(size: 12)).foregroundStyle(LP.textTertiary)
+                    }
+                    widget("网站与网络体检", icon: "stethoscope", note: "检查目标、解释分流与连接异常") {
+                        HStack(spacing: 8) {
+                            Button("粘贴 URL 检查") { inspectClipboard() }.buttonStyle(LPGhostButtonStyle())
+                            Button("打开排障") { app.go(to: .diagnostics) }.buttonStyle(LPGhostButtonStyle())
+                        }
+                        textAction("连接明细与流量", icon: "waveform.path") { app.go(to: .activity) }
+                    }
+                    widget("保护与调试", icon: "lock.shield", note: "广告过滤、抓包与隐私检查") {
+                        HStack(spacing: 8) {
+                            Button("过滤与例外") { app.go(to: .adblock) }.buttonStyle(LPGhostButtonStyle())
+                            Button("抓包") { app.go(to: .capture) }.buttonStyle(LPGhostButtonStyle())
+                        }
+                        textAction("隐私审计", icon: "checkmark.shield") { app.go(to: .privacy) }
+                    }
+                }
+                HStack(spacing: 12) {
+                    Image(systemName: "cpu").foregroundStyle(LP.textSecondary)
+                    Text("\(model.kernel.title) · \(model.profile.name)")
+                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary).lineLimit(1)
+                    Spacer()
+                    Button("支持哪些协议？") { app.showCapabilities = true }.buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .medium)).foregroundStyle(LP.accent)
+                    Button("设置") { app.go(to: .settings) }.buttonStyle(.plain)
+                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                }.padding(.top, 4)
+            }.pagePadding()
+        }
+        .foregroundStyle(LP.text)
+    }
+
+    private var statusBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("你的网络，随需而行。")
+                        .font(LPFont.display(26, weight: .semibold)).tracking(-0.5)
+                    HStack(spacing: 7) {
+                        Circle().fill(connected ? LP.mint : LP.textTertiary).frame(width: 6, height: 6)
+                        Text(connected ? "系统代理已接入" : model.state == .running ? "本地服务就绪 · 系统代理未接入" : model.state.label)
+                        Text("·")
+                        Text(activeScene?.title ?? "尚未选择场景")
+                    }.font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                }
+                Spacer(minLength: 8)
+                Button(connected ? "暂停接管" : app.networkBusy ? "准备中…" : "连接网络") {
+                    if connected { app.pauseNetwork() } else { app.connectNetwork() }
+                }.buttonStyle(LPGhostButtonStyle()).disabled(app.networkBusy || app.engine.configurationBusy || model.state == .starting)
+            }
+            if let message = app.networkMessage {
+                Text(message).font(.system(size: 12)).foregroundStyle(app.networkFailed ? LP.danger : LP.textSecondary)
+            }
+        }
+    }
+
+    private var sceneRail: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                LPEyebrow("场景 / SCENES")
+                Spacer()
+                if let activeScene {
+                    Button("调整当前场景") { app.sceneToConfigure = activeScene }.buttonStyle(.plain)
+                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                }
+            }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {
+                ForEach(NetworkScene.allCases) { scene in
+                    Button { app.switchScene(scene) } label: {
+                        VStack(spacing: 8) {
+                            Image(systemName: scene.icon).font(.system(size: 18))
+                            Text(scene.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                            Text(scenes.profileID(for: scene) == nil ? "设置方案" : activeScene == scene ? (model.state == .running ? "使用中" : "已选择") : "可切换")
+                                .font(.system(size: 10)).foregroundStyle(activeScene == scene ? LP.accent : LP.textTertiary)
+                        }
+                        .foregroundStyle(activeScene == scene ? LP.accent : LP.text)
+                        .frame(maxWidth: .infinity).padding(.vertical, 14)
+                        .background(activeScene == scene ? LP.accent.opacity(0.09) : LP.text.opacity(0.035),
+                                    in: RoundedRectangle(cornerRadius: 12))
+                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(activeScene == scene ? LP.accent.opacity(0.3) : LP.stroke))
+                        .contentShape(Rectangle())
+                    }.buttonStyle(LPCardButtonStyle(radius: 12)).disabled(app.networkBusy)
+                        .help(scene.detail).accessibilityLabel("\(scene.title)，\(scenes.profileID(for: scene) == nil ? "未绑定方案" : "切换场景")")
+                }
+            }
+        }
+    }
+
+    private var subscriptionWidget: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Label("线路与订阅", systemImage: "point.3.connected.trianglepath.dotted")
+                    .font(.system(size: 15, weight: .semibold))
+                Spacer()
+                Text(model.kernel.title).font(LPFont.mono(10)).foregroundStyle(LP.textSecondary)
+            }
+            Text(model.profile.name).font(LPFont.display(22, weight: .semibold)).lineLimit(1)
+            Text("\(model.profile.outbounds.filter { $0.type != .direct && $0.type != .reject }.count) 个节点 · \(model.profile.groups.count) 个策略组 · \(model.profile.rules.count) 条来源规则")
+                .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+            HStack(spacing: 8) {
+                Button("导入 / 转换订阅") { app.beginImport() }.buttonStyle(LPPrimaryButtonStyle())
+                Button("管理线路") { app.go(to: .profiles) }.buttonStyle(LPGhostButtonStyle())
+            }
+        }
+        .padding(20).frame(maxWidth: .infinity, minHeight: 197, alignment: .topLeading).lpPanel(padding: 0)
+    }
+
+    private var bookmarksWidget: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Label("常用书签", systemImage: "bookmark").font(.system(size: 15, weight: .semibold))
+                Spacer()
+                Button("管理") { app.showBookmarks = true }.buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(LP.accent)
+            }
+            if bookmarks.items.isEmpty {
+                Text("把常用网站放在这里，打开、检查，一步可达。")
+                    .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
+                Spacer(minLength: 0)
+                Button("添加网站") { app.showBookmarks = true }.buttonStyle(LPGhostButtonStyle())
+            } else {
+                ForEach(Array(bookmarks.items.prefix(3))) { bookmark in
+                    HStack {
+                        Button(bookmark.title) { NSWorkspace.shared.open(bookmark.url) }.buttonStyle(.plain)
+                            .font(.system(size: 13)).foregroundStyle(LP.text).lineLimit(1)
+                        Spacer()
+                        Button("检查") { app.openTask(bookmark.url.absoluteString) }.buttonStyle(.plain)
+                            .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
                     }
                 }
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .lpGlass(radius: 16, fallbackFill: LP.panel, shadow: 0.05)
-            .overlay(alignment: .trailing) {
-                // Index tab: a bookmark pulled out of the card edge on hover/focus.
-                Capsule()
-                    .fill(LP.accent)
-                    .frame(width: 2, height: 18)
-                    .offset(x: active ? 7 : 1)
-                    .opacity(active ? 0.9 : 0)
-                    .allowsHitTesting(false)
-            }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(LPCardButtonStyle(radius: 16))
-        .onHover { hovered = $0 }
-        .focused($focused)
-        .lpAnimation(LPMotion.standard, value: active)
+        .padding(20).frame(maxWidth: .infinity, minHeight: 197, alignment: .topLeading).lpPanel(padding: 0)
     }
 
-    private func railNode(_ text: String) -> some View {
-        Text(text)
-            .font(LPFont.mono(12))
-            .foregroundStyle(LP.textTertiary)
-            .fixedSize()
-    }
-
-    private var railLine: some View {
-        ZStack(alignment: .leading) {
-            Rectangle()
-                .fill(LP.strokeStrong.opacity(0.55))
-                .frame(height: 1)
-            Rectangle()
-                .fill(LP.accent)
-                .frame(height: 2)
-                .scaleEffect(x: active ? 1 : 0.001, anchor: .leading)
+    private func widget<Content: View>(_ title: String, icon: String, note: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 9) {
+                Image(systemName: icon).font(.system(size: 17)).foregroundStyle(LP.textSecondary).accessibilityHidden(true)
+                Text(title).font(.system(size: 15, weight: .semibold))
+            }
+            Text(note).font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+            content()
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 2)
+        .padding(18).frame(maxWidth: .infinity, minHeight: 176, alignment: .topLeading)
+        .background(LP.text.opacity(0.025), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(LP.stroke))
     }
-}
-
-// MARK: - Secondary card
-
-@MainActor
-private struct ToolCard: View {
-    @EnvironmentObject private var app: AppModel
-
-    let title: String
-    let detail: String
-    let status: String
-    let icon: String
-    let section: AppModel.Section
-
-    @State private var hovered = false
-    @FocusState private var focused: Bool
-
-    private var active: Bool { hovered || focused }
-
-    var body: some View {
-        Button {
-            app.go(to: section)
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    Image(systemName: icon)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(LP.textTertiary)
-                        .frame(width: 18)
-                    Text(title)
-                        .font(LPFont.display(18, weight: .semibold))
-                        .foregroundStyle(LP.text)
-                    Spacer(minLength: 8)
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(active ? LP.accent : LP.textTertiary)
-                        .offset(x: active ? 2 : 0)
-                }
-
-                Text(detail)
-                    .font(.system(size: 14))
-                    .foregroundStyle(LP.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Text(status)
-                    .font(LPFont.mono(12))
-                    .foregroundStyle(LP.textTertiary)
-            }
-            .padding(16)
-            .frame(minWidth: 240, maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
-            .lpGlass(radius: 16, fallbackFill: LP.panel, shadow: 0.04)
-            .overlay {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(active ? LP.accent.opacity(0.035) : .clear)
-                    .allowsHitTesting(false)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(LPCardButtonStyle(radius: 16))
-        .onHover { hovered = $0 }
-        .focused($focused)
-        .lpAnimation(LPMotion.standard, value: active)
+    private func textAction(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon).font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+        }.buttonStyle(.plain)
     }
-}
-
-// MARK: - Index row
-
-@MainActor
-private struct IndexRow: View {
-    @EnvironmentObject private var app: AppModel
-
-    let title: String
-    let icon: String
-    let section: AppModel.Section
-
-    @State private var hovered = false
-    @FocusState private var focused: Bool
-
-    private var active: Bool { hovered || focused }
-
-    var body: some View {
-        Button {
-            app.go(to: section)
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(active ? LP.accent : LP.textSecondary)
-                    .frame(width: 18)
-                Text(title)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(LP.text)
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(LP.textTertiary)
-                    .offset(x: active ? 2 : 0)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .lpGlass(radius: 12, fallbackFill: LP.panel, shadow: 0)
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(active ? LP.accent.opacity(0.045) : .clear)
-                    .allowsHitTesting(false)
-            }
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(LPCardButtonStyle(radius: 12))
-        .onHover { hovered = $0 }
-        .focused($focused)
-        .lpAnimation(LPMotion.quick, value: active)
+    private func copyTerminal() {
+        let port = model.profile.general.mixedPort
+        LPClipboard.copy("export http_proxy=http://127.0.0.1:\(port) https_proxy=http://127.0.0.1:\(port) all_proxy=socks5h://127.0.0.1:\(port) no_proxy=localhost,127.0.0.1,::1")
+        app.showToast(model.state == .running ? "已复制终端代理环境命令" : "已复制；使用前请先启动网络服务", kind: .info)
+    }
+    private func inspectClipboard() {
+        let text = NSPasteboard.general.string(forType: .string) ?? ""
+        if SiteTarget(text) != nil { app.openTask(text) }
+        else { app.go(to: .diagnostics); app.requestSearchFocus(); app.showToast("请输入要检查的网站地址", kind: .info) }
     }
 }

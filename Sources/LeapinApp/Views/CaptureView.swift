@@ -206,6 +206,8 @@ struct CaptureView: View {
                         engine.setMITMEnabled(enabled)
                     }
                 ), width: 30)
+                .disabled(engine.executionKernel == .mihomo)
+                .help(engine.executionKernel == .mihomo ? "Mihomo 受管模式暂不支持 HTTPS 解密" : "仅解密配置范围内的网站")
             }
 
             Rectangle().fill(LP.strokeStrong.opacity(0.6)).frame(width: 1, height: 16)

@@ -82,6 +82,7 @@ final class GlobalHotKeyCenter {
 /// App-level lifecycle: hotkey, dock menu, and never leaving the system proxy behind on quit.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    var stopExternalTools: (() -> Void)?
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 让标题栏跟随内容主题，避免深色内容配浅色窗框。
         if ProcessInfo.processInfo.environment["LEAPIN_APPEARANCE"] == "dark" {
@@ -100,9 +101,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         let engine = LeapinEngine.shared
-        if engine.systemProxyActive {
-            engine.toggleSystemProxy(false)
-        }
+        engine.stop()
+        engine.managedKernel.stop()
+        stopExternalTools?()
     }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {

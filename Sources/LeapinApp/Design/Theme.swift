@@ -342,15 +342,16 @@ struct LPEyebrow: View {
 // MARK: - Controls
 
 struct LPPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
     var tint: Color? = nil
     func makeBody(configuration: Configuration) -> some View {
-        let fill = tint ?? LP.accentFill
+        let fill = isEnabled ? (tint ?? LP.accentFill) : LP.stroke
         LPButtonFocusRing(shape: Capsule()) {
             // 主操作保持不透明实色：tint 玻璃在浅底上会把朱红洗成灰，
             // 白字对比掉到 2:1 以下——可读性优先于材质一致性。
             configuration.label
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(isEnabled ? .white : LP.textTertiary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(Capsule(style: .continuous).fill(fill))
@@ -358,7 +359,7 @@ struct LPPrimaryButtonStyle: ButtonStyle {
                     Capsule(style: .continuous)
                         .strokeBorder(.white.opacity(0.18), lineWidth: 1)
                 )
-                .shadow(color: .black.opacity(0.10), radius: 8, y: 3)
+                .shadow(color: .black.opacity(isEnabled ? 0.10 : 0), radius: 8, y: 3)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .opacity(configuration.isPressed ? 0.86 : 1)
             .lpAnimation(LPMotion.press, value: configuration.isPressed)
@@ -367,6 +368,7 @@ struct LPPrimaryButtonStyle: ButtonStyle {
 }
 
 struct LPGhostButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
         LPButtonFocusRing(shape: Capsule()) {
             configuration.label
@@ -378,7 +380,7 @@ struct LPGhostButtonStyle: ButtonStyle {
                          interactive: true,
                          fallbackFill: LP.panel,
                          fallbackMaterial: .thinMaterial)
-                .opacity(configuration.isPressed ? 0.7 : 1)
+                .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.45)
         }
     }
 }

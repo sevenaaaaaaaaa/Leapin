@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import AppKit
 import LeapinRuntime
 import LeapinCore
@@ -16,6 +17,7 @@ struct LeapinApp: App {
         Window("Leapin", id: "main") {
             RootView()
                 .environmentObject(app)
+                .onAppear { appDelegate.stopExternalTools = { app.sharing.stop(force: true); app.debugChannel.stop(force: true) } }
                 .frame(minWidth: 900, minHeight: 660)
         }
         .defaultSize(width: 1240, height: 820)
@@ -64,10 +66,13 @@ struct LeapinApp: App {
                 Button("搜索当前页面") { app.requestSearchFocus() }
                     .keyboardShortcut("f", modifiers: .command)
                 Divider()
-                ForEach(Array(AppModel.Section.allCases.enumerated()), id: \.element) { index, section in
+                ForEach(Array(AppModel.Section.allCases.prefix(10).enumerated()), id: \.element) { index, section in
                     Button(section.title) { app.go(to: section) }
                         .keyboardShortcut(Self.key(for: index), modifiers: .command)
                 }
+                Divider()
+                Button("网络活动") { app.go(to: .activity) }
+                Button("排障与配置") { app.go(to: .diagnostics) }
                 Divider()
                 Button("启动 / 停止代理") { app.toggle() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])
@@ -105,7 +110,7 @@ struct LeapinApp: App {
 @MainActor
 final class AppModel: ObservableObject {
     enum Section: String, CaseIterable, Identifiable {
-        case dashboard, rules, adblock, capture, ssh, nas, learn, privacy, profiles, settings
+        case dashboard, rules, adblock, capture, ssh, nas, learn, privacy, profiles, settings, activity, diagnostics
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -117,8 +122,10 @@ final class AppModel: ObservableObject {
             case .nas: return "NAS"
             case .learn: return "智能学习"
             case .privacy: return "隐私"
-            case .profiles: return "配置"
+            case .profiles: return "线路与订阅"
             case .settings: return "设置"
+            case .activity: return "网络活动"
+            case .diagnostics: return "排障与配置"
             }
         }
         var icon: String {
@@ -133,19 +140,21 @@ final class AppModel: ObservableObject {
             case .privacy: return "lock.shield"
             case .profiles: return "doc.on.doc"
             case .settings: return "gearshape"
+            case .activity: return "waveform.path"
+            case .diagnostics: return "stethoscope"
             }
         }
         /// 该页面是否真的有可聚焦的搜索框（⌘F 只在 true 的页面上生效）。
         var supportsSearch: Bool {
             switch self {
-            case .dashboard, .rules, .capture, .adblock, .profiles: return true
-            case .ssh, .nas, .learn, .privacy, .settings: return false
+            case .rules, .capture, .adblock, .profiles, .activity, .diagnostics: return true
+            case .dashboard, .ssh, .nas, .learn, .privacy, .settings: return false
             }
         }
 
         var subtitle: String {
             switch self {
-            case .dashboard: return "功能入口与当前配置"
+            case .dashboard: return "场景、常用资源与便捷操作"
             case .rules: return "Clash / Surge 规则、策略组与规则集"
             case .adblock: return "过滤列表、拦截统计与白名单"
             case .capture: return "HTTP(S) 请求抓取与 HAR 导出"
@@ -155,11 +164,33 @@ final class AppModel: ObservableObject {
             case .privacy: return "隐私审计与网络加固建议"
             case .profiles: return "配置导入、导出与切换"
             case .settings: return "端口、DNS、抓包与日志"
+            case .activity: return "连接明细、流量与分流路径"
+            case .diagnostics: return "网站检查、规则调整与可恢复操作"
             }
         }
     }
 
     let engine = LeapinEngine.shared
+    let assistant = NetworkAssistantModel()
+    let scenes = NetworkScenes(root: LeapinEngine.shared.store.root)
+    let bookmarks = NetworkBookmarks(root: LeapinEngine.shared.store.root)
+    let home = HomeConnections(root: LeapinEngine.shared.store.root)
+    let company = CompanyAccess(root: LeapinEngine.shared.store.root)
+    @Published var showCompany = false
+    @Published var companyResourceFocus: UUID?
+    let sharing = ServiceSharing()
+    let debugChannel = DebugChannel(root: LeapinEngine.shared.store.root)
+    @Published var showNetworkTools = false
+    @Published var networkToolPage = 0
+    @Published var showImportCenter = false
+    @Published var pendingImport: ImportPreparation?
+    @Published var showCapabilities = false
+    @Published var sceneToConfigure: NetworkScene?
+    @Published var showBookmarks = false
+    @Published var showHome = false
+    @Published var networkBusy = false
+    @Published var networkMessage: String?
+    @Published var networkFailed = false
 
     @Published var section: Section? = .dashboard
     @Published var toast: String?
@@ -180,7 +211,11 @@ final class AppModel: ObservableObject {
     @Published var launchAtLogin = false
     @Published var autostartProxy = false
 
+    private var externalToolsLifecycle: AnyCancellable?
     init() {
+        externalToolsLifecycle = engine.$state.dropFirst().sink { [weak self] state in
+            if state != .running { self?.debugChannel.stop() }
+        }
         if let raw = UserDefaults.standard.string(forKey: "startSection"),
            let s = Section(rawValue: raw) {
             section = s
@@ -220,6 +255,7 @@ final class AppModel: ObservableObject {
     /// 避免「按了没反应」的假入口。
     func requestSearchFocus() {
         let page = section ?? .dashboard
+        if page == .dashboard { showPalette = true; return }
         guard page.supportsSearch else {
             showPalette = true
             showToast("\(page.title)没有搜索框，已打开命令面板", kind: .info)
@@ -273,7 +309,84 @@ final class AppModel: ObservableObject {
 
     // MARK: Actions
 
+    func openTask(_ text: String) {
+        assistant.prepare(text)
+        go(to: .diagnostics)
+    }
+
+    /// One user action owns the two dependent steps. Never point macOS at an
+    /// unbound listener. The durable message is also visible on the workspace.
+    func connectNetwork() {
+        guard !networkBusy, !engine.configurationBusy, engine.state != .starting else { return }
+        networkBusy = true
+        networkFailed = false
+        networkMessage = "正在启动服务；就绪后接入系统代理…"
+        Task {
+            engine.lastError = nil
+            if engine.state != .running { await engine.start() }
+            if engine.state == .running {
+                engine.toggleSystemProxy(true)
+            }
+            networkFailed = engine.state != .running || !engine.systemProxyActive || engine.lastError != nil
+            networkMessage = networkFailed
+                ? "未完成连接：\(engine.lastError ?? "服务未就绪")。可重试或在设置中检查端口。"
+                : "系统代理已接入。未测试具体网站；遇到访问问题可在下方输入网站检查。"
+            if networkFailed { assistant.inspectLocal() }
+            networkBusy = false
+        }
+    }
+
+    func inspectCompanyResource(_ resource: CompanyResource) {
+        companyResourceFocus = resource.id; showCompany = true
+        let port = engine.diagnosticProxyPort
+        let profile = engine.profile
+        let started = engine.stats.startedAt
+        let systemProxy = engine.systemProxyActive
+        Task { await company.check(resource, proxyPort: port, contextValid: {
+            self.engine.profile == profile && self.engine.stats.startedAt == started && self.engine.diagnosticProxyPort == port && self.engine.systemProxyActive == systemProxy
+        }) }
+    }
+
+    func openCompanyResource(_ resource: CompanyResource) {
+        guard let active = company.active, active.resources.contains(resource) else { return }
+        do { try engine.refreshHomeRouting() }
+        catch { company.notice(error.localizedDescription, failed: true); showCompany = true; return }
+        if active.method.isProxy {
+            engine.refreshSystemProxyStatus()
+            guard engine.state == .running, engine.systemProxyActive else {
+                company.notice("浏览器尚未通过 Leapin 使用内网代理。请先接入系统代理，或在目标 App 手动设置 Leapin 代理。", failed: true)
+                showCompany = true; return
+            }
+            guard !resource.matchesProxyBypass(engine.profile.general.bypass) else {
+                company.notice("此地址匹配系统代理绕过列表，直接打开浏览器可能不经过内网代理。请在设置核对绕过规则，或为目标 App 单独配置代理。", failed: true)
+                showCompany = true; return
+            }
+        }
+        if !NSWorkspace.shared.open(resource.url) { company.notice("系统没有打开此类地址的应用，请使用对应的官方客户端。", failed: true); showCompany = true }
+    }
+
+    func openHome() {
+        guard !home.busy, !engine.configurationBusy, engine.state != .starting else { return }
+        guard home.saved != nil else { showHome = true; return }
+        Task {
+            if let url = await home.verifySaved(applyRouting: { try self.engine.refreshHomeRouting() }) {
+                NSWorkspace.shared.open(url)
+            } else { showHome = true }
+        }
+    }
+
+    func pauseNetwork() {
+        guard !networkBusy, !engine.configurationBusy else { return }
+        engine.lastError = nil
+        engine.toggleSystemProxy(false)
+        networkFailed = engine.systemProxyActive || engine.lastError != nil
+        networkMessage = networkFailed
+            ? "暂停失败：\(engine.lastError ?? "请重试")"
+            : "已暂停系统代理。本地服务仍可供手动配置的 App 使用。"
+    }
+
     func toggle() {
+        guard !engine.configurationBusy else { showToast("正在启用配置，请稍后操作", kind: .info); return }
         Task {
             if engine.state == .running {
                 engine.stop()
@@ -289,52 +402,54 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func beginImport() {
+        pendingImport = nil
+        showImportCenter = true
+    }
+
     func importProfile(url: URL) {
+        do {
+            let data = try Data(contentsOf: url, options: .mappedIfSafe)
+            guard data.count <= 8 * 1024 * 1024, let text = String(data: data, encoding: .utf8) else {
+                throw LeapinError.invalidConfiguration("请选择 8 MB 内的 UTF-8 配置")
+            }
+            pendingImport = try ImportPreparation(text: text, name: url.deletingPathExtension().lastPathComponent,
+                origin: url.lastPathComponent, pathExtension: url.pathExtension)
+            showImportCenter = true
+        } catch { showToast(Redactor.redact(error.localizedDescription), kind: .error) }
+    }
+
+    func importFromClipboardLink() {
+        let raw = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         Task {
             do {
-                let outcome = try await engine.importProfileDetailed(from: url)
-                importReport = outcome.report
-                let report = outcome.report
-                let blocking = report.issues.contains { $0.kind.isBlocking }
-                if report.isClean {
-                    showToast("已导入并启用 \(outcome.profile.name)（\(report.ruleCount) 条规则）",
-                              kind: .success, actionTitle: "查看报告") { self.showImportReport = true }
-                } else {
-                    showToast(report.summary,
-                              kind: blocking ? .error : .warning,
-                              actionTitle: "查看报告") { self.showImportReport = true }
-                }
-            } catch {
-                showToast("导入失败：\(error.localizedDescription)", kind: .error)
-            }
+                pendingImport = try await ImportPreparation.download(raw, name: "")
+                showImportCenter = true
+            } catch { showToast(Redactor.redact(error.localizedDescription), kind: .error) }
         }
     }
 
-    /// 从剪贴板里的订阅链接导入（机场订阅是最常见的入口，不该逼用户先存文件）。
-    func importFromClipboardLink() {
-        let raw = NSPasteboard.general.string(forType: .string)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard raw.lowercased().hasPrefix("http://") || raw.lowercased().hasPrefix("https://") else {
-            showToast("剪贴板里没有 http(s) 订阅链接", kind: .warning)
+    func switchScene(_ scene: NetworkScene, profileID: UUID? = nil) {
+        guard !networkBusy, !engine.configurationBusy else { return }
+        guard let id = profileID ?? scenes.profileID(for: scene), engine.profiles.contains(where: { $0.id == id }) else {
+            sceneToConfigure = scene
             return
         }
+        networkBusy = true
         Task {
-            showToast("正在下载订阅…", kind: .info)
+            if engine.profile.id != id { await engine.activate(id) }
             do {
-                let outcome = try await engine.importRemoteProfile(raw)
-                importReport = outcome.report
-                let report = outcome.report
-                let blocking = report.issues.contains { $0.kind.isBlocking }
-                if report.isClean {
-                    showToast("已导入订阅 \(outcome.profile.name)（\(report.ruleCount) 条规则）",
-                              kind: .success, actionTitle: "查看报告") { self.showImportReport = true }
-                } else {
-                    showToast(report.summary, kind: blocking ? .error : .warning,
-                              actionTitle: "查看报告") { self.showImportReport = true }
+                guard engine.profile.id == id, engine.lastError == nil else {
+                    throw LeapinError.connectionFailed(engine.lastError ?? "场景配置无法启用")
                 }
-            } catch {
-                showToast(error.localizedDescription, kind: .error)
-            }
+                try scenes.bind(scene, to: id)
+                try scenes.markActive(scene)
+                sceneToConfigure = nil
+                showToast(engine.state == .running
+                    ? "已切换到\(scene.title) · \(engine.profile.name)"
+                    : "已选择\(scene.title) · 连接后使用\(engine.profile.name)")
+            } catch { showToast(Redactor.redact(error.localizedDescription), kind: .error) }
+            networkBusy = false
         }
     }
 
@@ -344,7 +459,10 @@ final class AppModel: ObservableObject {
         panel.allowedContentTypes = []
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let text = try engine.exportProfile(format)
+            let text: String
+            if format == .clash, let source = try engine.store.kernelSource(for: engine.profile.id), source.kernel == .mihomo {
+                text = source.clash
+            } else { text = try engine.exportProfile(format) }
             try text.write(to: url, atomically: true, encoding: .utf8)
             let name = url.lastPathComponent
             showToast("已导出到 \(name)", kind: .success, actionTitle: "在访达中显示") {
@@ -403,6 +521,13 @@ struct RootView: View {
         .sheet(isPresented: $app.showOnboarding) {
             OnboardingView().environmentObject(app)
         }
+        .sheet(isPresented: $app.showImportCenter) { ImportCenter().environmentObject(app) }
+        .sheet(isPresented: $app.showCapabilities) { KernelCapabilitiesView().environmentObject(app) }
+        .sheet(item: $app.sceneToConfigure) { scene in SceneConfigurationView(scene: scene).environmentObject(app) }
+        .sheet(isPresented: $app.showNetworkTools) { NetworkToolsView(sharing: app.sharing, debug: app.debugChannel).environmentObject(app) }
+        .sheet(isPresented: $app.showCompany) { CompanyAccessView(model: app.company).environmentObject(app) }
+        .sheet(isPresented: $app.showHome) { HomeConnectionView(home: app.home).environmentObject(app) }
+        .sheet(isPresented: $app.showBookmarks) { BookmarksView(store: app.bookmarks).environmentObject(app) }
         .sheet(isPresented: $app.showImportReport) {
             if let report = app.importReport {
                 ImportReportSheet(report: report) { app.showImportReport = false }
@@ -471,6 +596,8 @@ struct RootView: View {
         case .privacy: PrivacyView()
         case .profiles: ProfilesView()
         case .settings: SettingsView()
+        case .activity: ObservationView()
+        case .diagnostics: DiagnosticsWorkspace(assistant: app.assistant)
         }
     }
 
@@ -546,7 +673,7 @@ private struct SidebarView: View {
                                 let index = AppModel.Section.allCases.firstIndex(of: section) ?? 0
                                 SidebarRow(section: section,
                                            selected: app.section == section,
-                                           hint: index < 9 ? "\(index + 1)" : "0",
+                                           hint: index < 9 ? "\(index + 1)" : (index == 9 ? "0" : nil),
                                            compact: compact) {
                                     app.go(to: section)
                                 }
@@ -569,11 +696,10 @@ private struct SidebarView: View {
     }
 
     private static let groups: [(title: String, sections: [AppModel.Section])] = [
-        ("工作区", [.dashboard]),
-        ("代理", [.rules, .adblock]),
-        ("观测", [.capture]),
-        ("工具", [.ssh, .nas, .learn]),
-        ("系统", [.privacy, .profiles, .settings])
+        ("工作区", [.dashboard, .profiles]),
+        ("观测与排障", [.activity, .diagnostics, .capture]),
+        ("网络工具", [.rules, .adblock, .nas, .ssh, .learn]),
+        ("系统", [.privacy, .settings])
     ]
 
     private var paletteEntry: some View {
@@ -594,7 +720,7 @@ private struct SidebarView: View {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(LP.textTertiary)
-                    Text("搜索或跳转")
+                    Text("任务或工具")
                         .font(.system(size: 12))
                         .foregroundStyle(LP.textTertiary)
                     Spacer(minLength: 4)
@@ -697,7 +823,8 @@ private struct SidebarRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
-        .help("\(section.title)（⌘\(hint ?? "")）")
+        .help(hint.map { "\(section.title)（⌘\($0)）" } ?? section.title)
+        .accessibilityLabel(section.title)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -822,13 +949,14 @@ private struct PageHeaderBar: View {
                 toolbarDivider
 
                 HStack(spacing: 8) {
-                    Text("系统代理")
+                    Text("网络接管")
                         .font(.system(size: 12))
                         .foregroundStyle(LP.textSecondary)
                     LPSwitch(isOn: Binding(
                         get: { engine.systemProxyActive },
-                        set: { engine.toggleSystemProxy($0) }
+                        set: { if $0 { app.connectNetwork() } else { app.pauseNetwork() } }
                     ), width: 30)
+                    .disabled(app.networkBusy || engine.configurationBusy || engine.state == .starting)
                 }
                 .padding(.horizontal, 10)
                 .frame(height: 22)

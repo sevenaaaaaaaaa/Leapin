@@ -26,7 +26,7 @@ struct ProfilesView: View {
             await engine.activate(meta.id)
             activating = nil
             refresh()
-            if engine.profile.id == meta.id {
+            if engine.profile.id == meta.id, engine.lastError == nil {
                 app.showToast("已切换到 \(meta.name)", kind: .success)
             } else {
                 app.showToast("切换失败：\(engine.lastError ?? "配置无法载入")", kind: .error)
@@ -44,6 +44,7 @@ struct ProfilesView: View {
         ScrollView {
             VStack(spacing: 22) {
                 heroPanel
+                if engine.executionKernel == .mihomo { ManagedKernelPanel() }
                 listPanel
                 importSourcesPanel
             }
@@ -106,7 +107,7 @@ struct ProfilesView: View {
 
                 HStack(spacing: 8) {
                     Button {
-                        app.showImporter = true
+                        app.beginImport()
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: "square.and.arrow.down")
@@ -174,7 +175,7 @@ struct ProfilesView: View {
                 }
             }
 
-            Text("导入会自动识别格式并转换为内部模型；策略组、规则、DNS、去广告列表都会保留。导出支持 round-trip，便于在其他工具中使用。")
+            Text("先检查格式与执行内核，确认后再启用。Mihomo 方案保留原始 Clash 文本；转换格式时需检查目标能表达的范围。")
                 .font(.system(size: 12))
                 .foregroundStyle(LP.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -201,7 +202,7 @@ struct ProfilesView: View {
                     LPSearchField(text: $search, placeholder: "搜索配置名", width: 240, focus: $searchFocused)
                 }
                 Spacer(minLength: 8)
-                Text("本机存储 · 导入即启用")
+                Text("本机存储 · 先预检再启用")
                     .font(LPFont.mono(10))
                     .tracking(0.8)
                     .foregroundStyle(LP.textTertiary)
@@ -238,7 +239,7 @@ struct ProfilesView: View {
             Text("导入 Clash YAML、Surge conf 或之前导出的 Leapin JSON 即可开始。")
                 .font(.system(size: 12))
                 .foregroundStyle(LP.textTertiary)
-            Button("导入配置") { app.showImporter = true }
+            Button("导入配置") { app.beginImport() }
                 .buttonStyle(LPGhostButtonStyle())
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -347,7 +348,7 @@ struct ProfilesView: View {
                       "本应用导出的 .json，含出站、策略组、规则、DNS 与去广告列表")
             LPDivider()
             sourceRow("订阅链接",
-                      "Clash 订阅、base64 节点列表，或 ss / ssr / trojan / vmess / vless / hysteria2 URI")
+                      "Clash 订阅、base64 节点列表，或 ss / trojan / vmess / vless / hysteria2 URI；先检查内核兼容性")
 
             LPDivider()
 
@@ -356,7 +357,7 @@ struct ProfilesView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(LP.textTertiary)
                     .padding(.top, 1)
-                Text("导入在本机完成，写入 Application Support/Leapin/profiles 后立即启用；订阅只访问你粘贴的 URL，内容不会上传到其他服务器。")
+                Text("导入在本机完成，在预览中确认后才启用；订阅只访问你粘贴的 URL，内容不会上传到其他服务器。")
                     .font(.system(size: 12))
                     .foregroundStyle(LP.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)

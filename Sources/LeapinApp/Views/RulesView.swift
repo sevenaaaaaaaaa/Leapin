@@ -70,7 +70,11 @@ struct RulesView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            toolbar
+            if engine.executionKernel == .mihomo {
+                Text("Mihomo 正在执行原始分流配置。此处为来源预览；修改请到线路与订阅重新导入。")
+                    .font(.system(size: 12)).foregroundStyle(LP.textSecondary).padding(12)
+            }
+            toolbar.disabled(engine.executionKernel == .mihomo)
             HStack(alignment: .top, spacing: 22) {
                 ruleList
                     .clipShape(RoundedRectangle(cornerRadius: LPGlass.panelRadius, style: .continuous))
@@ -83,6 +87,7 @@ struct RulesView: View {
             .padding(.top, 16)
             .padding(.bottom, 24)
         }
+        .disabled(engine.executionKernel == .mihomo)
         .navigationTitle("分流规则")
         .sheet(isPresented: $showAdd) {
             AddRuleSheet { rule in

@@ -1,123 +1,55 @@
 import SwiftUI
 import LeapinRuntime
 
-/// Three-step first run. The goal is a working proxy in under a minute, with an exit at every step.
+/// First run starts with a goal, rather than a lesson in network architecture.
 @MainActor
 struct OnboardingView: View {
     @EnvironmentObject private var app: AppModel
-    @ObservedObject private var engine = LeapinEngine.shared
-    @State private var step = 0
-
-    private let steps: [(icon: String, title: String, body: String)] = [
-        ("bolt.horizontal.circle", "启动本地代理",
-         "Leapin 会在本机 :7890 提供混合代理（HTTP + SOCKS5），并可选启用 DNS。启动后你可以把任意 App 指向它。"),
-        ("network", "接入系统网络",
-         "开启系统代理后，macOS 的网络请求会自动经过 Leapin。随时可以在这里或菜单栏一键回滚。"),
-        ("command", "用键盘完成一切",
-         "⌘K 打开命令面板，⌘F 聚焦搜索，⌘1–⌘0 在十个页面之间跳转。菜单栏图标会常驻，关闭窗口也不会退出。"),
-    ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 22) {
             HStack {
-                Text("欢迎使用 Leapin")
-                    .font(LPFont.display(19, weight: .bold))
-                    .foregroundStyle(LP.text)
+                LPEyebrow("WELCOME / LEAPIN")
                 Spacer()
-                Button("跳过") { finish() }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 12))
-                    .foregroundStyle(LP.textTertiary)
+                Button("稍后设置") { finish() }.buttonStyle(LPGhostButtonStyle())
             }
-            .padding(.bottom, 4)
-
-            Text("第 \(step + 1) / \(steps.count) 步")
-                .font(LPFont.overline)
-                .foregroundStyle(LP.textTertiary)
-                .padding(.bottom, 16)
-
-            HStack(alignment: .top, spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous).fill(LP.accentSoft)
-                    Image(systemName: steps[step].icon)
-                        .font(.system(size: 20, weight: .medium))
-                        .foregroundStyle(LP.accent)
-                }
-                .frame(width: 52, height: 52)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(steps[step].title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(LP.text)
-                    Text(steps[step].body)
-                        .font(.system(size: 12))
-                        .foregroundStyle(LP.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 380, alignment: .leading)
-                }
+            VStack(alignment: .leading, spacing: 10) {
+                Text("先做成一件事。")
+                    .font(LPFont.display(28, weight: .semibold)).foregroundStyle(LP.text)
+                Text("从总览选择场景，管理订阅、网站和设备。需要检查时，再进入排障工作区。")
+                    .font(.system(size: 14)).foregroundStyle(LP.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.bottom, 18)
-
-            stepAction
-                .padding(.bottom, 18)
-
-            HStack(spacing: 6) {
-                ForEach(0..<steps.count, id: \.self) { i in
-                    Capsule()
-                        .fill(i == step ? LP.accent : LP.stroke)
-                        .frame(width: i == step ? 16 : 6, height: 4)
+            VStack(alignment: .leading, spacing: 14) {
+                Label("连接网络：启动服务，再自动接入系统代理", systemImage: "network")
+                Label("网站打不开：检查规则、DNS 与网站响应", systemImage: "stethoscope")
+                Label("调整分流：预览具体修改，随时撤销", systemImage: "arrow.uturn.backward")
+            }
+            .font(.system(size: 13)).foregroundStyle(LP.text)
+            LPDivider()
+            Text("使用当前配置连接。Leapin 不提供代理节点；需要远程代理时，请先导入已有配置。系统代理仅适用于支持它的 App。")
+                .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Button("连接网络") {
+                    finish()
+                    app.go(to: .dashboard)
+                    app.connectNetwork()
                 }
+                .buttonStyle(LPPrimaryButtonStyle()).keyboardShortcut(.defaultAction)
+                Button("我有配置文件") {
+                    finish()
+                    app.beginImport()
+                }.buttonStyle(LPGhostButtonStyle())
                 Spacer()
-                if step > 0 {
-                    Button("上一步") { LPMotion.run(LPMotion.quick) { step -= 1 } }
-                        .buttonStyle(LPGhostButtonStyle())
-                }
-                Button(step == steps.count - 1 ? "开始使用" : "下一步") {
-                    if step == steps.count - 1 { finish() }
-                    else { LPMotion.run(LPMotion.quick) { step += 1 } }
-                }
-                .buttonStyle(LPPrimaryButtonStyle())
-                .keyboardShortcut(.defaultAction)
             }
-        }
-        .padding(24)
-        .frame(width: 520)
-        .preferredColorScheme(ProcessInfo.processInfo.environment["LEAPIN_APPEARANCE"] == "dark" ? .dark : nil)
-    }
-
-    @ViewBuilder private var stepAction: some View {
-        switch step {
-        case 0:
-            HStack(spacing: 10) {
-                Button(engine.state == .running ? "代理已在运行" : "启动代理") {
-                    app.toggle()
-                }
-                .buttonStyle(LPPrimaryButtonStyle())
-                .disabled(engine.state == .running || engine.state == .starting)
-
-                Text(engine.state == .running ? "已监听 127.0.0.1:\(engine.profile.general.mixedPort)" : "监听端口 \(engine.profile.general.mixedPort)")
-                    .font(LPFont.mono(10))
-                    .foregroundStyle(engine.state == .running ? LP.mint : LP.textTertiary)
-            }
-        case 1:
-            HStack(spacing: 10) {
-                Button(engine.systemProxyActive ? "关闭系统代理" : "开启系统代理") {
-                    engine.toggleSystemProxy(!engine.systemProxyActive)
-                }
-                .buttonStyle(LPPrimaryButtonStyle(tint: engine.systemProxyActive ? LP.dangerFill : nil))
-
-                Text(engine.systemProxyActive ? "系统代理已接管" : "当前未接管系统网络")
-                    .font(.system(size: 10))
-                    .foregroundStyle(engine.systemProxyActive ? LP.mint : LP.textTertiary)
-            }
-        default:
             HStack(spacing: 8) {
                 LPKeyCap(keys: "⌘K")
-                Text("随时唤起命令面板").font(.system(size: 10)).foregroundStyle(LP.textTertiary)
-                LPKeyCap(keys: "⌘F").padding(.leading, 6)
-                Text("搜索当前页面").font(.system(size: 10)).foregroundStyle(LP.textTertiary)
+                Text("随时查找任务和专业工具").font(.system(size: 12)).foregroundStyle(LP.textTertiary)
             }
         }
+        .padding(28).frame(width: 580)
+        .preferredColorScheme(ProcessInfo.processInfo.environment["LEAPIN_APPEARANCE"] == "dark" ? .dark : nil)
     }
 
     private func finish() {

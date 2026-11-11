@@ -27,6 +27,39 @@ struct CommandPalette: View {
         let device = engine.profile.general.mixedPort
         let running = engine.state == .running
 
+        items.append(PaletteCommand(id: "company", title: "公司内网与团队资源", subtitle: "任意客户端、系统 VPN、浏览器登录与专用代理", icon: "building.2", group: "需求", shortcut: nil, run: { app.showCompany = true }))
+        items.append(PaletteCommand(id: "share-service", title: "限时分享本地服务", subtitle: "预览端口、访问范围与有效期 · cloudflared", icon: "link", group: "需求", shortcut: nil, run: { app.networkToolPage = 0; app.showNetworkTools = true }))
+        items.append(PaletteCommand(id: "debug-channel", title: "建立 HTTPS 调试通道", subtitle: "指定网站 · mitmproxy 解密 · Mihomo 出站", icon: "curlybraces.square", group: "需求", shortcut: nil, run: { app.networkToolPage = 1; app.showNetworkTools = true }))
+        items.append(PaletteCommand(id: "tool-credits", title: "工具与致谢", subtitle: "开源作者、依赖版本、原项目、文档与许可证", icon: "heart", group: "配置", shortcut: nil, run: { app.networkToolPage = 2; app.showNetworkTools = true }))
+        items.append(PaletteCommand(
+            id: "task-connect", title: "连接网络",
+            subtitle: "自动启动服务并接入系统代理", icon: "network", group: "需求", shortcut: nil,
+            run: { app.openTask("连接网络") }))
+        items.append(PaletteCommand(
+            id: "home", title: "回家 · Tailscale",
+            subtitle: "检查并打开绑定的家庭资源", icon: "house", group: "需求", shortcut: nil,
+            run: { app.openTask("回家") }))
+        items.append(PaletteCommand(
+            id: "bookmarks", title: "管理与导入浏览器书签",
+            subtitle: "HTML / Chromium JSON · 本地预览、去重与撤销", icon: "bookmark", group: "配置", shortcut: nil,
+            run: { app.showBookmarks = true }))
+        items.append(PaletteCommand(
+            id: "local-diagnostics", title: "检查本地代理与日志",
+            subtitle: "读取状态、归类日志，不发起外部网站请求", icon: "stethoscope", group: "需求", shortcut: nil,
+            run: { app.assistant.inspectLocal(); app.go(to: .diagnostics) }))
+        items.append(PaletteCommand(
+            id: "task-nas", title: "访问局域网共享文件",
+            subtitle: "发现共享设备并连接", icon: "externaldrive", group: "需求", shortcut: nil,
+            run: { app.openTask("访问家里的文件") }))
+        items.append(PaletteCommand(
+            id: "task-learn", title: "为 App 安排网络",
+            subtitle: "从应用名称或截图开始", icon: "app.connected.to.app.below.fill", group: "需求", shortcut: nil,
+            run: { app.openTask("为 App 安排网络") }))
+        items.append(PaletteCommand(
+            id: "task-privacy", title: "减少广告和跟踪",
+            subtitle: "过滤列表与网站例外", icon: "hand.raised", group: "需求", shortcut: nil,
+            run: { app.openTask("减少广告和跟踪") }))
+
         items.append(PaletteCommand(
             id: "toggle", title: running ? "停止代理" : "启动代理",
             subtitle: running ? "释放端口并断开当前连接" : "在 :\(device) 启动混合代理",
@@ -49,6 +82,7 @@ struct CommandPalette: View {
                 app.showToast(target ? "去广告已开启" : "去广告已关闭", kind: .info)
             }))
 
+        if engine.executionKernel == .native {
         items.append(PaletteCommand(
             id: "mitm", title: engine.mitmActive ? "关闭 HTTPS 解密" : "开启 HTTPS 解密",
             subtitle: "需要安装并信任 Leapin Root CA",
@@ -58,6 +92,8 @@ struct CommandPalette: View {
                 engine.setMITMEnabled(target)
                 app.showToast(target ? "HTTPS 解密已开启" : "HTTPS 解密已关闭", kind: .info)
             }))
+
+        }
 
         items.append(PaletteCommand(
             id: "reload", title: "重新载入配置",
@@ -109,9 +145,16 @@ struct CommandPalette: View {
     private var results: [PaletteCommand] {
         let tokens = query.lowercased().split(separator: " ").map(String.init)
         guard !tokens.isEmpty else { return commands }
-        return commands.filter { command in
+        let matches = commands.filter { command in
             let haystack = (command.title + command.subtitle + command.group).lowercased()
             return tokens.allSatisfy { haystack.contains($0) }
+        }
+        switch NetworkTask.parse(query) {
+        case .inspect, .direct:
+            return [PaletteCommand(id: "task-query", title: "为这个网站查看计划",
+                subtitle: query, icon: "list.bullet.clipboard", group: "需求", shortcut: nil,
+                run: { app.openTask(query) })] + matches
+        default: return matches
         }
     }
 
@@ -126,7 +169,7 @@ struct CommandPalette: View {
                     Image(systemName: "command")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(LP.accent)
-                    TextField("搜索操作或页面…", text: $query)
+                    TextField("输入网站、需求或工具名称…", text: $query)
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .focused($fieldFocused)
@@ -142,7 +185,7 @@ struct CommandPalette: View {
                 Rectangle().fill(LP.stroke).frame(height: 1)
 
                 if results.isEmpty {
-                    Text("没有匹配的操作")
+                    Text("暂不支持这个需求。可输入网站地址，或搜索「配置」「规则」等工具。")
                         .font(.system(size: 12))
                         .foregroundStyle(LP.textTertiary)
                         .frame(maxWidth: .infinity)
@@ -153,14 +196,15 @@ struct CommandPalette: View {
                             LazyVStack(spacing: 1) {
                                 ForEach(Array(results.enumerated()), id: \.element.id) { offset, command in
                                     row(command, selected: offset == index)
-                                        .id(offset)
+                                        .id(command.id)
                                 }
                             }
                             .padding(6)
                         }
                         .frame(maxHeight: 340)
                         .onChange(of: index) { _, newValue in
-                            LPMotion.run(LPMotion.press) { proxy.scrollTo(newValue, anchor: .center) }
+                            guard results.indices.contains(newValue) else { return }
+                            LPMotion.run(LPMotion.press) { proxy.scrollTo(results[newValue].id, anchor: .center) }
                         }
                     }
                 }

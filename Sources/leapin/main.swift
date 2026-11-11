@@ -19,6 +19,8 @@ struct LeapinCLI {
             switch command {
             case "run", "serve":
                 try await run(args)
+            case "tun":
+                try await runTUN(args)
             case "rules":
                 try await rules(args)
             case "adblock":
@@ -99,6 +101,26 @@ struct LeapinCLI {
         }
         source.resume()
         while true { try await Task.sleep(nanoseconds: 1_000_000_000) }
+    }
+
+    @MainActor
+    static func runTUN(_ args: [String]) async throws {
+        guard let path = flag("--source", in: args) else { throw LeapinError.invalidConfiguration("用法：leapin tun --source source.yaml [--check]") }
+        let data = try Data(contentsOf: URL(fileURLWithPath: path))
+        guard data.count <= 8 * 1024 * 1024, let source = String(data: data, encoding: .utf8) else { throw LeapinError.invalidConfiguration("来源需为 8 MB 内的 UTF-8 文件") }
+        let executable = flag("--kernel", in: args).map { URL(fileURLWithPath: $0) }
+        let session = ManagedTUNSession(executable: executable)
+        if args.contains("--check") { try await session.check(source: source); print("TUN 配置预检通过，未创建网卡或修改路由。"); return }
+        signal(SIGINT, SIG_IGN); signal(SIGTERM, SIG_IGN)
+        let signals = [SIGINT, SIGTERM].map { number -> DispatchSourceSignal in
+            let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
+            source.setEventHandler { Task { @MainActor in session.stop(); exit(0) } }; source.resume(); return source
+        }
+        defer { signals.forEach { $0.cancel() }; session.stop() }
+        try await session.start(source: source)
+        print("TUN 内核已启动；实际接管和 UDP 出口仍需验证。Ctrl-C / SIGTERM 停止。")
+        while session.kernel.running { try await Task.sleep(nanoseconds: 250_000_000) }
+        throw LeapinError.connectionFailed("TUN 内核已退出；请检查本机路由及会话日志")
     }
 
     static func rules(_ args: [String]) async throws {
@@ -593,6 +615,8 @@ struct LeapinCLI {
 
         用法：
           leapin run [--profile <file>]        启动本地代理（前台运行）
+          leapin tun --source <file> [--check] [--kernel <path>]
+                                             预检 / 管理员终端 TUN 会话，Ctrl-C 停止
           leapin rules <host> [--port N] [--app NAME] [--profile file] [--diagnose] [--measure N]
                                               解释命中/出站；--diagnose 列出永不命中；--measure 测 p50/p95
           leapin adblock <domain>              检查域名是否被拦截
