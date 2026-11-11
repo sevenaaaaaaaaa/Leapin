@@ -93,6 +93,7 @@ public final class ProfileStore: @unchecked Sendable {
         let p = profile
         let data = try JSONEncoder.leapin.encode(p)
         try data.write(to: profileURL(p.id), options: .atomic)
+        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: profileURL(p.id).path)
         LPLog.shared.info("profile", "saved \(p.name) (\(p.rules.count) rules)")
         return p
     }
@@ -107,6 +108,7 @@ public final class ProfileStore: @unchecked Sendable {
 
     public func delete(id: UUID) {
         try? fm.removeItem(at: profileURL(id))
+        try? saveKernelSource(nil, for: id)
         if activeProfileID == id { try? fm.removeItem(at: activeURL) }
     }
 
@@ -232,7 +234,6 @@ public final class ProfileStore: @unchecked Sendable {
             // Copy atomically so a half-written list never gets loaded.
             let tmp = dir.appendingPathComponent(".leapin-ads.txt.tmp")
             if (try? fm.copyItem(at: source, to: tmp)) != nil {
-                try? fm.removeItem(at: target)
                 try? fm.moveItem(at: tmp, to: target)
             }
         }

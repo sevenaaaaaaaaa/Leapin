@@ -49,6 +49,11 @@ public final class LeapinEngine: ObservableObject {
     @Published public var adblockActive: Bool = false
     @Published public var mitmActive: Bool = false
 
+    @Published public private(set) var executionKernel: ExecutionKernel = .native
+    @Published public private(set) var configurationBusy = false
+    public let managedKernel = ManagedMihomo()
+    private var startGeneration = UUID()
+
     public let store: ProfileStore
     /// P2 device identity + content-addressed version history for this store.
     public let syncService: ProfileSyncService
@@ -89,6 +94,15 @@ public final class LeapinEngine: ObservableObject {
         self.profile = store.activeProfile()
         sink.engine = self
         installLogObserver()
+        executionKernel = (try? store.kernelSource(for: profile.id))?.kernel ?? .native
+        managedKernel.onUnexpectedExit = { [weak self] message in
+            guard let self, self.executionKernel == .mihomo,
+                  self.state == .running || self.state == .starting else { return }
+            self.lastError = message
+            self.rollbackSystemProxyIfNeeded()
+            self.teardown()
+            self.state = .failed(message)
+        }
     }
 
     private func installLogObserver() {
@@ -109,12 +123,33 @@ public final class LeapinEngine: ObservableObject {
     public func start() async {
         guard state != .running, state != .starting else { return }
         state = .starting
+        let generation = UUID()
+        startGeneration = generation
         lastError = nil
         do {
-            let ruleSets = await RuleSetLoader.load(sources: ruleSetSources(for: profile),
-                                                    cacheDirectory: store.cacheDirectory)
+            let source = try store.kernelSource(for: profile.id)
+            executionKernel = source?.kernel ?? .native
+            var routingProfile = profile
+            if let source, source.kernel == .mihomo {
+                guard !profile.general.mitmEnabled else {
+                    throw LeapinError.unsupported("Mihomo 模式暂不支持 HTTPS 解密；请关闭解密后启动")
+                }
+                let port = try await managedKernel.start(source: source.clash,
+                    directory: store.root.appendingPathComponent("kernel-runtime/\(UUID().uuidString)"))
+                guard startGeneration == generation, state == .starting else { throw CancellationError() }
+                for (group, member) in source.selections ?? [:] {
+                    try await selectManagedPolicy(group: group, member: member, persist: false)
+                }
+                routingProfile.outbounds = [.direct, .reject,
+                    OutboundConfig(name: "Mihomo", type: .socks5, host: "127.0.0.1", port: port)]
+                routingProfile.groups = []
+                routingProfile.rules = [Rule(kind: .match, value: "", policy: "Mihomo")]
+            }
+            let ruleSets = executionKernel == .native
+                ? await RuleSetLoader.load(sources: ruleSetSources(for: profile), cacheDirectory: store.cacheDirectory) : [:]
+            guard startGeneration == generation, state == .starting else { throw CancellationError() }
             loadedRuleSets = ruleSets
-            let engine = RuleEngine(profile: profile, ruleSets: ruleSets)
+            let engine = RuleEngine(profile: try homeRouting(routingProfile), ruleSets: ruleSets)
             ruleEngine = engine
             let routerBox = RouterBox(engine)
             self.routerBox = routerBox
@@ -131,11 +166,11 @@ public final class LeapinEngine: ObservableObject {
             let blockerBox = BlockerBox(blocker)
             self.blockerBox = blockerBox
 
-            let dnsResolver = DNSResolver(config: profile.dns, blocker: blocker)
+            let dnsResolver = DNSResolver(config: homeDNS(profile.dns), blocker: blocker)
             resolver = dnsResolver
-            let resolverBox = ResolverBox(dnsResolver)
+            let resolverBox = ResolverBox(companyResolver(dnsResolver))
             self.resolverBox = resolverBox
-            if profile.general.dnsHijack {
+            if profile.general.dnsHijack, executionKernel == .native {
                 let server = DNSServer(port: profile.dns.listenPort, resolver: dnsResolver,
                                        blocker: blockerBox,
                                        fakeIP: profile.dns.mode == .fakeIP ? FakeIPPool(range: profile.dns.fakeIPRange) : nil)
@@ -168,7 +203,8 @@ public final class LeapinEngine: ObservableObject {
                                                   allowLAN: general.allowLAN,
                                                   enableSOCKS5: socks, enableHTTP: http,
                                                   mitm: general.mitmEnabled,
-                                                  mitmHosts: general.mitmHosts)
+                                                  mitmHosts: general.mitmHosts,
+                                                  socksUDPUpstreamPort: executionKernel == .mihomo ? managedKernel.proxyPort : nil)
                 return ProxyServer(options: options, router: routerBox, resolver: resolverBox,
                                    blocker: blockerBox, flows: sink, capture: sinkCapture, ca: ca)
             }
@@ -189,7 +225,7 @@ public final class LeapinEngine: ObservableObject {
                 catch { LPLog.shared.warn("engine", "SOCKS 端口 \(general.socksPort) 未启动：\(error.localizedDescription)") }
             }
             startControlPlane()
-            let probes = Self.probeTargets(for: profile)
+            let probes = executionKernel == .native ? Self.probeTargets(for: profile) : []
             if !probes.isEmpty {
                 let prober = HealthProber(dialer: OutboundDialer(resolver: dnsResolver), probes: probes)
                 prober.start()
@@ -199,6 +235,7 @@ public final class LeapinEngine: ObservableObject {
             state = .running
             LPLog.shared.info("engine", "代理已启动 127.0.0.1:\(profile.general.mixedPort)，规则 \(profile.rules.count) 条")
         } catch {
+            guard startGeneration == generation else { return }
             teardown()
             state = .failed(error.localizedDescription)
             lastError = error.localizedDescription
@@ -210,7 +247,8 @@ public final class LeapinEngine: ObservableObject {
         // Roll the system proxy back *before* the listeners disappear. Otherwise every
         // app on the machine keeps pointing at a port that is about to close, which
         // looks exactly like "the network is down".
-        rollbackSystemProxyIfNeeded()
+        guard rollbackSystemProxyIfNeeded() else { return }
+        startGeneration = UUID()
         teardown()
         state = .stopped
         stats.startedAt = nil
@@ -277,6 +315,7 @@ public final class LeapinEngine: ObservableObject {
     }
 
     private func teardown() {
+        managedKernel.stop()
         healthProber?.stop()
         healthProber = nil
         LPHealth.shared.reset()
@@ -306,6 +345,10 @@ public final class LeapinEngine: ObservableObject {
     /// established connections alive instead of dropping every socket.
     public func reloadProfile() async {
         let loaded = store.activeProfile()
+        if executionKernel == .mihomo || ((try? store.kernelSource(for: loaded.id))?.kernel == .mihomo) {
+            await activate(loaded.id)
+            return
+        }
         guard state == .running else {
             profile = loaded
             return
@@ -337,13 +380,109 @@ public final class LeapinEngine: ObservableObject {
         }
     }
 
+    /// Commit an already-previewed rules-only edit atomically. Uses the loaded
+    /// rule sets and swaps only the router: no listener restart or proxy rollback.
+    public func commitTaskRules(expected: Profile, rules: [Rule]) throws {
+        guard executionKernel == .native else {
+            throw LeapinError.unsupported("Mihomo 规则由原始配置管理，请重新导入修改后的配置")
+        }
+        guard profile == expected, state != .starting else {
+            throw LeapinError.invalidConfiguration("配置已变化，请重新预览后再应用")
+        }
+        var next = profile
+        next.rules = rules
+        _ = try store.save(next)
+        let router = RuleEngine(profile: try homeRouting(next), ruleSets: loadedRuleSets ?? [:])
+        ruleEngine = router
+        routerBox?.swap(router)
+        profile = next
+        let service = syncService
+        syncRecordQueue.async { _ = try? service.recordActiveProfile() }
+    }
+
     public func activate(_ id: UUID) async {
-        guard let loaded = try? store.load(id: id) else { return }
+        do {
+            lastError = nil
+            let loaded = try store.load(id: id)
+            let source = try store.kernelSource(for: id)
+            try await activatePreparedProfile(loaded, source: source, startService: state == .running,
+                                              connectSystem: systemProxyActive)
+        } catch { lastError = error.localizedDescription }
+    }
+
+    /// Save and activate only after preflight. Failed starts restore the previous
+    /// profile, kernel and system-proxy intention. No subscription is activated while parsing.
+    public func commitImport(_ preparation: ImportPreparation, kernel: ExecutionKernel,
+                             connectSystem: Bool = false) async throws {
+        guard kernel != .native || preparation.nativeBlockers.isEmpty else {
+            throw LeapinError.unsupported("原生内核不兼容，请选择 Mihomo 或更换配置")
+        }
+        guard kernel != .mihomo || preparation.externalConversionBlockers.isEmpty else {
+            throw LeapinError.unsupported("来源转换存在信息损失，请提供原始 Clash / Mihomo 配置或先处理解析报告")
+        }
+        var next = preparation.outcome.profile
+        // Imported files do not get to widen listeners or replace host-owned ports.
+        next.general = profile.general
+        next.general.allowLAN = false
+        next.general.controlAllowLAN = false
+        next.general.mitmEnabled = false
+        next.general.dnsHijack = false
+        let source = kernel == .mihomo ? KernelSource(kernel: .mihomo, clash: preparation.clashSource) : nil
+        try await activatePreparedProfile(next, source: source, startService: true, connectSystem: connectSystem)
+    }
+
+    private func activatePreparedProfile(_ next: Profile, source: KernelSource?,
+                                        startService: Bool, connectSystem: Bool) async throws {
+        guard state != .starting, !configurationBusy else { throw LeapinError.invalidConfiguration("正在启用配置，请稍后再操作") }
+        configurationBusy = true
+        defer { configurationBusy = false }
+        let previous = profile
+        let previousState = state
+        let previousGeneration = startGeneration
+        let previousSource = try store.kernelSource(for: previous.id)
         let wasRunning = state == .running
-        if wasRunning { stop() }
-        store.activeProfileID = id
-        profile = loaded
-        if wasRunning { await start() }
+        let wasSystem = systemProxyActive
+        if let source, source.kernel == .mihomo {
+            let checkDirectory = store.root.appendingPathComponent("kernel-preflight/\(UUID().uuidString)")
+            defer { try? FileManager.default.removeItem(at: checkDirectory) }
+            try await managedKernel.validate(source: source.clash, directory: checkDirectory)
+            guard profile == previous, state == previousState, startGeneration == previousGeneration else {
+                throw LeapinError.invalidConfiguration("预检期间配置已改变，请重新操作")
+            }
+        }
+        try store.saveKernelSource(source, for: next.id)
+        _ = try store.save(next)
+        if wasRunning || wasSystem { stop() }
+        guard state != .running else { throw LeapinError.connectionFailed("无法安全暂停旧配置：\(lastError ?? "系统代理未恢复")") }
+        profile = next
+        executionKernel = source?.kernel ?? .native
+        state = .stopped
+        store.activeProfileID = next.id
+        do {
+            if startService || wasRunning { await start() }
+            guard !(startService || wasRunning) || state == .running else {
+                throw LeapinError.connectionFailed(lastError ?? "新配置未启动")
+            }
+            if connectSystem || wasSystem {
+                lastError = nil
+                toggleSystemProxy(true)
+                guard lastError == nil, systemProxyActive else {
+                    throw LeapinError.connectionFailed(lastError ?? "系统代理未接入")
+                }
+            }
+        } catch {
+            let failure = error.localizedDescription
+            stop()
+            guard state != .running else { throw LeapinError.connectionFailed("启用失败，且系统代理恢复失败，请保留服务并重试暂停") }
+            profile = previous
+            executionKernel = previousSource?.kernel ?? .native
+            store.activeProfileID = previous.id
+            if wasRunning { await start() }
+            if wasSystem, state == .running { toggleSystemProxy(true) }
+            let restored = (!wasRunning || state == .running) && (!wasSystem || systemProxyActive)
+            lastError = "\(failure)；\(restored ? "已恢复原配置" : "原配置恢复未完成，请检查连接状态")"
+            throw LeapinError.connectionFailed(lastError!)
+        }
     }
 
     public func importProfile(from url: URL) async throws -> Profile {
@@ -379,7 +518,13 @@ public final class LeapinEngine: ObservableObject {
     }
 
     public func exportProfile(_ format: ProfileFormat) throws -> String {
-        try store.export(profile, format: format)
+        if let source = try store.kernelSource(for: profile.id), source.kernel == .mihomo {
+            guard format == .clash else {
+                throw LeapinError.unsupported("Mihomo 来源请导出原始 Clash 配置；其他格式请在导入与转换中先检查兼容性")
+            }
+            return source.clash
+        }
+        return try store.export(profile, format: format)
     }
 
     public var profiles: [ProfileMeta] { store.list() }
@@ -434,8 +579,14 @@ public final class LeapinEngine: ObservableObject {
         LPLog.shared.info("system", "系统代理已指向 127.0.0.1:\(port)")
     }
 
+    /// The bound mandatory listener; avoids probing an unbound optional port.
+    public var diagnosticProxyPort: UInt16? { state == .running ? proxy?.listeningPort : nil }
+
     public func refreshSystemProxyStatus() {
-        systemProxyActive = SystemProxy.status().enabled
+        let status = SystemProxy.status()
+        let port = Int(proxy?.listeningPort ?? profile.general.mixedPort)
+        systemProxyActive = state == .running && status.enabled
+            && ["127.0.0.1", "localhost"].contains(status.host) && status.port == port
     }
 
     // MARK: - Capture
@@ -578,6 +729,13 @@ public extension LeapinEngine {
     func updateProfile(restart: Bool = false, _ mutate: (inout Profile) -> Void) {
         var next = profile
         mutate(&next)
+        if executionKernel == .mihomo {
+            guard next.rules == profile.rules, next.groups == profile.groups, next.outbounds == profile.outbounds,
+                  !next.general.mitmEnabled else {
+                lastError = "Mihomo 分流请重新导入修改后的来源；本模式暂不支持 HTTPS 解密"
+                return
+            }
+        }
         profile = next
         _ = saveProfile()
         if restart, state == .running {
@@ -706,6 +864,7 @@ extension LeapinEngine: ControlBackend {
     }
 
     public func controlSelect(group: String, outbound: String) async throws -> ControlSelectionResult {
+        guard executionKernel == .native else { throw ControlError.badRequest("请使用 Mihomo 策略控制接口") }
         guard let index = profile.groups.firstIndex(where: {
             $0.name.caseInsensitiveCompare(group) == .orderedSame
         }) else {
@@ -765,6 +924,14 @@ extension LeapinEngine: ControlBackend {
     public func controlDNSTrace(host: String) async throws -> DNSTrace {
         let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ControlError.badRequest("host is empty") }
+        if let company = try CompanyAccessConfiguration.load(root: store.root).active,
+           company.systemDNSHosts.contains(CompanyResource.normalizedHost(trimmed)) {
+            return await CompanyScopedResolver.systemResolver().trace(trimmed)
+        }
+        if executionKernel == .mihomo, managedKernel.running,
+           (try? HomeConnection.load(root: store.root))?.host != trimmed.lowercased() {
+            return try await managedDNSTrace(trimmed)
+        }
         guard let resolver else { throw ControlError.unavailable("DNS resolver is not running") }
         return await resolver.trace(trimmed)
     }
@@ -783,6 +950,9 @@ extension LeapinEngine: ControlBackend {
 
     /// Applies a profile without touching listeners unless a listening port changed.
     func applyReload(_ loaded: Profile) async throws -> ControlReloadResult {
+        guard executionKernel == .native else {
+            throw ControlError.badRequest("Mihomo 原始配置需要重新预检并启用；原生规则编辑不会被静默应用")
+        }
         let started = Date()
         var applied: [String] = []
         var skipped: [String] = []
@@ -823,7 +993,7 @@ extension LeapinEngine: ControlBackend {
         let ruleSets = await RuleSetLoader.load(sources: ruleSetSources(for: loaded),
                                                 cacheDirectory: store.cacheDirectory)
         loadedRuleSets = ruleSets
-        let newEngine = RuleEngine(profile: loaded, ruleSets: ruleSets)
+        let newEngine = RuleEngine(profile: try homeRouting(loaded), ruleSets: ruleSets)
         ruleEngine = newEngine
         if let routerBox {
             routerBox.swap(newEngine)
@@ -856,12 +1026,12 @@ extension LeapinEngine: ControlBackend {
         let dnsChanged = previous.dns != loaded.dns || adblockChanged
         let hijackToggled = oldGeneral.dnsHijack != newGeneral.dnsHijack
         if dnsChanged {
-            let newResolver = DNSResolver(config: loaded.dns, blocker: adblock)
+            let newResolver = DNSResolver(config: homeDNS(loaded.dns), blocker: adblock)
             resolver = newResolver
             if let resolverBox {
-                resolverBox.swap(newResolver)
+                resolverBox.swap(companyResolver(newResolver))
             } else {
-                resolverBox = ResolverBox(newResolver)
+                resolverBox = ResolverBox(companyResolver(newResolver))
             }
             applied.append("dns")
         } else {
@@ -917,6 +1087,47 @@ extension LeapinEngine: ControlBackend {
         }
     }
 
+    // A single, exact home resource bypasses the outbound proxy. Its DNS name
+    // resolves to the verified peer address instead of a public DNS upstream.
+    private func homeRouting(_ base: Profile) throws -> Profile {
+        let home = try HomeConnection.load(root: store.root)
+        let company = try CompanyAccessConfiguration.load(root: store.root).active
+        try company?.validateLoops(ports: [profile.general.mixedPort, profile.general.httpPort, profile.general.socksPort, managedKernel.proxyPort ?? 0], homeHost: home?.host)
+        let routed = home?.routing(base) ?? base
+        return try company?.routing(routed) ?? routed
+    }
+    private func companyResolver(_ base: any NameResolving) -> any NameResolving {
+        let hosts = (try? CompanyAccessConfiguration.load(root: store.root))?.active?.systemDNSHosts ?? []
+        return CompanyScopedResolver(base: base, hosts: hosts)
+    }
+    private func homeDNS(_ base: DNSConfig) -> DNSConfig {
+        (try? HomeConnection.load(root: store.root))?.dns(base) ?? base
+    }
+    public func refreshHomeRouting() throws {
+        guard !configurationBusy, state != .starting else {
+            throw LeapinError.invalidConfiguration("正在切换网络方案，请完成后重试家庭资源")
+        }
+        let company = try CompanyAccessConfiguration.load(root: store.root).active
+        try company?.validateLoops(ports: [profile.general.mixedPort, profile.general.httpPort, profile.general.socksPort, managedKernel.proxyPort ?? 0], homeHost: try HomeConnection.load(root: store.root)?.host)
+        guard state == .running else { return }
+        var routed = profile
+        if executionKernel == .mihomo {
+            guard let port = managedKernel.proxyPort, managedKernel.running else {
+                throw LeapinError.connectionFailed("Mihomo 尚未就绪，请先恢复网络服务")
+            }
+            routed.outbounds = [.direct, .reject, OutboundConfig(name: "Mihomo", type: .socks5, host: "127.0.0.1", port: port)]
+            routed.groups = []
+            routed.rules = [Rule(kind: .match, value: "", policy: "Mihomo")]
+        }
+        let next = RuleEngine(profile: try homeRouting(routed), ruleSets: loadedRuleSets ?? [:])
+        ruleEngine = next
+        routerBox?.swap(next)
+        let dns = DNSResolver(config: homeDNS(profile.dns), blocker: adblock)
+        resolver = dns
+        resolverBox?.swap(companyResolver(dns))
+        if profile.general.dnsHijack, executionKernel == .native { restartDNSServer(profile) }
+    }
+
     // MARK: Reload helpers
 
     private func restartDNSServer(_ loaded: Profile) {
@@ -924,7 +1135,7 @@ extension LeapinEngine: ControlBackend {
             server.stop()
             dnsServer = nil
         }
-        guard loaded.general.dnsHijack, let resolver else { return }
+        guard executionKernel == .native, loaded.general.dnsHijack, let resolver else { return }
         let server = DNSServer(port: loaded.dns.listenPort, resolver: resolver,
                                blocker: blockerBox,
                                fakeIP: loaded.dns.mode == .fakeIP ? FakeIPPool(range: loaded.dns.fakeIPRange) : nil)
