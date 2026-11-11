@@ -1,6 +1,8 @@
 # Leapin P4 设计：TUN/VIF 全流量接管 → 网关 + DHCP
 
-> 状态：**仅设计，未实现**。本文不修改任何代码，仓库内 TUN/Network Extension 实现为 0。
+> 2026-11-11 更新：本文保留原生 Network Extension / 网关的长期设计，原生 NE 仍未实现。当前已增加受管 Mihomo 的管理员终端 TUN 会话与图形端预检导出（见 EXPERIENCE-REDESIGN.md §18），未运行真实管理员接管验收，不能与图形版签名特权服务等同。
+
+> 下文为历史设计记录，其中“仅设计 / 实现为 0”描述当时的原生路径。
 > 依据：`docs/ROADMAP-v3.md`（P4 目标与 §8 度量）、`docs/ARCHITECTURE.md`（三层与硬规则）、
 > `docs/net.md`（数据面现状）、`docs/CONTROL-PLANE.md`（动作/SSE/审计契约）、`docs/perf.md`（基线数字）。
 > 结论先行：**本期 P4 的瓶颈不是写隧道，而是签名/entitlement 与"够用的用户态 TCP"。**

@@ -10,6 +10,64 @@ v1.8 把项目从 TouchFlow 更名为 **Leapin**（中文名暂未定）：模�
 v1.9 把「永不命中」判定收敛成一份共享分析器（引擎 / 控制面 / 编辑器同一实现），补上 RULE-SET 递归与取反语义；网络与控制面行为未变。
 历史小节（v1.0–v1.7）保留原验收事实，路径与二进制名按现名统一。
 
+## 2026-11-11：公司内网与首页直接入口第四轮
+
+- 最终全量：`LEAPIN_TEST_MITMDUMP_PATH=/tmp/leapin-mitm-env/bin/mitmdump swift test`，**293 项，0 失败，1 项性能门禁跳过**（Sync 24 / Runtime 64 / Policy 86 / Net 76 / Integrations 26 / Core 1 / Control 16）；日志 `/tmp/leapin-company-full-tests.txt`，无编译 error / warning。
+- 打包：`./scripts/build-app.sh debug` 成功，更新 `dist/Leapin.app` 与内含 CLI；日志 `/tmp/leapin-company-package.txt`。未提交或推送 Git。
+- 新增公司模型、检查与模板测试 10 项、系统 VPN 适配器测试 2 项、运行时集成测试 3 项；有限词表既有测试补充公司 / 分享 / 致谢入口断言。覆盖短主机 / IPv6、无效端口 / URL 凭据、精确规则、系统解析失败不回退、代理目标远端解析、407、存储权限、应用失败恢复、草稿冲突、暂停 / 移除、模板与取消 / 过期结果。
+- 真实原生链路：测试公司主机系统解析覆盖故意错误的基础 DNS hosts，访问本地 HTTP 得到 200；原配置不变，重载继续生效。切至真实 Mihomo 1.19.25，公司资源保持精确直连，其他地址经过 Mihomo；暂停公司规则后恢复原配置路径。未启用系统代理。
+- 真实专用 HTTP 代理：测试 `.invalid` 目标只能由自有代理处理，经 Leapin 前门返回 200，排除本地解析目标的误判。HEAD 探测收到 302 时不跟随跳转。
+- 系统 VPN 适配器使用自有替身验证 UUID / 固定参数 / 启动前存在性检查；未读取或启动用户真实系统 VPN，未传递密码，也不执行 stop / 配置创建。
+- 原生 UI：隔离配置、浅色 1240 宽，验证首页“分享本地服务”进入分享表单、“工具与致谢”直接进入目录、“公司内网”进入通用配置；五类接入方式可见。导入自有团队模板后明确未启用，点击保存后资源优先展示、编辑区折叠；首页出现演示公司与资源，点击检查直接打开并展开报告。
+- UI 本地源站 `localhost:18881`：系统解析取得 IPv6 / IPv4，TCP 可达，HEAD 200。源站日志只收到两次 `HEAD /`，未请求资源链接中的 `/docs?item=1`。验收后已停止自有测试 HTTP 服务；未连接公司客户端、打开真实登录入口、修改系统代理 / DNS / VPN / 证书或创建公网 Tunnel。
+- 未验证：真实公司 SSO / MFA、系统 VPN 管理器启动与实际路由、厂商客户端 / 设备准入、公司证书体系、浏览器自带代理与跨公司 VPN 冲突。公司策略当前仅覆盖 Leapin TCP 前门；任意厂商 VPN 协议、PAC / NTLM / Kerberos、UDP、独立终端 TUN 联动与通用插件运行时未交付。
+
+## 2026-11-11：来源 DNS、显式 UDP 与外部工具第三轮
+
+- 最终全量：`LEAPIN_TEST_MITMDUMP_PATH=/tmp/leapin-mitm-env/bin/mitmdump swift test`，**278 项，0 失败，1 项性能门禁跳过**（Sync 24 / Runtime 51 / Policy 86 / Net 76 / Integrations 24 / Core 1 / Control 16）。最终日志 `/tmp/leapin-ecosystem-final-tests.txt`，无编译 error / warning。
+- 构建打包：`./scripts/build-app.sh debug` 成功，更新 `dist/Leapin.app` 和内含 CLI，日志 `/tmp/leapin-ecosystem-package.txt`。`git diff --check` 通过。
+- 真实 Mihomo 1.19.25：保留来源 DNS nameserver-policy；`.invalid` 测试域名只能由自有 UDP DNS 服务解析；当前 DNS API trace 与原生前门 → Mihomo → 本地 HTTP 目标均返回预期结果。默认 DNS 故意指向不可用端口，排除公开 DNS 或系统解析兜底。
+- 真实 UDP：测试客户端 → Leapin SOCKS5 UDP ASSOCIATE → 受管 Mihomo 回环中继 → 本地 UDP echo，收到一致数据；未启用系统代理、TUN 或公网节点。
+- 真实 mitmproxy 12.3.1：安装于独立 `/tmp/leapin-mitm-env` 测试环境，未捆绑进 App。明文 HTTP 与 HTTPS 两条链路经过独立 mitmdump → Mihomo → 本地目标。HTTPS 客户端使用本次调试 CA，上游使用测试源站 CA，取得 200 / 预期正文，系统钥匙串没有变化。
+- 隐私验证：HTTPS 测试 URL 带路径和虚构 token，确认自有请求元数据和工具输出不含测试路径 / token / 正文；保留上游证书校验。通道元数据限约 2 MB，界面取末尾 100 条。
+- TUN：真实 Mihomo 预检通过，未创建接口；非管理员启动会被拒绝。导出权限、含引号路径转义、取消期间不恢复启动均有覆盖。使用忽略 SIGTERM 的自有替身验证同步停止、强制终止与私有配置目录清理，防止 CLI 先退出而遗失清理。
+- 打包后 CLI：`dist/Leapin.app/Contents/MacOS/leapin tun --source /tmp/leapin-tun-cli-check/source.yaml --check` 返回“预检通过，未创建网卡或修改路由”。没有运行 sudo 或真实管理员 TUN。
+- 分享：本地 HTTP 服务 + 自有 cloudflared 替身验证邮箱能力检查、链接注册证据、生成链接、停止、到期清理；测试时钟验证 15 分钟的正确时长，未等待真实到期，也未建立公网分享。
+- 官方 cloudflared 2026.10.7：从上游发布页下载到 `/tmp/leapin-cloudflared-test`，仅读取版本 / help，核对 config、url、no-autoupdate、allowed-mail 参数存在。没有联系 Tunnel 创建接口或暴露本机服务。
+- 生命周期 / 配置：受管进程启动超时、启动失败、取消期间就绪回调、忽略 SIGTERM、停止 / 到期后的链接失效、TUNNEL_TOKEN 与 SSLKEYLOGFILE 环境清理、DNS 来源字段和宿主监听隔离有测试覆盖。
+- 原生 UI：独立 `/tmp/leapin-ecosystem-review/LeapinReview.app`，独立配置、1240×850 浅色窗口；检查总览两个入口、邮箱 / 有效期分享预览、调试前置条件和禁用态、可选上游 CA、作者 / 文档 / 许可证入口。修复依赖版本探测串行阻塞后，确认三个工具实际版本都能显示、失败可重试。没有点击实际分享、系统代理接管、证书信任或管理员授权。
+- 设置页在 Mihomo 模式提供来源策略入口，避免编辑原生 DNS 参数却误认为修改来源；运行时不并行启动原生 DNS 监听。后续全量包含该 Runtime 改动，设置分支已编译，未另做此分支的 GUI 点击验收。
+- 未验证：真实管理员 TUN 创建 / 公网出口 / 路由退出恢复 / 休眠 / VPN 共存、真实机场各协议 UDP、Cloudflare 外网访问与邮箱认证、VoiceOver。未实现：图形版签名特权服务、自动按 App 接管、命名 Tunnel / Access / WARP / AI Gateway 部署、任意第三方插件加载。
+
+## 2026-11-11：家庭资源、浏览器书签和结构化排障第二轮
+
+- 最终全量 `swift test`：**259 项，0 失败，1 项性能门禁跳过**（Sync 24 / Runtime 39 / Policy 86 / Net 76 / Integrations 17 / Core 1 / Control 16）。最终输出 `/tmp/leapin-round2-final-tests.txt`。这一轮没有出现既有 DNS 缓存测试的超时。
+- 构建打包：`./scripts/build-app.sh debug`，更新 `dist/Leapin.app` 与内含 CLI。最终编译输出见 `/tmp/leapin-round2-final-package.txt`；本轮无编译 error / warning。
+- Tailscale：使用自有临时 CLI 脚本核对 `status --json`、无参数 `up` 与受限 `ping` 参数数组；没有在真实 Tailscale 上执行连接、暂停、切账号或路由修改。状态 schema、隧道证据缺失与非 tailnet 地址拒绝均有覆盖。
+- 家庭资源：测试替身覆盖正常保存、文件 0600、ping 成功但服务失败、离线、设备移除、暂停后恢复、恢复后身份变化、ping 失败、同设备地址更新、规则更新失败回滚、移除失败回滚。失败不返回打开地址，不保留新的验证成功状态。
+- 真实原生 / Mihomo Runtime：独立根目录中叠加测试资源的精确 DOMAIN → DIRECT 与 hosts 映射，核对实际规则解释和 DNS trace；外部模式其他地址仍走 Mihomo；重载保留，原生移除绑定撤销叠加。没有拨号这些家庭测试 IP。原有真实 Mihomo → 本地 HTTP 目标的 200 / 响应体闭环继续通过。
+- 书签：Netscape HTML 的文件夹、实体、注释、脚本忽略、含引号的属性和嵌套标题；Chromium JSON 文件夹；URL 去重但保留查询 / 片段差异；非法凭据与非网站跳过；空 / 畸形 / 超大 / 过深文件拒绝；HTML 与 JSON 各自恰好 5000 条接受、5001 条拒绝；只读预览、过期预览拒绝、撤销保留后来添加的网站、旧文件兼容。
+- 排障：405 / 501 不判代理损坏；直连 GET 与代理 HEAD 明确区分；外部模式不支持解密与 CA 信任未知分别表达；日志时间窗、来源、聚类和常见凭据脱敏；复制摘要不含日志样例；端口冲突只提供设置入口，不执行破坏性修复。
+- 原生界面：独立 `LeapinReview.app`、独立配置、1240×850 浅色窗口，检查总览回家入口 → 设备选择 → 地址建议 → 无效地址错误；浏览器测试 HTML → 新增 2 / 重复 1 / 跳过 1 → 合并列表 → 撤销；本地抓包检查展示状态 / 原因 / 下一步。未点击系统接管，未联系家庭资源或真实机场。GUI 的家庭状态来自测试 CLI，不作为真实家庭连通验收。
+- 后续补齐主 / 次按钮禁用视觉状态及命令面板入口，重新编译打包；这部分不改变已测 Runtime 行为。
+- 未验证：真实 Tailscale 登录与家庭服务端到端、真实 macOS 系统代理权限失败 / 恢复、家庭子网与出口、HTTP 登录和 SMB 挂载、VoiceOver 全流程。未实现：通用大模型自主归因 / 自动修复、第三方插件运行时、自动场景规则编排、TUN / 应用 UDP。
+
+## 2026-11-11 · Dashboard 与多内核首轮交付
+
+- 构建打包：`./scripts/build-app.sh debug` 成功；产物 `dist/Leapin.app`，本轮编译输出无 error / warning。
+- 全量：`swift test` 执行 **235 项，0 失败，1 项性能门禁按默认配置跳过**（Sync 24 / Runtime 18 / Policy 86 / Net 76 / Integrations 14 / Core 1 / Control 16）。
+- 全量后针对新增的外部配置重载和方案文件权限改动分别重跑 ManagedKernelRuntimeTests 与文件权限用例，均通过。UI 文案随后调整不改变测试用例总数。
+- 真 Mihomo 1.19.25：含 VLESS 节点的混合配置预检 → 受管启动 → 原生 HTTP 前门 → 本地 SOCKS5 桥接 → Mihomo → 本地 HTTP 目标；实际接收 200 与预期响应体。
+- 策略：控制 API 可读取组、选择成员；选择写入私有来源侧车文件，重载后保留；切回原生时自有内核停止。
+- 故障：测试内核通过 `-t` 后启动退出，确认原运行配置、active 指针与运行状态恢复。测试未操作系统代理。
+- 显式路径：新增 HEAD 探测测试使用仅由测试代理解析的 `.invalid` 域名，确认请求经过指定代理，目标收到 HEAD；不依赖机器系统代理。
+- 导入保护：预览不落盘 / 不切换；不支持的原生传输会被阻止；含无法保留脚本的 Surge 来源不能借外部内核预检静默丢失后启用；导出不丢弃不兼容节点。
+- 状态 / 存储：书签和场景绑定重启保留；原生方案与外部来源文件权限为 0600；YAML 口令及节点 URI 日志脱敏。
+- 原生 UI：1240 宽浅色总览、900 宽暗色总览、六类场景、书签添加入首页、文本 / 文件导入、Mihomo 预检与启用、内核控制页。发现并修复主动作随内容滚走的问题，最后核对固定底部操作。
+- 隔离：UI 使用独立配置目录与 18980 前门；未改动真实用户系统代理，未使用机场凭据，未访问家庭资源。结束后没有遗留测试 Mihomo 子进程。
+- 回归观察：其中一次全量的既有 `DNSTests.testFlushCacheForcesNewQuery` 出现 DNS 上游超时；定向复跑与最终全量均通过。未为掩盖超时而放宽断言或修改 DNS 实现。
+- 明确未验证：真实机场各协议服务端握手、系统代理权限失败 / 恢复、VoiceOver 全流程、外部内核崩溃时的真实系统设置恢复、多设备同步外部来源。Tailscale 回家、TUN / 应用 UDP、通用插件与自主日志归因尚未交付。
+
 ## 0. 视觉重构验证（v1.2）
 
 - 构建：`swift build --scratch-path .build-app` 与 `./scripts/build-app.sh debug` 均成功，零 error / warning。
