@@ -14,11 +14,19 @@ public enum ProxyPathProbe {
         config.httpCookieStorage = nil
         config.urlCredentialStorage = nil
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        config.connectionProxyDictionary = [
-            kCFNetworkProxiesHTTPEnable as String: 1, kCFNetworkProxiesHTTPProxy as String: "127.0.0.1",
-            kCFNetworkProxiesHTTPPort as String: Int(port), kCFNetworkProxiesHTTPSEnable as String: 1,
-            kCFNetworkProxiesHTTPSProxy as String: "127.0.0.1", kCFNetworkProxiesHTTPSPort as String: Int(port),
+        // iOS marks the HTTPS proxy keys unavailable, but its HTTP proxy already
+        // tunnels https:// originals through CONNECT, so one entry covers both.
+        var proxy: [AnyHashable: Any] = [
+            kCFNetworkProxiesHTTPEnable as String: 1,
+            kCFNetworkProxiesHTTPProxy as String: "127.0.0.1",
+            kCFNetworkProxiesHTTPPort as String: Int(port),
         ]
+        #if os(macOS)
+        proxy[kCFNetworkProxiesHTTPSEnable as String] = 1
+        proxy[kCFNetworkProxiesHTTPSProxy as String] = "127.0.0.1"
+        proxy[kCFNetworkProxiesHTTPSPort as String] = Int(port)
+        #endif
+        config.connectionProxyDictionary = proxy
         let session = URLSession(configuration: config)
         defer { session.invalidateAndCancel() }
         var request = URLRequest(url: url)

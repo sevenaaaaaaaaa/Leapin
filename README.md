@@ -4,7 +4,7 @@
 
 macOS 网络工作台：总览小组件、六类场景、订阅预检与转换、原生 / Mihomo 内核、规则分流、去广告、抓包、SSH、NAS、Tailscale 家庭资源、公司内网与本地网络书签。
 
-> v1 为 macOS 原生 App（SwiftUI）+ 跨平台核心库（SwiftPM）。iOS 版需要 NetworkExtension 权限，暂未打包。
+> v1 为 macOS 原生 App（SwiftUI）+ 跨平台核心库（SwiftPM）。iOS 端已提供**手机控制台**（`Mobile/`，构建出 `dist/LeapinMobile-1.0-unsigned.ipa`）：查看状态、连接、策略，执行重载/切换/诊断。手机上的系统级接管仍需 NetworkExtension 权限，见 [docs/MOBILE.md](docs/MOBILE.md)。
 >
 > **v1.8 起由 TouchFlow 更名为 Leapin**；旧数据目录、设备身份与 CA 会自动迁移（见 [docs/BRAND.md](docs/BRAND.md)）。
 
@@ -98,6 +98,18 @@ curl -sN -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:7900/v1/events?sinc
 
 细节见 [docs/CONTROL-PLANE.md](docs/CONTROL-PLANE.md) 与 [docs/SYNC.md](docs/SYNC.md)。
 
+## 移动端（iOS）
+
+手机端是控制台，不是 VPN：连到 Mac 的控制面，看状态、连接与策略，执行重载 / 切换策略组 / 分流判定 / DNS 追踪 / HTTP 探测。
+
+```bash
+./Mobile/build-ios.sh          # 生成 Xcode 工程并打包 dist/LeapinMobile-1.0-unsigned.ipa
+```
+
+未签名 IPA 用 AltStore / Sideloadly 以你自己的 Apple ID 签名安装；首次打开后填 Mac 的局域网 IP、端口 7900 与控制令牌。构建、安装、架构与限制见 [docs/MOBILE.md](docs/MOBILE.md)。
+
+手机上的系统级代理需要 NetworkExtension 权限与开发者账号，本版不含。
+
 ## 目录
 
 ```
@@ -110,7 +122,9 @@ Sources/LeapinSync            设备身份、版本存储、局域网同步、�
 Sources/LeapinRuntime         引擎装配、配置存储、导入导出
 Sources/LeapinApp             SwiftUI 界面
 Sources/leapin                    命令行
+Mobile/                            iOS 控制台（Xcode 工程，不参与 SwiftPM 包）
 docs/ARCHITECTURE.md             契约与设计
+docs/MOBILE.md                    移动端：构建、安装、限制
 ```
 
 ## 隐私设计

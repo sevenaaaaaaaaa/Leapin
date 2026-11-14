@@ -250,6 +250,7 @@ public final class CertificateAuthority: @unchecked Sendable {
 
     @discardableResult
     private static func run(_ arguments: [String], workingDirectory: URL) throws -> String {
+        #if os(macOS)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: opensslPath)
         process.arguments = arguments
@@ -276,5 +277,12 @@ public final class CertificateAuthority: @unchecked Sendable {
                 "openssl \(arguments.first ?? "") failed: \(message)")
         }
         return String(decoding: outData, as: UTF8.self)
+        #else
+        // iOS cannot spawn helper processes, so on-device CA generation is unavailable.
+        // The mobile client never decrypts TLS; it only talks to the desktop control plane.
+        _ = arguments
+        _ = workingDirectory
+        throw LeapinError.connectionFailed("certificate generation requires the macOS CLI (openssl is not spawnable on iOS)")
+        #endif
     }
 }

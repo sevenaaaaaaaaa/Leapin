@@ -1,5 +1,13 @@
 #include "CLeapinProc.h"
 
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
+
+/// libproc exists on macOS only. On iOS the app cannot inspect other processes'
+/// sockets at all, so the same API is compiled to stubs that report "unknown".
+#if defined(__APPLE__) && TARGET_OS_OSX
+
 #include <libproc.h>
 #include <netinet/in.h>
 #include <stdlib.h>
@@ -84,3 +92,29 @@ int32_t leapin_pid_name(int32_t pid, char *buf, int32_t buflen) {
     buf[n] = '\0';
     return n;
 }
+
+#else /* !TARGET_OS_OSX: iOS and other platforms cannot read foreign socket tables */
+
+#include <stddef.h>
+
+int32_t leapin_list_tcp_owners(leapin_tcp_owner *out, int32_t capacity) {
+    (void)out;
+    (void)capacity;
+    return 0;
+}
+
+int32_t leapin_pid_path(int32_t pid, char *buf, int32_t buflen) {
+    (void)pid;
+    (void)buf;
+    (void)buflen;
+    return -1;
+}
+
+int32_t leapin_pid_name(int32_t pid, char *buf, int32_t buflen) {
+    (void)pid;
+    (void)buf;
+    (void)buflen;
+    return -1;
+}
+
+#endif /* TARGET_OS_OSX */

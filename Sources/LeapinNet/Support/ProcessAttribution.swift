@@ -1,6 +1,8 @@
 import Foundation
 import LeapinCore
+#if os(macOS)
 import CLeapinProc
+#endif
 
 /// The local process behind a proxied connection, resolved through libproc.
 public struct ClientProcess: Sendable, Hashable {
@@ -57,6 +59,7 @@ public final class ProcessAttributor: @unchecked Sendable {
     /// Attribution for the accepted connection whose client port is `localPort`
     /// and whose destination port is this proxy's listener.
     public func process(localPort: UInt16, remotePort: UInt16) -> ClientProcess? {
+        #if os(macOS)
         guard enabled, localPort != 0, remotePort != 0 else { return nil }
         let key = Key(localPort: localPort, remotePort: remotePort)
         let pid: Int32? = lock.withLock {
@@ -67,6 +70,11 @@ public final class ProcessAttributor: @unchecked Sendable {
         }
         guard let pid, pid > 0 else { return nil }
         return describe(pid)
+        #else
+        // iOS sandboxes every other process: the kernel socket table is not readable,
+        // so a connection can never be attributed to an app. Callers show "unknown".
+        return nil
+        #endif
     }
 
     /// Drops caches; used by tests and when the engine stops.
@@ -97,6 +105,7 @@ public final class ProcessAttributor: @unchecked Sendable {
 
     /// Rebuilds the port -> pid index from one libproc sweep.
     private func refreshLocked() {
+        #if os(macOS)
         var capacity = 1024
         var rows: [leapin_tcp_owner] = []
         for _ in 0..<4 {
@@ -118,9 +127,11 @@ public final class ProcessAttributor: @unchecked Sendable {
         }
         owners = index
         snapshotAt = Date()
+        #endif
     }
 
     private static func lookup(_ pid: Int32) -> ClientProcess? {
+        #if os(macOS)
         var nameBuffer = [CChar](repeating: 0, count: 512)
         let nameLen = nameBuffer.withUnsafeMutableBufferPointer { pointer in
             leapin_pid_name(pid, pointer.baseAddress, Int32(pointer.count))
@@ -133,6 +144,10 @@ public final class ProcessAttributor: @unchecked Sendable {
         let name = nameLen > 0 ? String(cString: nameBuffer) : (path.map { ($0 as NSString).lastPathComponent } ?? "")
         guard !name.isEmpty || path != nil else { return nil }
         return ClientProcess(pid: pid, name: name, path: path, bundleID: bundleID(forExecutable: path))
+        #else
+        _ = pid
+        return nil
+        #endif
     }
 
     /// Walks up to the enclosing .app so Chrome reports its app bundle, not the

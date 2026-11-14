@@ -14,3 +14,8 @@ docs/shots/
 *.p12
 *.log
 secrets.json
+
+# iOS: build products and the xcodegen output (regenerate with Mobile/build-ios.sh)
+Mobile/LeapinMobile.xcodeproj/
+Mobile/build/
+Mobile/DerivedData/
