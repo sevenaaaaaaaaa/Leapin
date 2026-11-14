@@ -43,6 +43,8 @@ public final class ProxyServer: @unchecked Sendable {
     private let router: RouteDeciding
     private let resolver: NameResolving
     private let blocker: DomainBlocking?
+    /// HTTP rewrite directives from the profile. nil when the profile has none.
+    private let rewrites: RewriteEngine?
     private let flows: FlowRecording?
     private let capture: CaptureSink?
     private let ca: CertificateAuthority?
@@ -65,6 +67,7 @@ public final class ProxyServer: @unchecked Sendable {
                 router: RouteDeciding,
                 resolver: NameResolving,
                 blocker: DomainBlocking?,
+                rewrites: RewriteEngine? = nil,
                 flows: FlowRecording?,
                 capture: CaptureSink?,
                 ca: CertificateAuthority? = nil) {
@@ -72,6 +75,7 @@ public final class ProxyServer: @unchecked Sendable {
         self.router = router
         self.resolver = resolver
         self.blocker = blocker
+        self.rewrites = rewrites
         self.flows = flows
         self.capture = capture
         self.ca = ca
@@ -362,6 +366,7 @@ public final class ProxyServer: @unchecked Sendable {
             LPLog.shared.info("net.proxy", "MITM \(authority.host):\(authority.port)")
             let handler = MITMHandler(ca: ca,
                                       blocker: blocker,
+                                      rewrites: rewrites,
                                       capture: capture,
                                       dialer: dialer,
                                       connectHost: authority.host,
@@ -432,6 +437,50 @@ public final class ProxyServer: @unchecked Sendable {
         let decision = router.decide(meta)
         let started = Date()
 
+        // Rewrite request phase: header edits, redirects and Mock short-circuits run
+        // before anything is dialed, so a Mock never touches the network.
+        var requestHeaders = HTTPHeaders(request.headers.items)
+        var requestBody = body
+        if let rewrites, !rewrites.isEmpty {
+            switch rewrites.applyToRequest(url: request.target,
+                                           headers: RewriteHeaders(requestHeaders.items),
+                                           body: requestBody) {
+            case .respond(let status, let contentType, let payload):
+                var headers = HTTPHeaders()
+                headers.set("Content-Type", contentType)
+                headers.set("Content-Length", String(payload.count))
+                headers.set("Connection", "keep-alive")
+                let head = HTTPResponseHead(status: status, reason: HTTPStatusText.reason(for: status), headers: headers)
+                var out = head.serialized
+                out.append(payload)
+                try await socket.write(out)
+                recordReplacedCapture(host: authority.host, request: request, requestBody: requestBody,
+                                      status: status, headers: headers, body: payload,
+                                      meta: meta, decision: decision)
+                flows?.record(makeEvent(phase: .closed, meta: meta, decision: decision,
+                                        bytesIn: requestBody.count, bytesOut: out.count,
+                                        durationMs: elapsedMs(since: started)))
+                return true
+            case .redirect(let target, let status):
+                var headers = HTTPHeaders()
+                headers.set("Location", target)
+                headers.set("Content-Length", "0")
+                headers.set("Connection", "keep-alive")
+                let head = HTTPResponseHead(status: status, reason: HTTPStatusText.reason(for: status), headers: headers)
+                try await socket.write(head.serialized)
+                recordReplacedCapture(host: authority.host, request: request, requestBody: requestBody,
+                                      status: status, headers: headers, body: Data(),
+                                      meta: meta, decision: decision)
+                flows?.record(makeEvent(phase: .closed, meta: meta, decision: decision,
+                                        bytesIn: requestBody.count, bytesOut: 0,
+                                        durationMs: elapsedMs(since: started)))
+                return true
+            case .proceed(let headers, let newBody, _):
+                requestHeaders = HTTPHeaders(headers.items)
+                requestBody = newBody
+            }
+        }
+
         if decision.isBlocked || decision.outbound.type == .reject {
             recordRejected(meta, decision: decision, blockedBy: "rule")
             recordBlockedCapture(host: authority.host, url: request.target,
@@ -470,10 +519,10 @@ public final class ProxyServer: @unchecked Sendable {
 
         do {
             let upstreamStream = BufferedStream(upstream)
-            var headers = HTTPCodec.stripHopByHop(request.headers)
+            var headers = HTTPCodec.stripHopByHop(requestHeaders)
             headers.remove("Proxy-Authorization")
             headers.set("Host", authority.port == 80 ? authority.host : "\(authority.host):\(authority.port)")
-            var payload = body
+            var payload = requestBody
             _ = HTTPCodec.serialize(body: payload, headers: &headers)
             if request.method.uppercased() == "HEAD" {
                 headers.remove("Content-Length")
@@ -495,14 +544,22 @@ public final class ProxyServer: @unchecked Sendable {
                                meta: meta, decision: decision,
                                durationMs: elapsedMs(since: started))
 
+            var deliveredBody = responseBody
             var responseHeaders = HTTPCodec.stripHopByHop(response.headers)
+            if let rewrites, !rewrites.isEmpty {
+                let outcome = rewrites.applyToResponse(url: request.target,
+                                                       headers: RewriteHeaders(responseHeaders.items),
+                                                       body: responseBody)
+                responseHeaders = HTTPHeaders(outcome.headers.items)
+                deliveredBody = outcome.body
+            }
             if request.method.uppercased() != "HEAD" {
-                _ = HTTPCodec.serialize(body: responseBody, headers: &responseHeaders)
+                _ = HTTPCodec.serialize(body: deliveredBody, headers: &responseHeaders)
             }
             responseHeaders.set("Connection", "keep-alive")
             let head = HTTPResponseHead(status: response.status, reason: response.reason, headers: responseHeaders)
             var out = head.serialized
-            out.append(responseBody)
+            out.append(deliveredBody)
             try await socket.write(out)
 
             flows?.record(makeEvent(phase: .closed, meta: meta, decision: decision,
@@ -563,6 +620,33 @@ public final class ProxyServer: @unchecked Sendable {
                                         sourceIP: meta.sourceIP,
                                         chain: decision.chain,
                                         blocked: true))
+    }
+
+    /// Capture entry for a response the proxy produced itself (Mock / redirect), so the
+    /// Capture page shows it like any other request and the rewrite is visible there.
+    private func recordReplacedCapture(host: String,
+                                       request: HTTPRequestHead,
+                                       requestBody: Data,
+                                       status: Int,
+                                       headers: HTTPHeaders,
+                                       body: Data,
+                                       meta: ConnectionMeta,
+                                       decision: RouteDecision) {
+        guard let capture else { return }
+        capture.capture(CapturedRequest(
+            method: request.method.uppercased(),
+            url: request.target,
+            host: host,
+            requestHeaders: Self.headerDictionary(request.headers),
+            requestBody: Self.captureBody(requestBody),
+            statusCode: status,
+            responseHeaders: Self.headerDictionary(headers),
+            responseBody: Self.captureBody(body),
+            mimeType: headers.first("Content-Type"),
+            durationMs: 0,
+            sourceApp: meta.sourceApp,
+            sourceIP: meta.sourceIP,
+            chain: decision.chain))
     }
 
     private static func headerDictionary(_ headers: HTTPHeaders) -> [String: String] {

@@ -71,6 +71,8 @@ public final class LeapinEngine: ObservableObject {
     /// editor and /v1/explain can still resolve references while the engine is down.
     private var loadedRuleSets: [String: [Rule]]?
     private var adblock: AdBlockEngine?
+    /// Compiled HTTP rewrite rules for the running profile.
+    public private(set) var rewriteEngine: RewriteEngine?
     private var ca: CertificateAuthority?
     private var healthProber: HealthProber?
     private let sink = EngineSink()
@@ -166,6 +168,15 @@ public final class LeapinEngine: ObservableObject {
             let blockerBox = BlockerBox(blocker)
             self.blockerBox = blockerBox
 
+            // Rewrite rules compile once per start; bad lines are reported, not fatal.
+            let rewrites = RewriteEngine(lines: profile.rewrites)
+            self.rewriteEngine = rewrites
+            if !rewrites.issues.isEmpty {
+                for issue in rewrites.issues {
+                    LPLog.shared.warn("rewrite", "ignored rule: \(issue.reason) — \(issue.line)")
+                }
+            }
+
             let dnsResolver = DNSResolver(config: homeDNS(profile.dns), blocker: blocker)
             resolver = dnsResolver
             let resolverBox = ResolverBox(companyResolver(dnsResolver))
@@ -206,7 +217,8 @@ public final class LeapinEngine: ObservableObject {
                                                   mitmHosts: general.mitmHosts,
                                                   socksUDPUpstreamPort: executionKernel == .mihomo ? managedKernel.proxyPort : nil)
                 return ProxyServer(options: options, router: routerBox, resolver: resolverBox,
-                                   blocker: blockerBox, flows: sink, capture: sinkCapture, ca: ca)
+                                   blocker: blockerBox, rewrites: rewriteEngine,
+                                   flows: sink, capture: sinkCapture, ca: ca)
             }
 
             // Mixed port is required; the dedicated HTTP/SOCKS ports are best-effort so a
@@ -325,6 +337,7 @@ public final class LeapinEngine: ObservableObject {
         resolver = nil
         ruleEngine = nil
         adblock = nil
+        rewriteEngine = nil
         ca = nil
         adblockActive = false
         mitmActive = false

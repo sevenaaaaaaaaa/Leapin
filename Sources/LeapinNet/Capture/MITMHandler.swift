@@ -15,6 +15,7 @@ import LeapinCore
 final class MITMHandler: @unchecked Sendable {
     private let ca: CertificateAuthority
     private let blocker: DomainBlocking?
+    private let rewrites: RewriteEngine?
     private let capture: CaptureSink?
     private let dialer: OutboundDialer
     private let connectHost: String
@@ -28,6 +29,7 @@ final class MITMHandler: @unchecked Sendable {
 
     init(ca: CertificateAuthority,
          blocker: DomainBlocking?,
+         rewrites: RewriteEngine? = nil,
          capture: CaptureSink?,
          dialer: OutboundDialer,
          connectHost: String,
@@ -40,6 +42,7 @@ final class MITMHandler: @unchecked Sendable {
          idleTimeout: TimeInterval = 300) {
         self.ca = ca
         self.blocker = blocker
+        self.rewrites = rewrites
         self.capture = capture
         self.dialer = dialer
         self.connectHost = connectHost
@@ -181,6 +184,56 @@ final class MITMHandler: @unchecked Sendable {
         let target = self.target(for: request)
         let started = Date()
 
+        // Rewrite request phase runs before adblock: a redirect or Mock answers
+        // locally, so nothing is dialed and no blocking rule gets a say.
+        var requestHeaders = request.headers
+        var requestBody = body
+        if let rewrites, !rewrites.isEmpty {
+            switch rewrites.applyToRequest(url: target.url,
+                                           headers: RewriteHeaders(requestHeaders.items),
+                                           body: requestBody) {
+            case .respond(let status, let contentType, let payload):
+                var headers = HTTPHeaders()
+                headers.set("Content-Type", contentType)
+                headers.set("Content-Length", String(payload.count))
+                headers.set("Connection", connectionClose ? "close" : "keep-alive")
+                let head = HTTPResponseHead(status: status, reason: HTTPStatusText.reason(for: status), headers: headers)
+                var outData = head.serialized
+                outData.append(payload)
+                try await out.write(outData)
+                capture?.capture(CapturedRequest(
+                    method: request.method, url: target.url, host: target.host,
+                    requestHeaders: HTTPCodec.stripHopByHop(request.headers).dictionary,
+                    requestBody: body.isEmpty ? nil : body,
+                    statusCode: status, responseHeaders: headers.dictionary,
+                    responseBody: payload, mimeType: contentType,
+                    durationMs: elapsedMs(since: started), sourceApp: sourceApp,
+                    sourceIP: sourceIP, chain: chain))
+                LPLog.shared.info("net.mitm", "mock \(request.method) \(target.url)")
+                return false
+            case .redirect(let destination, let status):
+                var headers = HTTPHeaders()
+                headers.set("Location", destination)
+                headers.set("Content-Length", "0")
+                headers.set("Connection", connectionClose ? "close" : "keep-alive")
+                let head = HTTPResponseHead(status: status, reason: HTTPStatusText.reason(for: status), headers: headers)
+                try await out.write(head.serialized)
+                capture?.capture(CapturedRequest(
+                    method: request.method, url: target.url, host: target.host,
+                    requestHeaders: HTTPCodec.stripHopByHop(request.headers).dictionary,
+                    requestBody: body.isEmpty ? nil : body,
+                    statusCode: status, responseHeaders: headers.dictionary,
+                    responseBody: nil, mimeType: nil,
+                    durationMs: elapsedMs(since: started), sourceApp: sourceApp,
+                    sourceIP: sourceIP, chain: chain))
+                LPLog.shared.info("net.mitm", "redirect \(target.url) → \(destination)")
+                return false
+            case .proceed(let headers, let newBody, _):
+                requestHeaders = HTTPHeaders(headers.items)
+                requestBody = newBody
+            }
+        }
+
         if let blocker, let verdict = blocker.verdict(for: target.host, path: target.path, thirdParty: false) as BlockVerdict?, verdict.blocked {
             let reason = verdict.reason ?? "blocked"
             LPLog.shared.info("net.mitm", "blocked \(request.method) \(target.url): \(reason)")
@@ -225,10 +278,10 @@ final class MITMHandler: @unchecked Sendable {
 
         LPLog.shared.debug("net.mitm", "upstream open for \(target.url)")
         let upstreamStream = BufferedStream(upstream)
-        var upHeaders = HTTPCodec.stripHopByHop(request.headers)
+        var upHeaders = HTTPCodec.stripHopByHop(requestHeaders)
         upHeaders.remove("Proxy-Authorization")
         upHeaders.set("Host", target.port == (target.scheme == "https" ? 443 : 80) ? target.host : "\(target.host):\(target.port)")
-        var payload = body
+        var payload = requestBody
         _ = HTTPCodec.serialize(body: payload, headers: &upHeaders)
         if request.method.uppercased() == "HEAD" {
             upHeaders.remove("Content-Length")
@@ -261,6 +314,18 @@ final class MITMHandler: @unchecked Sendable {
         }
 
         var responseHeaders = HTTPCodec.stripHopByHop(response.headers)
+        if let rewrites, !rewrites.isEmpty {
+            let outcome = rewrites.applyToResponse(url: target.url,
+                                                   headers: RewriteHeaders(responseHeaders.items),
+                                                   body: deliveredBody)
+            responseHeaders = HTTPHeaders(outcome.headers.items)
+            deliveredBody = outcome.body
+            if outcome.mocked {
+                // A Mock replaces the origin body entirely; drop the origin framing.
+                responseHeaders.remove("Content-Encoding")
+                responseHeaders.remove("Transfer-Encoding")
+            }
+        }
         if request.method.uppercased() != "HEAD", !(isHTML && !selectors.isEmpty && !isIdentity) {
             _ = HTTPCodec.serialize(body: deliveredBody, headers: &responseHeaders)
         }

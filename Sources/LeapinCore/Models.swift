@@ -444,21 +444,25 @@ public struct Profile: Codable, Sendable, Identifiable, Hashable {
     public var ruleProviders: [RuleProvider]
     /// Clash `proxy-providers` preserved for round-trip (not used at runtime).
     public var proxyProviders: [RuleProvider]
+    /// HTTP rewrite directives, one per line — see `RewriteEngine`.
+    public var rewrites: [String]
 
     public init(id: UUID = UUID(), name: String, general: GeneralConfig = .init(),
                 dns: DNSConfig = .init(), adblock: AdBlockConfig = .init(),
                 outbounds: [OutboundConfig] = [.direct, .reject], groups: [PolicyGroup] = [],
                 rules: [Rule] = [], sourcePath: String? = nil,
-                ruleProviders: [RuleProvider] = [], proxyProviders: [RuleProvider] = []) {
+                ruleProviders: [RuleProvider] = [], proxyProviders: [RuleProvider] = [],
+                rewrites: [String] = []) {
         self.id = id; self.name = name; self.general = general; self.dns = dns
         self.adblock = adblock; self.outbounds = outbounds; self.groups = groups
         self.rules = rules; self.sourcePath = sourcePath
         self.ruleProviders = ruleProviders; self.proxyProviders = proxyProviders
+        self.rewrites = rewrites
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, general, dns, adblock, outbounds, groups, rules, sourcePath
-        case ruleProviders, proxyProviders
+        case ruleProviders, proxyProviders, rewrites
     }
 
     /// Hand-written so profiles saved by older builds (no `ruleProviders`) still decode.
@@ -475,6 +479,7 @@ public struct Profile: Codable, Sendable, Identifiable, Hashable {
         sourcePath = try c.decodeIfPresent(String.self, forKey: .sourcePath)
         ruleProviders = try c.decodeIfPresent([RuleProvider].self, forKey: .ruleProviders) ?? []
         proxyProviders = try c.decodeIfPresent([RuleProvider].self, forKey: .proxyProviders) ?? []
+        rewrites = try c.decodeIfPresent([String].self, forKey: .rewrites) ?? []
     }
 
     public func outbound(named name: String) -> OutboundConfig? {
