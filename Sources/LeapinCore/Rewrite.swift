@@ -253,7 +253,7 @@ public final class RewriteEngine: @unchecked Sendable {
 
     // MARK: - Parsing
 
-    static func parse(_ line: String) -> Result<RewriteRule, Issue> {
+    public static func parse(_ line: String) -> Result<RewriteRule, Issue> {
         let tokens = tokenize(line)
         guard tokens.count >= 3 else {
             return .failure(Issue(line: line, reason: "至少需要「阶段 匹配 动作」三段"))

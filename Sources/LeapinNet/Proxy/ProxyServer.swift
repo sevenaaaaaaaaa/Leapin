@@ -43,8 +43,8 @@ public final class ProxyServer: @unchecked Sendable {
     private let router: RouteDeciding
     private let resolver: NameResolving
     private let blocker: DomainBlocking?
-    /// HTTP rewrite directives from the profile. nil when the profile has none.
-    private let rewrites: RewriteEngine?
+    /// Rewrite rules, hot-swappable while the proxy keeps running.
+    private let rewrites: RewriteBox?
     private let flows: FlowRecording?
     private let capture: CaptureSink?
     private let ca: CertificateAuthority?
@@ -67,7 +67,7 @@ public final class ProxyServer: @unchecked Sendable {
                 router: RouteDeciding,
                 resolver: NameResolving,
                 blocker: DomainBlocking?,
-                rewrites: RewriteEngine? = nil,
+                rewrites: RewriteBox? = nil,
                 flows: FlowRecording?,
                 capture: CaptureSink?,
                 ca: CertificateAuthority? = nil) {
@@ -441,8 +441,8 @@ public final class ProxyServer: @unchecked Sendable {
         // before anything is dialed, so a Mock never touches the network.
         var requestHeaders = HTTPHeaders(request.headers.items)
         var requestBody = body
-        if let rewrites, !rewrites.isEmpty {
-            switch rewrites.applyToRequest(url: request.target,
+        if let rules = rewrites?.current, !rules.isEmpty {
+            switch rules.applyToRequest(url: request.target,
                                            headers: RewriteHeaders(requestHeaders.items),
                                            body: requestBody) {
             case .respond(let status, let contentType, let payload):
@@ -546,8 +546,8 @@ public final class ProxyServer: @unchecked Sendable {
 
             var deliveredBody = responseBody
             var responseHeaders = HTTPCodec.stripHopByHop(response.headers)
-            if let rewrites, !rewrites.isEmpty {
-                let outcome = rewrites.applyToResponse(url: request.target,
+            if let rules = rewrites?.current, !rules.isEmpty {
+                let outcome = rules.applyToResponse(url: request.target,
                                                        headers: RewriteHeaders(responseHeaders.items),
                                                        body: responseBody)
                 responseHeaders = HTTPHeaders(outcome.headers.items)

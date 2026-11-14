@@ -115,12 +115,13 @@ struct LeapinApp: App {
 @MainActor
 final class AppModel: ObservableObject {
     enum Section: String, CaseIterable, Identifiable {
-        case dashboard, rules, adblock, capture, ssh, nas, learn, privacy, profiles, settings, activity, diagnostics
+        case dashboard, rules, rewrite, adblock, capture, ssh, nas, learn, privacy, profiles, settings, activity, diagnostics
         var id: String { rawValue }
         var title: String {
             switch self {
             case .dashboard: return "总览"
             case .rules: return "分流规则"
+            case .rewrite: return "请求重写"
             case .adblock: return "去广告"
             case .capture: return "抓包"
             case .ssh: return "SSH"
@@ -137,6 +138,7 @@ final class AppModel: ObservableObject {
             switch self {
             case .dashboard: return "gauge.with.dots.needle.67percent"
             case .rules: return "arrow.triangle.branch"
+            case .rewrite: return "arrow.triangle.2.circlepath"
             case .adblock: return "hand.raised.fill"
             case .capture: return "waveform.path.ecg"
             case .ssh: return "terminal"
@@ -152,7 +154,7 @@ final class AppModel: ObservableObject {
         /// 该页面是否真的有可聚焦的搜索框（⌘F 只在 true 的页面上生效）。
         var supportsSearch: Bool {
             switch self {
-            case .rules, .capture, .adblock, .profiles, .activity, .diagnostics: return true
+            case .rules, .rewrite, .capture, .adblock, .profiles, .activity, .diagnostics: return true
             case .dashboard, .ssh, .nas, .learn, .privacy, .settings: return false
             }
         }
@@ -161,6 +163,7 @@ final class AppModel: ObservableObject {
             switch self {
             case .dashboard: return "场景、常用资源与便捷操作"
             case .rules: return "Clash / Surge 规则、策略组与规则集"
+            case .rewrite: return "改请求头、改响应正文、Mock 接口与重定向"
             case .adblock: return "过滤列表、拦截统计与白名单"
             case .capture: return "HTTP(S) 请求抓取与 HAR 导出"
             case .ssh: return "交互式终端，密码经 askpass 传递"
@@ -593,6 +596,7 @@ struct RootView: View {
         switch app.section ?? .dashboard {
         case .dashboard: DashboardView()
         case .rules: RulesView()
+        case .rewrite: RewriteView()
         case .adblock: AdBlockView()
         case .capture: CaptureView()
         case .ssh: SSHView()
@@ -703,7 +707,7 @@ private struct SidebarView: View {
     private static let groups: [(title: String, sections: [AppModel.Section])] = [
         ("工作区", [.dashboard, .profiles]),
         ("观测与排障", [.activity, .diagnostics, .capture]),
-        ("网络工具", [.rules, .adblock, .nas, .ssh, .learn]),
+        ("网络工具", [.rules, .rewrite, .adblock, .nas, .ssh, .learn]),
         ("系统", [.privacy, .settings])
     ]
 

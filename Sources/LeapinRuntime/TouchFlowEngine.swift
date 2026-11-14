@@ -71,8 +71,9 @@ public final class LeapinEngine: ObservableObject {
     /// editor and /v1/explain can still resolve references while the engine is down.
     private var loadedRuleSets: [String: [Rule]]?
     private var adblock: AdBlockEngine?
-    /// Compiled HTTP rewrite rules for the running profile.
-    public private(set) var rewriteEngine: RewriteEngine?
+    /// Compiled HTTP rewrite rules for the running profile. The box lets the UI swap
+    /// them without restarting the proxy.
+    public private(set) var rewriteBox: RewriteBox?
     private var ca: CertificateAuthority?
     private var healthProber: HealthProber?
     private let sink = EngineSink()
@@ -169,13 +170,10 @@ public final class LeapinEngine: ObservableObject {
             self.blockerBox = blockerBox
 
             // Rewrite rules compile once per start; bad lines are reported, not fatal.
-            let rewrites = RewriteEngine(lines: profile.rewrites)
-            self.rewriteEngine = rewrites
-            if !rewrites.issues.isEmpty {
-                for issue in rewrites.issues {
-                    LPLog.shared.warn("rewrite", "ignored rule: \(issue.reason) — \(issue.line)")
-                }
-            }
+            let compiledRewrites = RewriteEngine(lines: profile.rewrites)
+            Self.reportRewriteIssues(compiledRewrites)
+            let rewriteBox = RewriteBox(compiledRewrites)
+            self.rewriteBox = rewriteBox
 
             let dnsResolver = DNSResolver(config: homeDNS(profile.dns), blocker: blocker)
             resolver = dnsResolver
@@ -217,7 +215,7 @@ public final class LeapinEngine: ObservableObject {
                                                   mitmHosts: general.mitmHosts,
                                                   socksUDPUpstreamPort: executionKernel == .mihomo ? managedKernel.proxyPort : nil)
                 return ProxyServer(options: options, router: routerBox, resolver: resolverBox,
-                                   blocker: blockerBox, rewrites: rewriteEngine,
+                                   blocker: blockerBox, rewrites: rewriteBox,
                                    flows: sink, capture: sinkCapture, ca: ca)
             }
 
@@ -337,7 +335,7 @@ public final class LeapinEngine: ObservableObject {
         resolver = nil
         ruleEngine = nil
         adblock = nil
-        rewriteEngine = nil
+        rewriteBox = nil
         ca = nil
         adblockActive = false
         mitmActive = false
@@ -761,6 +759,23 @@ public extension LeapinEngine {
                 self.stop()
                 await self.start()
             }
+        }
+    }
+
+    /// Replaces the rewrite rule set and swaps it into the running proxy.
+    /// Returns the parse issues so the editor can show them without a restart.
+    @discardableResult
+    public func replaceRewrites(_ lines: [String]) -> [RewriteEngine.Issue] {
+        let compiled = RewriteEngine(lines: lines)
+        Self.reportRewriteIssues(compiled)
+        rewriteBox?.swap(compiled)
+        updateProfile(restart: false) { $0.rewrites = lines }
+        return compiled.issues
+    }
+
+    private static func reportRewriteIssues(_ engine: RewriteEngine) {
+        for issue in engine.issues {
+            LPLog.shared.warn("rewrite", "ignored rule: \(issue.reason) — \(issue.line)")
         }
     }
 

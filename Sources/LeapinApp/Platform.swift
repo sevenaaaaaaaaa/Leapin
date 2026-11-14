@@ -101,6 +101,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         FloatingPanelController.shared.restoreIfNeeded()
 
         #if DEBUG
+        if let path = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_REWRITE"] {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1))
+                let host = NSHostingView(rootView:
+                    RewriteView().environmentObject(AppModel()).frame(width: 980, height: 640))
+                host.frame = NSRect(x: 0, y: 0, width: 980, height: 640)
+                if let appearance = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_APPEARANCE"],
+                   let resolved = NSAppearance(named: NSAppearance.Name(rawValue: appearance)) {
+                    NSApp.appearance = resolved
+                    host.appearance = resolved
+                }
+                host.layoutSubtreeIfNeeded()
+                if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                    host.cacheDisplay(in: host.bounds, to: rep)
+                    if let data = rep.representation(using: .png, properties: [:]) {
+                        try? data.write(to: URL(fileURLWithPath: path))
+                    }
+                }
+                NSApp.terminate(nil)
+            }
+        }
         if let path = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_PANEL"] {
             let autostart = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_ENGINE"] == "1"
             Task {

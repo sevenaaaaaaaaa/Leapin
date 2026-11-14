@@ -169,9 +169,10 @@ HTTP 重写引擎 · Mock · 临时规则 · **实时浮窗**
 
 | 项 | 状态 | 说明 |
 | --- | --- | --- |
-| 实时浮窗 | ✅ 已完成，未提交 | `Design/FloatingPanel.swift` + `Views/FloatingStatusView.swift`；入口：菜单栏开关 / 工具菜单 ⇧⌘F / Dock 右键；位置与开关状态持久化 |
-| HTTP 重写引擎 | 待开始 | |
-| Mock | 待开始 | |
+| 实时浮窗 | ✅ 已提交 `7fbf4e0` | `Design/FloatingPanel.swift` + `Views/FloatingStatusView.swift`；入口：菜单栏开关 / 工具菜单 ⇧⌘F / Dock 右键；位置与开关状态持久化 |
+| HTTP 重写引擎 | ✅ 已提交 `7cb4bd3` | `LeapinCore/Rewrite.swift`；明文与 MITM 两条路径都接；13 项单测 + 端到端 curl 验证 |
+| 重写规则界面 | ✅ 已完成，未提交 | 新增「网络工具 → 请求重写」页：列表、增删改、语法提示、逐行校验、模板；改动热生效（`RewriteBox`） |
+| Mock | ⏳ 能力已有（`mock` 动作），缺"从抓包一键模拟"的入口 | |
 | 临时规则 | 待开始 | |
 
 浮窗实现时发现并修掉两个真问题，值得记一笔：

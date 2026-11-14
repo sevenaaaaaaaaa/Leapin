@@ -15,7 +15,7 @@ import LeapinCore
 final class MITMHandler: @unchecked Sendable {
     private let ca: CertificateAuthority
     private let blocker: DomainBlocking?
-    private let rewrites: RewriteEngine?
+    private let rewrites: RewriteBox?
     private let capture: CaptureSink?
     private let dialer: OutboundDialer
     private let connectHost: String
@@ -29,7 +29,7 @@ final class MITMHandler: @unchecked Sendable {
 
     init(ca: CertificateAuthority,
          blocker: DomainBlocking?,
-         rewrites: RewriteEngine? = nil,
+         rewrites: RewriteBox? = nil,
          capture: CaptureSink?,
          dialer: OutboundDialer,
          connectHost: String,
@@ -188,8 +188,8 @@ final class MITMHandler: @unchecked Sendable {
         // locally, so nothing is dialed and no blocking rule gets a say.
         var requestHeaders = request.headers
         var requestBody = body
-        if let rewrites, !rewrites.isEmpty {
-            switch rewrites.applyToRequest(url: target.url,
+        if let rules = rewrites?.current, !rules.isEmpty {
+            switch rules.applyToRequest(url: target.url,
                                            headers: RewriteHeaders(requestHeaders.items),
                                            body: requestBody) {
             case .respond(let status, let contentType, let payload):
@@ -314,8 +314,8 @@ final class MITMHandler: @unchecked Sendable {
         }
 
         var responseHeaders = HTTPCodec.stripHopByHop(response.headers)
-        if let rewrites, !rewrites.isEmpty {
-            let outcome = rewrites.applyToResponse(url: target.url,
+        if let rules = rewrites?.current, !rules.isEmpty {
+            let outcome = rules.applyToResponse(url: target.url,
                                                    headers: RewriteHeaders(responseHeaders.items),
                                                    body: deliveredBody)
             responseHeaders = HTTPHeaders(outcome.headers.items)
