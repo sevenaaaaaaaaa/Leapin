@@ -47,8 +47,18 @@ jobs:
             build | tail -20
 
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Configure Android toolchain
+        run: |
+          set -euo pipefail
+          if [ -n "${JAVA_HOME_17_ARM64:-}" ]; then echo "JAVA_HOME=$JAVA_HOME_17_ARM64" >> "$GITHUB_ENV"; fi
+          SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          if [ -x "$SM" ]; then
+            yes | "$SM" --licenses >/dev/null 2>&1 || true
+            "$SM" --install "platforms;android-34" "build-tools;34.0.0" >/dev/null 2>&1 || true
+          fi
+          java -version
 
       - name: Build Android APK
         run: |

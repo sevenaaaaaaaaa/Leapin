@@ -102,12 +102,24 @@ jobs:
 
 
       # --- Android ---------------------------------------------------------
-      # Signed with the release keystore from repository secrets so an update
-      # installs over the previous APK. Without the secret it still builds, but
-      # signed by the throwaway debug key.
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # GitHub's macOS images already carry the Android SDK and a JDK, so this
+      # only pins them and makes sure the platform we compile against exists.
+      - name: Configure Android toolchain
+        run: |
+          set -euo pipefail
+          if [ -n "${JAVA_HOME_17_ARM64:-}" ]; then echo "JAVA_HOME=$JAVA_HOME_17_ARM64" >> "$GITHUB_ENV"; fi
+          SDK="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          SM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          if [ -x "$SM" ]; then
+            yes | "$SM" --licenses >/dev/null 2>&1 || true
+            "$SM" --install "platforms;android-34" "build-tools;34.0.0" >/dev/null 2>&1 || true
+          fi
+          java -version
+          ls "$SDK/platforms" "$SDK/build-tools"
 
+      # The keystore comes from repository secrets so CI signs with the same key
+      # as the local build: an update then installs over the previous APK.
       - name: Restore signing key
         env:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -120,13 +132,11 @@ jobs:
             echo "::warning::ANDROID_KEYSTORE_BASE64 is not set; the APK will be debug-signed"
             exit 0
           fi
-          echo "$KEYSTORE_BASE64" | base64 --decode > Android/leapin-release.jks
-          cat > Android/keystore.properties <<EOF
-          storeFile=leapin-release.jks
-          storePassword=${KEYSTORE_PASSWORD}
-          keyAlias=${KEY_ALIAS}
-          keyPassword=${KEY_PASSWORD}
-          EOF
+          python3 -c "import base64,sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.read()))" \
+            <<< "$KEYSTORE_BASE64" > Android/leapin-release.jks
+          printf 'storeFile=leapin-release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > Android/keystore.properties
+          ls -l Android/leapin-release.jks
 
       - name: Build Android APK
         run: |
@@ -138,9 +148,9 @@ jobs:
           set -euo pipefail
           APK=Android/app/build/outputs/apk/release/app-release.apk
           [ -f "$APK" ] || { echo "::error::missing $APK"; exit 1; }
-          AAPT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
-          "$AAPT/apksigner" verify "$APK"
-          MVER="$("$AAPT/aapt" dump badging "$APK" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)"
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          "$BT/apksigner" verify --print-certs "$APK" | head -3
+          MVER="$("$BT/aapt" dump badging "$APK" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)"
           cp "$APK" "dist/LeapinMobile-Android-${MVER:-1.0}.apk"
           ls -lh dist/*.apk
 
