@@ -110,6 +110,20 @@ curl -sN -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:7900/v1/events?sinc
 
 手机上的系统级代理需要 NetworkExtension 权限与开发者账号，本版不含。
 
+## 发布
+
+推一个 `v*` tag 就会在 GitHub Actions 上构建并发布三个平台的产物（macOS App、CLI、未签名 IPA），并在 Release 里附 `SHA256SUMS.txt`：
+
+```bash
+git tag -a v1.9.1 -m "Leapin 1.9.1"
+git push origin v1.9.1
+```
+
+- 工作流：`.github/workflows/release.yml`，跑在 `macos-26` runner 上。**必须用 Xcode 26+**：`Sources/LeapinApp` 用了 Liquid Glass（`glassEffect` / `GlassEffectContainer`），这些符号只有 Xcode 26 SDK 里有，`#available` 守卫解决不了编译期缺符号。
+- 版本号取自 tag；iOS 包名用它自己的 `MARKETING_VERSION`（当前 1.0）。
+- 手动验证流程而不动正式发布：Actions → Release → Run workflow，把 `publish` 设成 `false`，只构建并上传 artifact。
+- 也可以在本地出包：`./scripts/build-app.sh`（macOS）、`./Mobile/build-ios.sh`（iOS）。
+
 ## 目录
 
 ```
