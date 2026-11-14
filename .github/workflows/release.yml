@@ -24,7 +24,10 @@ concurrency:
 jobs:
   build:
     name: Build macOS + iOS artifacts
-    runs-on: macos-15
+    # The macOS app uses Liquid Glass (glassEffect / GlassEffectContainer).
+    # Those symbols only exist in the Xcode 26 SDK, so an older runner cannot
+    # compile Sources/LeapinApp even though every call site is #available-guarded.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
         with:
