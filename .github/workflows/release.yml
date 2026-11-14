@@ -1,0 +1,131 @@
+name: Release
+
+# Building happens on the tag, not on every push: a release is the only thing
+# this workflow publishes. Use "Run workflow" to exercise the build without
+# touching an existing release (set publish = false).
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: '把产物挂到 GitHub Release（false 只构建，不动现有发布）'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build macOS + iOS artifacts
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Resolve version
+        id: version
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' scripts/Info.plist)"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "resolved version: $VERSION"
+
+      # --- macOS app + CLI -------------------------------------------------
+      - name: Build macOS app and CLI
+        run: ./scripts/build-app.sh
+
+      - name: Stamp version and re-sign
+        run: |
+          set -euo pipefail
+          APP=dist/Leapin.app
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ steps.version.outputs.version }}" "$APP/Contents/Info.plist"
+          codesign --force --deep --sign - "$APP"
+          codesign -dv "$APP" 2>&1 | head -3
+
+      - name: Package macOS artifacts
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          ditto -c -k --sequesterRsrc --keepParent dist/Leapin.app "dist/Leapin-${VERSION}-macOS.zip"
+          tar -czf "dist/leapin-${VERSION}-macOS-cli.tar.gz" -C dist/Leapin.app/Contents/MacOS leapin
+          ls -lh dist/
+
+      # --- iOS -------------------------------------------------------------
+      # Unsigned on purpose: signing needs an Apple ID / team the runner does
+      # not have. Users sign with Sideloadly or AltStore on their own machine.
+      - name: Build iOS app (unsigned)
+        run: |
+          set -euo pipefail
+          (cd Mobile && xcodegen generate)
+          xcodebuild -project Mobile/LeapinMobile.xcodeproj -scheme LeapinMobile \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -derivedDataPath Mobile/build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO \
+            build
+
+      - name: Package iOS ipa
+        run: |
+          set -euo pipefail
+          APP=Mobile/build/Build/Products/Release-iphoneos/Leapin.app
+          [ -d "$APP" ] || { echo "::error::missing $APP"; exit 1; }
+          MVER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")"
+          STAGE="$(mktemp -d)"
+          mkdir -p "$STAGE/Payload"
+          cp -R "$APP" "$STAGE/Payload/"
+          (cd "$STAGE" && zip -qry "${GITHUB_WORKSPACE}/dist/LeapinMobile-${MVER}-unsigned.ipa" Payload)
+          rm -rf "$STAGE"
+          ls -lh dist/*.ipa
+
+      - name: Checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          shasum -a 256 *.zip *.tar.gz *.ipa | tee SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: leapin-${{ steps.version.outputs.version }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.ipa
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+      # Updates the release when it already exists (a tag push after a manual
+      # release, or a re-run), otherwise creates it.
+      - name: Publish release
+        if: github.event_name == 'push' || inputs.publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Leapin ${{ steps.version.outputs.version }}
+          fail_on_unmatched_files: true
+          files: |
+            dist/Leapin-${{ steps.version.outputs.version }}-macOS.zip
+            dist/leapin-${{ steps.version.outputs.version }}-macOS-cli.tar.gz
+            dist/LeapinMobile-*-unsigned.ipa
+            dist/SHA256SUMS.txt
