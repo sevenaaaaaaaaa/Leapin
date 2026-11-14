@@ -1,0 +1,63 @@
+name: CI
+
+# Catches a broken build on the branch, not at release time. Publishing lives in
+# release.yml, which only runs on a v* tag.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Same two builds the release makes, so green here means the tag will build too.
+  build:
+    name: Build macOS + iOS
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Build macOS app and CLI
+        run: ./scripts/build-app.sh
+
+      - name: Build iOS app (unsigned)
+        run: |
+          set -euo pipefail
+          (cd Mobile && xcodegen generate)
+          xcodebuild -project Mobile/LeapinMobile.xcodeproj -scheme LeapinMobile \
+            -configuration Debug -destination 'generic/platform=iOS' \
+            -derivedDataPath Mobile/build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO \
+            build | tail -20
+
+      - name: Summary
+        run: |
+          set -euo pipefail
+          echo "macOS app: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' dist/Leapin.app/Contents/Info.plist)"
+          codesign -dv dist/Leapin.app 2>&1 | head -2
+          ls -lh dist/Leapin.app/Contents/MacOS/
+
+  tests:
+    name: Unit tests
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: swift test
+        run: swift test 2>&1 | tail -40
