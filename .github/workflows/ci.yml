@@ -46,12 +46,22 @@ jobs:
             CODE_SIGNING_ALLOWED=NO CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO \
             build | tail -20
 
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build Android APK
+        run: |
+          set -euo pipefail
+          (cd Android && ./gradlew assembleRelease --no-daemon)
+
       - name: Summary
         run: |
           set -euo pipefail
           echo "macOS app: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' dist/Leapin.app/Contents/Info.plist)"
           codesign -dv dist/Leapin.app 2>&1 | head -2
           ls -lh dist/Leapin.app/Contents/MacOS/
+          ls -lh Android/app/build/outputs/apk/release/
 
   tests:
     name: Unit tests

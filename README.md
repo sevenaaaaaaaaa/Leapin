@@ -102,19 +102,21 @@ curl -sN -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:7900/v1/events?sinc
 
 ## 移动端（iOS）
 
-手机端是控制台，不是 VPN：连到 Mac 的控制面，看状态、连接与策略，执行重载 / 切换策略组 / 分流判定 / DNS 追踪 / HTTP 探测。
+手机端是控制台，不是 VPN：连到 Mac 的控制面，看状态、连接与策略，执行重载 / 切换策略组 / 分流判定 / DNS 追踪 / HTTP 探测。iOS 与 Android 功能对齐，共用同一份 `/v1` 契约。
 
 ```bash
-./Mobile/build-ios.sh          # 生成 Xcode 工程并打包 dist/LeapinMobile-1.0-unsigned.ipa
+./Mobile/build-ios.sh          # iOS → dist/LeapinMobile-1.0-unsigned.ipa
+./scripts/build-apk.sh         # Android → dist/LeapinMobile-Android-1.0.apk
 ```
 
-未签名 IPA 用 AltStore / Sideloadly 以你自己的 Apple ID 签名安装；首次打开后填 Mac 的局域网 IP、端口 7900 与控制令牌。构建、安装、架构与限制见 [docs/MOBILE.md](docs/MOBILE.md)。
+- **iOS**：未签名 IPA，用 AltStore / Sideloadly 以你自己的 Apple ID 签名安装 → [docs/MOBILE.md](docs/MOBILE.md)
+- **Android**：发布密钥签名的 APK，允许「未知来源」后直接安装 → [docs/ANDROID.md](docs/ANDROID.md)
 
-手机上的系统级代理需要 NetworkExtension 权限与开发者账号，本版不含。
+首次打开都填 Mac 的局域网 IP、端口 7900 与 `control-token`。手机上的系统级代理需要 NetworkExtension（iOS）/ VpnService（Android），本版不含。
 
 ## 发布
 
-推一个 `v*` tag 就会在 GitHub Actions 上构建并发布三个平台的产物（macOS App、CLI、未签名 IPA），并在 Release 里附 `SHA256SUMS.txt`：
+推一个 `v*` tag 就会在 GitHub Actions 上构建并发布各平台产物（macOS App、CLI、未签名 IPA、Android APK），并在 Release 里附 `SHA256SUMS.txt`：
 
 ```bash
 git tag -a v1.9.1 -m "Leapin 1.9.1"
@@ -124,7 +126,8 @@ git push origin v1.9.1
 - 工作流：`.github/workflows/release.yml`，跑在 `macos-26` runner 上。**必须用 Xcode 26+**：`Sources/LeapinApp` 用了 Liquid Glass（`glassEffect` / `GlassEffectContainer`），这些符号只有 Xcode 26 SDK 里有，`#available` 守卫解决不了编译期缺符号。
 - 版本号取自 tag；iOS 包名用它自己的 `MARKETING_VERSION`（当前 1.0）。
 - 手动验证流程而不动正式发布：Actions → Release → Run workflow，把 `publish` 设成 `false`，只构建并上传 artifact。
-- 也可以在本地出包：`./scripts/build-app.sh`（macOS）、`./Mobile/build-ios.sh`（iOS）。
+- 也可以在本地出包：`./scripts/build-app.sh`（macOS）、`./Mobile/build-ios.sh`（iOS）、`./scripts/build-apk.sh`（Android）。
+- 完整发版清单（含「更新本机 App」「把三个安装包交给用户」）见 [docs/RELEASE.md](docs/RELEASE.md)。
 
 ## 目录
 
@@ -139,8 +142,11 @@ Sources/LeapinRuntime         引擎装配、配置存储、导入导出
 Sources/LeapinApp             SwiftUI 界面
 Sources/leapin                    命令行
 Mobile/                            iOS 控制台（Xcode 工程，不参与 SwiftPM 包）
+Android/                           Android 控制台（Gradle 工程）
 docs/ARCHITECTURE.md             契约与设计
 docs/MOBILE.md                    移动端：构建、安装、限制
+docs/ANDROID.md                   Android：构建、安装、限制
+docs/RELEASE.md                   发版清单
 ```
 
 ## 隐私设计

@@ -100,11 +100,55 @@ jobs:
           rm -rf "$STAGE"
           ls -lh dist/*.ipa
 
+
+      # --- Android ---------------------------------------------------------
+      # Signed with the release keystore from repository secrets so an update
+      # installs over the previous APK. Without the secret it still builds, but
+      # signed by the throwaway debug key.
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Restore signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not set; the APK will be debug-signed"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > Android/leapin-release.jks
+          cat > Android/keystore.properties <<EOF
+          storeFile=leapin-release.jks
+          storePassword=${KEYSTORE_PASSWORD}
+          keyAlias=${KEY_ALIAS}
+          keyPassword=${KEY_PASSWORD}
+          EOF
+
+      - name: Build Android APK
+        run: |
+          set -euo pipefail
+          (cd Android && ./gradlew assembleRelease --no-daemon)
+
+      - name: Package Android apk
+        run: |
+          set -euo pipefail
+          APK=Android/app/build/outputs/apk/release/app-release.apk
+          [ -f "$APK" ] || { echo "::error::missing $APK"; exit 1; }
+          AAPT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
+          "$AAPT/apksigner" verify "$APK"
+          MVER="$("$AAPT/aapt" dump badging "$APK" | sed -n "s/.*versionName='\([^']*\)'.*/\1/p" | head -1)"
+          cp "$APK" "dist/LeapinMobile-Android-${MVER:-1.0}.apk"
+          ls -lh dist/*.apk
+
       - name: Checksums
         run: |
           set -euo pipefail
           cd dist
-          shasum -a 256 *.zip *.tar.gz *.ipa | tee SHA256SUMS.txt
+          shasum -a 256 *.zip *.tar.gz *.ipa *.apk | tee SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Upload build artifacts
@@ -115,6 +159,7 @@ jobs:
             dist/*.zip
             dist/*.tar.gz
             dist/*.ipa
+            dist/*.apk
             dist/SHA256SUMS.txt
           if-no-files-found: error
 
@@ -131,4 +176,5 @@ jobs:
             dist/Leapin-${{ steps.version.outputs.version }}-macOS.zip
             dist/leapin-${{ steps.version.outputs.version }}-macOS-cli.tar.gz
             dist/LeapinMobile-*-unsigned.ipa
+            dist/LeapinMobile-Android-*.apk
             dist/SHA256SUMS.txt

@@ -19,3 +19,11 @@ secrets.json
 Mobile/LeapinMobile.xcodeproj/
 Mobile/build/
 Mobile/DerivedData/
+
+# Android: build output, local SDK path and the sideload keystore stay out of git
+Android/.gradle/
+Android/build/
+Android/app/build/
+Android/local.properties
+Android/keystore.properties
+Android/*.jks
