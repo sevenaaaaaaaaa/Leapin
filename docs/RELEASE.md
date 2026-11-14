@@ -3,6 +3,20 @@
 一条规矩：**发布 = 构建三个平台 + 更新本机 App + 打 tag 发版 + 把三个安装包交给用户。**
 少任何一步都不算发完。
 
+## 最快的路径：一条命令
+
+```bash
+./scripts/release.sh 1.10.1            # 交互确认后提交、打 tag、发版、等 CI
+./scripts/release.sh 1.10.1 --yes      # 不询问
+./scripts/release.sh 1.10.1 --no-push  # 只构建 + 更新本机 + 打包，不推送
+./scripts/release.sh --check           # 只检查前置条件（Xcode 26+ / xcodegen / gh / JDK / SDK）
+```
+
+它按顺序完成：检查前置条件 → 改版本号 → 构建 macOS → **更新 `/Applications/Leapin.app`** →
+构建 iOS 与 Android → 打包 + 校验和 → 提交并推 tag → 等 CI → 核对 Release 资产 → 打印三个包的路径。
+
+下面的手工步骤是这条命令的内部实现，出问题时照着排查。
+
 ## 0. 判定是否要发版
 
 | 改动性质 | 版本位 | 例子 |
