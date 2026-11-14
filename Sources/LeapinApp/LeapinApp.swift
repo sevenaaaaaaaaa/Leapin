@@ -44,6 +44,11 @@ struct LeapinApp: App {
             }
 
             CommandMenu("工具") {
+                Button("显示 / 隐藏实时浮窗") {
+                    FloatingPanelController.shared.toggle()
+                }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+                Divider()
                 Button("打开数据目录") {
                     NSWorkspace.shared.open(app.engine.store.root)
                 }
@@ -1027,6 +1032,7 @@ struct StatusPill: View {
 struct MenuBarPanel: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.openWindow) private var openWindow
+    @ObservedObject private var floating = FloatingPanelController.shared
 
     private func metric(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
@@ -1074,6 +1080,15 @@ struct MenuBarPanel: View {
                 LPSwitch(isOn: Binding(
                     get: { engine.systemProxyActive },
                     set: { engine.toggleSystemProxy($0) }
+                ), width: 30)
+            }
+
+            HStack(spacing: 8) {
+                Text("实时浮窗").font(.system(size: 12))
+                Spacer()
+                LPSwitch(isOn: Binding(
+                    get: { floating.isVisible },
+                    set: { $0 ? floating.show() : floating.hide() }
                 ), width: 30)
             }
 

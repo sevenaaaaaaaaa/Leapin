@@ -95,6 +95,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NotificationCenter.default.post(name: .lpTogglePalette, object: nil)
         }
         GlobalHotKeyCenter.shared.register()
+
+        // The panel is the only surface that stays visible while the main window is
+        // closed, so it comes back on launch if the user left it on.
+        FloatingPanelController.shared.restoreIfNeeded()
+
+        #if DEBUG
+        if let path = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_PANEL"] {
+            let autostart = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_ENGINE"] == "1"
+            Task {
+                if autostart { await LeapinEngine.shared.start() }
+                try? await Task.sleep(for: .seconds(7))
+                FloatingPanelController.shared.snapshot(to: path)
+                NSApp.terminate(nil)
+            }
+        }
+        #endif
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -115,6 +131,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggleItem.target = self
         menu.addItem(toggleItem)
 
+        let floatingTitle = FloatingPanelController.shared.isVisible ? "隐藏实时浮窗" : "显示实时浮窗"
+        let floatingItem = NSMenuItem(title: floatingTitle, action: #selector(dockToggleFloating), keyEquivalent: "")
+        floatingItem.target = self
+        menu.addItem(floatingItem)
+
         let proxyItem = NSMenuItem(title: engine.systemProxyActive ? "关闭系统代理" : "开启系统代理",
                                    action: #selector(dockToggleSystemProxy), keyEquivalent: "")
         proxyItem.target = self
@@ -134,6 +155,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let engine = LeapinEngine.shared
         if engine.state == .running { engine.stop() }
         else { Task { await engine.start() } }
+    }
+
+    @objc private func dockToggleFloating() {
+        FloatingPanelController.shared.toggle()
     }
 
     @objc private func dockToggleSystemProxy() {

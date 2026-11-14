@@ -112,6 +112,9 @@ private actor PumpState {
     func record(bytes: Int, inbound: Bool) {
         if inbound { bytesIn += bytes } else { bytesOut += bytes }
         lastActivity = Date()
+        // Same numbers feed the UI's live gauge; the pump is the only place that
+        // sees every chunk, so the counter lives here rather than in the engine.
+        LiveTraffic.shared.record(bytes: bytes, inbound: inbound)
     }
 
     func finishDirection() { finished += 1 }

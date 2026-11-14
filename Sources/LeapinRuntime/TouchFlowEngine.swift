@@ -721,6 +721,10 @@ public extension LeapinEngine {
     var adblockRuleCount: Int { adblock?.ruleCount ?? 0 }
     var activeConnections: Int { proxies.reduce(0) { $0 + $1.activeConnections } }
 
+    /// Byte totals that include transfers still in flight (EngineStats only settles
+    /// when a flow ends). Callers diff two samples to get a rate.
+    public var liveTraffic: (bytesIn: Int, bytesOut: Int) { LiveTraffic.shared.snapshot() }
+
     func cosmeticSelectors(for domain: String) -> [String] {
         adblock?.cosmeticSelectors(for: domain) ?? []
     }
