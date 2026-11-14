@@ -1,5 +1,7 @@
 # Leapin
 
+[![CI](https://github.com/sevenaaaaaaaaa/Leapin/actions/workflows/ci.yml/badge.svg)](https://github.com/sevenaaaaaaaaa/Leapin/actions/workflows/ci.yml)
+
 > One leap. No detour.
 
 macOS 网络工作台：总览小组件、六类场景、订阅预检与转换、原生 / Mihomo 内核、规则分流、去广告、抓包、SSH、NAS、Tailscale 家庭资源、公司内网与本地网络书签。
@@ -170,7 +172,7 @@ docs/MOBILE.md                    移动端：构建、安装、限制
 
 ## 验证情况
 
-最新全量测试 **293 项、0 失败、1 项性能门禁跳过**，App 构建打包成功；公司资源在隔离配置下完成模板导入、保存、首页检查与本地 HTTP 路径验证。
+最新全量测试 **293 项、0 失败、1 项性能门禁跳过**，App 构建打包成功；`main` 每次推送都会跑 CI（构建 macOS + iOS，并执行全量单元测试，最近一次 293 项 / 0 失败 / 7 跳过 / 22.8 秒）；公司资源在隔离配置下完成模板导入、保存、首页检查与本地 HTTP 路径验证。
 历史控制面 e2e（22/22）、同步 e2e（36/36）、端到端代理（10/10）、系统代理开关与 GUI 验收记录见 [`docs/VERIFICATION.md`](docs/VERIFICATION.md)，
 其中包括**明确未做端到端验证**的项目（真实双机 LAN、MITM 安装 CA、真实 SSH/NAS 设备等）。
 
