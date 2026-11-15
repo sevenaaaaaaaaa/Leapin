@@ -21,6 +21,8 @@ jobs:
   build:
     name: Build macOS + iOS
     runs-on: macos-26
+    # A hung build should fail visibly instead of blocking the queue for an hour.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
 
@@ -76,6 +78,8 @@ jobs:
   tests:
     name: Unit tests
     runs-on: macos-26
+    # The suite takes a few minutes; anything beyond this is a hang, not slowness.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
