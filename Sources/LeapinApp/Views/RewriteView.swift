@@ -68,6 +68,8 @@ struct RewriteView: View {
                 }
             }
         }
+        .onAppear { consumePendingLine() }
+        .onChange(of: app.pendingRewriteLine) { _, _ in consumePendingLine() }
         .sheet(item: $editing) { target in
             RuleEditorSheet(
                 initialLine: target.line,
@@ -267,6 +269,13 @@ struct RewriteView: View {
         } else {
             app.showToast("重写规则已更新")
         }
+    }
+
+    /// A capture row can seed a Mock rule and jump here; open the editor on it.
+    private func consumePendingLine() {
+        guard let line = app.pendingRewriteLine else { return }
+        app.pendingRewriteLine = nil
+        editing = EditTarget(index: nil, line: line)
     }
 
     private func deletePending() {

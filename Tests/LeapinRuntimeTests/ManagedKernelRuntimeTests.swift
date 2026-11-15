@@ -126,6 +126,40 @@ final class ManagedKernelRuntimeTests: XCTestCase {
         return String(decoding: received, as: UTF8.self)
     }
 
+    /// Temporary rules are the ones a user adds from a connection row: they must take
+    /// effect on the next request, must not be written into the profile, and must go
+    /// away when cleared.
+    @MainActor
+    func testTemporaryRuleAppliesImmediatelyAndIsNotPersisted() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("leapin-temprule-\(UUID().uuidString)")
+        let engine = try makeEngine(root: root)
+        let origin = try LocalOrigin()
+        defer { engine.stop(); origin.stop(); try? FileManager.default.removeItem(at: root) }
+
+        let originPort = try await origin.start()
+        await engine.start()
+        XCTAssertEqual(engine.state, .running)
+        let port = engine.profile.general.mixedPort
+        let profileRulesBefore = engine.profile.rules.count
+
+        let allowed = try await getThroughProxy(port: port, origin: originPort)
+        XCTAssertTrue(allowed.contains("200 OK"), allowed)
+
+        let added = engine.addTemporaryRule(kind: .domainSuffix, value: "127.0.0.1", policy: "REJECT")
+        XCTAssertNotNil(added, "engine was running, the rule should be accepted")
+        XCTAssertEqual(engine.temporaryRules.count, 1)
+        XCTAssertEqual(engine.profile.rules.count, profileRulesBefore,
+                       "temporary rules must not be written into the profile")
+
+        let blocked = try await getThroughProxy(port: port, origin: originPort)
+        XCTAssertTrue(blocked.contains("403"), "temporary REJECT did not take effect: \(blocked)")
+
+        engine.clearTemporaryRules()
+        let restored = try await getThroughProxy(port: port, origin: originPort)
+        XCTAssertTrue(restored.contains("200 OK"), restored)
+    }
+
     @MainActor
     func testRealMihomoImportRoutesTrafficAndRestoresNativeProfile() async throws {
         guard KernelExecutable.mihomo() != nil else { throw XCTSkip("Mihomo executable is not installed") }

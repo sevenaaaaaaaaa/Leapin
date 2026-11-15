@@ -77,6 +77,22 @@ public struct RewriteRule: Sendable, Hashable, Identifiable {
     }
 }
 
+/// Helpers that build rule lines for the UI, so escaping lives in one tested place.
+public enum RewriteTemplate {
+    /// A Mock rule that answers exactly this URL. The URL is escaped so a query string
+    /// or a dot never turns into regex syntax by accident.
+    public static func mockLine(url: String,
+                                status: Int = 200,
+                                contentType: String = "application/json",
+                                body: String = "{}") -> String {
+        // `escapedPattern` also escapes slashes; `\/` is valid but makes the rule hard
+        // to read and edit by hand, and a bare `/` is not special in ICU regex.
+        let escaped = NSRegularExpression.escapedPattern(for: url)
+            .replacingOccurrences(of: "\\/", with: "/")
+        return "\(RewriteRule.Phase.request.rawValue) ^\(escaped)$ \(RewriteRule.Action.mock.rawValue) \(status) \(contentType) \(body)"
+    }
+}
+
 /// Ordered, case-insensitive header bag the rewrite engine works on.
 ///
 /// The proxy layer has its own `HTTPHeaders`; this type keeps `LeapinCore` free of

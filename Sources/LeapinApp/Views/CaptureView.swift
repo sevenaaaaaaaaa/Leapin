@@ -381,6 +381,12 @@ struct CaptureView: View {
                                     LPClipboard.copy(curl(for: request))
                                     app.showToast("已复制 cURL 命令", kind: .info)
                                 }
+                                Divider()
+                                Button("模拟这个接口…") { seedMockRule(from: request) }
+                                Divider()
+                                Button("此域名直连") { addTemporaryRule(for: request, policy: "DIRECT") }
+                                Button("此域名走代理") { addTemporaryRule(for: request, policy: proxyPolicyName) }
+                                Button("拦截此域名") { addTemporaryRule(for: request, policy: "REJECT") }
                             }
                         }
                     }
@@ -584,6 +590,41 @@ struct CaptureView: View {
 
     private func path(_ url: String) -> String {
         URL(string: url)?.path ?? url
+    }
+
+    // MARK: - Rewrite / temporary rules from a captured request
+
+    /// Policy to use for "走代理": the first policy group, else the first real outbound.
+    private var proxyPolicyName: String {
+        if let group = engine.profile.groups.first { return group.name }
+        return engine.profile.outbounds.first { $0.type != .direct && $0.type != .reject }?.name ?? "PROXY"
+    }
+
+    /// Seeds a Mock rule that answers this exact URL, reusing the captured body so the
+    /// editor opens with something real to adjust.
+    private func seedMockRule(from request: CapturedRequest) {
+        let contentType = request.mimeType ?? "application/json"
+        var body = "{}"
+        if let data = request.responseBody, data.count < 4096,
+           let text = String(data: data, encoding: .utf8), !text.isEmpty {
+            body = text.replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        app.pendingRewriteLine = RewriteTemplate.mockLine(url: request.url,
+                                                          contentType: contentType,
+                                                          body: body)
+        app.go(to: .rewrite)
+    }
+
+    private func addTemporaryRule(for request: CapturedRequest, policy: String) {
+        guard let rule = engine.addTemporaryRule(kind: .domainSuffix,
+                                                 value: request.host,
+                                                 policy: policy) else {
+            app.showToast("引擎未运行，规则会在下次启动时生效", kind: .warning)
+            return
+        }
+        _ = rule
+        app.showToast("临时规则：\(request.host) → \(policy)（重启失效）")
     }
 
     private func curl(for request: CapturedRequest) -> String {

@@ -114,6 +114,9 @@ struct LeapinApp: App {
 
 @MainActor
 final class AppModel: ObservableObject {
+    /// Pre-filled rule seeded from a captured request; the rewrite page consumes it
+    /// and opens the editor so the user confirms before anything is saved.
+    @Published var pendingRewriteLine: String?
     enum Section: String, CaseIterable, Identifiable {
         case dashboard, rules, rewrite, adblock, capture, ssh, nas, learn, privacy, profiles, settings, activity, diagnostics
         var id: String { rawValue }

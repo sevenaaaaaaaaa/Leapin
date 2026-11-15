@@ -134,6 +134,26 @@ final class RewriteTests: XCTestCase {
         XCTAssertEqual(outcome.body, binary)
     }
 
+    // MARK: - Template
+
+    func testMockTemplateEscapesTheURL() {
+        let line = RewriteTemplate.mockLine(url: "https://api.example.com/v1/user?id=1&x=2")
+        // Escaped dots and the anchors: a dot must not match any character.
+        XCTAssertTrue(line.hasPrefix(#"http-request ^https://api\.example\.com/v1/user\?id=1&x=2$ mock 200"#),
+                      line)
+        let engine = RewriteEngine(lines: [line])
+        XCTAssertTrue(engine.issues.isEmpty)
+        // The rule must match its own URL and nothing that merely looks similar.
+        guard case .respond = engine.applyToRequest(url: "https://api.example.com/v1/user?id=1&x=2",
+                                                    headers: RewriteHeaders(), body: Data()) else {
+            return XCTFail("mock rule did not match its own URL")
+        }
+        guard case .proceed = engine.applyToRequest(url: "https://apiXexample.com/v1/user?id=1&x=2",
+                                                    headers: RewriteHeaders(), body: Data()) else {
+            return XCTFail("escaped dot must not match an arbitrary character")
+        }
+    }
+
     // MARK: - Tokenizer
 
     func testTokenizerKeepsQuotedSpaces() {

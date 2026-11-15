@@ -74,6 +74,9 @@ struct RulesView: View {
                 Text("Mihomo 正在执行原始分流配置。此处为来源预览；修改请到线路与订阅重新导入。")
                     .font(.system(size: 12)).foregroundStyle(LP.textSecondary).padding(12)
             }
+            if !engine.temporaryRules.isEmpty {
+                temporaryRuleBanner
+            }
             toolbar.disabled(engine.executionKernel == .mihomo)
             HStack(alignment: .top, spacing: 22) {
                 ruleList
@@ -181,6 +184,30 @@ struct RulesView: View {
             .buttonStyle(LPPrimaryButtonStyle())
         }
         .padding(.horizontal, 32).padding(.vertical, 13)
+    }
+
+    /// Temporary rules only live for this run; say so, and make them easy to drop.
+    private var temporaryRuleBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "clock.badge.exclamationmark")
+                .font(.system(size: 11))
+                .foregroundStyle(LP.amber)
+            Text("\(engine.temporaryRules.count) 条临时规则（重启后失效，不会写入配置）")
+                .font(.system(size: 11))
+                .foregroundStyle(LP.textSecondary)
+            Text(engine.temporaryRules.map { "\($0.value) → \($0.policy)" }.joined(separator: " · "))
+                .font(LPFont.mono(10))
+                .foregroundStyle(LP.textTertiary)
+                .lineLimit(1)
+            Spacer()
+            Button("全部清除") {
+                engine.clearTemporaryRules()
+                app.showToast("已清除临时规则")
+            }
+            .buttonStyle(LPGhostButtonStyle())
+        }
+        .padding(.horizontal, 32)
+        .padding(.top, 10)
     }
 
     private var ruleList: some View {

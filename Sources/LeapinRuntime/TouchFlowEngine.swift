@@ -70,6 +70,9 @@ public final class LeapinEngine: ObservableObject {
     /// Rule-set members from the last successful load. Kept after a stop so the
     /// editor and /v1/explain can still resolve references while the engine is down.
     private var loadedRuleSets: [String: [Rule]]?
+    /// Rules added from a connection or a capture row. Evaluated ahead of the profile's
+    /// rules, never written to the profile, dropped when the app quits.
+    public private(set) var temporaryRules: [Rule] = []
     private var adblock: AdBlockEngine?
     /// Compiled HTTP rewrite rules for the running profile. The box lets the UI swap
     /// them without restarting the proxy.
@@ -152,7 +155,12 @@ public final class LeapinEngine: ObservableObject {
                 ? await RuleSetLoader.load(sources: ruleSetSources(for: profile), cacheDirectory: store.cacheDirectory) : [:]
             guard startGeneration == generation, state == .starting else { throw CancellationError() }
             loadedRuleSets = ruleSets
-            let engine = RuleEngine(profile: try homeRouting(routingProfile), ruleSets: ruleSets)
+            // Temporary rules live ahead of the profile's own list while the app runs.
+            var effectiveRouting = routingProfile
+            if executionKernel == .native, !temporaryRules.isEmpty {
+                effectiveRouting.rules = temporaryRules + effectiveRouting.rules
+            }
+            let engine = RuleEngine(profile: try homeRouting(effectiveRouting), ruleSets: ruleSets)
             ruleEngine = engine
             let routerBox = RouterBox(engine)
             self.routerBox = routerBox
@@ -760,6 +768,42 @@ public extension LeapinEngine {
                 await self.start()
             }
         }
+    }
+
+    // MARK: - Temporary rules (this app session only)
+
+    @discardableResult
+    public func addTemporaryRule(kind: RuleKind, value: String, policy: String) -> Rule? {
+        let rule = Rule(kind: kind, value: value, policy: policy,
+                        raw: "\(kind.rawValue.uppercased()),\(value),\(policy)")
+        temporaryRules.removeAll { $0.id == rule.id }
+        temporaryRules.insert(rule, at: 0)
+        return refreshRouter() ? rule : nil
+    }
+
+    public func removeTemporaryRule(id: String) {
+        temporaryRules.removeAll { $0.id == id }
+        _ = refreshRouter()
+    }
+
+    public func clearTemporaryRules() {
+        guard !temporaryRules.isEmpty else { return }
+        temporaryRules.removeAll()
+        _ = refreshRouter()
+    }
+
+    /// Rebuilds the router with the current temporary rules. Only meaningful while the
+    /// engine is running; the next `start()` picks them up anyway.
+    @discardableResult
+    private func refreshRouter() -> Bool {
+        guard state == .running, executionKernel == .native else { return false }
+        var next = profile
+        next.rules = temporaryRules + profile.rules
+        guard let routed = try? homeRouting(next) else { return false }
+        let router = RuleEngine(profile: routed, ruleSets: loadedRuleSets ?? [:])
+        ruleEngine = router
+        routerBox?.swap(router)
+        return true
     }
 
     /// Replaces the rewrite rule set and swaps it into the running proxy.
