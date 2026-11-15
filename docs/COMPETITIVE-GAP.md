@@ -189,6 +189,18 @@ Release 构建确认该环境变量与快照代码**不存在于正式二进制*
 5 个相位（request / response / dns / cron / network.changed）· 上下文 API（`$httpClient` / `$persistentStore` / `$notification` / `$done`）·
 执行预算与错误隔离 · 内置编辑器 + 单连接重放 · `.leapinmodule` 分发 · iOS 主屏小组件
 
+**进度（2026-11-15）**
+
+| 项 | 状态 | 说明 |
+| --- | --- | --- |
+| JS 运行时 + 相位 | ✅ | `LeapinScript` 模块；`http.request` / `http.response` 已接入明文与 MITM 两条路径；`dns` / `cron` / `network.changed` 已定义但宿主尚未调用 |
+| 上下文 API | ✅ | `$request` / `$response`（可改头、体、URL、状态码）、`$done()`、`$httpClient.get`、`$persistentStore`、`$notification`、`$environment` |
+| 沙箱 | ✅ | 无文件系统/进程/import；单次预算（默认 50 ms、1 次 HTTP）；抛错或超时的脚本被禁用，不在每条连接上重试 |
+| 编辑器 | 待做 | 下一步 |
+| `.leapinmodule` 分发 | 待做 | |
+
+单测抓到的真问题：`$done()` 不带参数时，脚本对 `$request` 的**就地修改会被丢弃**——原因是"完成信号"和"返回值"混成了同一字段。现在分开。
+
 ### v1.13 —— 数据面隧道化（解锁后续一半能力）
 
 | 项 | 说明 |

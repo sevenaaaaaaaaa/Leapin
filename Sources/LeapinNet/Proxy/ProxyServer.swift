@@ -1,4 +1,5 @@
 import Foundation
+import LeapinScript
 import Network
 import LeapinCore
 
@@ -45,6 +46,8 @@ public final class ProxyServer: @unchecked Sendable {
     private let blocker: DomainBlocking?
     /// Rewrite rules, hot-swappable while the proxy keeps running.
     private let rewrites: RewriteBox?
+    /// User scripts, also hot-swappable.
+    private let scripts: ScriptBox?
     private let flows: FlowRecording?
     private let capture: CaptureSink?
     private let ca: CertificateAuthority?
@@ -68,6 +71,7 @@ public final class ProxyServer: @unchecked Sendable {
                 resolver: NameResolving,
                 blocker: DomainBlocking?,
                 rewrites: RewriteBox? = nil,
+                scripts: ScriptBox? = nil,
                 flows: FlowRecording?,
                 capture: CaptureSink?,
                 ca: CertificateAuthority? = nil) {
@@ -76,6 +80,7 @@ public final class ProxyServer: @unchecked Sendable {
         self.resolver = resolver
         self.blocker = blocker
         self.rewrites = rewrites
+        self.scripts = scripts
         self.flows = flows
         self.capture = capture
         self.ca = ca
@@ -367,6 +372,7 @@ public final class ProxyServer: @unchecked Sendable {
             let handler = MITMHandler(ca: ca,
                                       blocker: blocker,
                                       rewrites: rewrites,
+                                      scripts: scripts,
                                       capture: capture,
                                       dialer: dialer,
                                       connectHost: authority.host,
@@ -500,6 +506,42 @@ public final class ProxyServer: @unchecked Sendable {
             return false
         }
 
+        // Scripts run after the declarative rewrites: a rule fixes the obvious cases,
+        // a script covers what needs logic, and the script gets the last word.
+        if let runtime = scripts?.current, !runtime.activeScripts.isEmpty {
+            let outcome = runtime.runRequest(
+                ScriptRequest(method: request.method, url: request.target,
+                              headers: requestHeaders.items.map { ($0.name, $0.value) },
+                              body: requestBody))
+            switch outcome.outcome {
+            case .respond(let status, let contentType, let payload):
+                var headers = HTTPHeaders()
+                headers.set("Content-Type", contentType)
+                headers.set("Content-Length", String(payload.count))
+                headers.set("Connection", "keep-alive")
+                let head = HTTPResponseHead(status: status, reason: HTTPStatusText.reason(for: status), headers: headers)
+                var out = head.serialized
+                out.append(payload)
+                try await socket.write(out)
+                recordReplacedCapture(host: authority.host, request: request, requestBody: requestBody,
+                                      status: status, headers: headers, body: payload,
+                                      meta: meta, decision: decision)
+                return true
+            case .redirect(let target, let status):
+                var headers = HTTPHeaders()
+                headers.set("Location", target)
+                headers.set("Content-Length", "0")
+                headers.set("Connection", "keep-alive")
+                let head = HTTPResponseHead(status: status, reason: HTTPStatusText.reason(for: status), headers: headers)
+                try await socket.write(head.serialized)
+                return true
+            case .proceed(let headers, let body, _):
+                requestHeaders = HTTPHeaders(headers.items)
+                requestBody = body
+                LPLog.shared.debug("script", "request rewritten for \(request.target)")
+            }
+        }
+
         let upstream: ByteStream
         do {
             upstream = try await dialer.connect(via: decision.outbound,
@@ -552,6 +594,15 @@ public final class ProxyServer: @unchecked Sendable {
                                                        body: responseBody)
                 responseHeaders = HTTPHeaders(outcome.headers.items)
                 deliveredBody = outcome.body
+            }
+            if let runtime = scripts?.current, !runtime.activeScripts.isEmpty {
+                let result = runtime.runResponse(
+                    url: request.target,
+                    status: response.status,
+                    headers: responseHeaders.items.map { ($0.name, $0.value) },
+                    body: deliveredBody)
+                responseHeaders = HTTPHeaders(result.headers.items)
+                deliveredBody = result.body
             }
             if request.method.uppercased() != "HEAD" {
                 _ = HTTPCodec.serialize(body: deliveredBody, headers: &responseHeaders)

@@ -1,4 +1,5 @@
 import Foundation
+import LeapinScript
 import Combine
 import LeapinCore
 import LeapinPolicy
@@ -77,6 +78,9 @@ public final class LeapinEngine: ObservableObject {
     /// Compiled HTTP rewrite rules for the running profile. The box lets the UI swap
     /// them without restarting the proxy.
     public private(set) var rewriteBox: RewriteBox?
+    /// Scripts for the running profile. Swapped in place, like the rewrite rules.
+    public private(set) var scriptBox: ScriptBox?
+    private lazy var scriptHost = EngineScriptHost()
     private var ca: CertificateAuthority?
     private var healthProber: HealthProber?
     private let sink = EngineSink()
@@ -183,6 +187,15 @@ public final class LeapinEngine: ObservableObject {
             let rewriteBox = RewriteBox(compiledRewrites)
             self.rewriteBox = rewriteBox
 
+            // Scripts: compile-on-run model, so there is nothing to prepare beyond
+            // mapping stored records into the runtime's vocabulary.
+            let runtime = ScriptRuntime(scripts: Self.scriptSources(from: profile.scripts),
+                                        persistentStoreURL: store.root.appendingPathComponent("scripts-store.json"))
+            scriptHost.update(configName: profile.name, mixedPort: Int(profile.general.mixedPort))
+            runtime.host = scriptHost
+            let scriptBox = ScriptBox(runtime)
+            self.scriptBox = scriptBox
+
             let dnsResolver = DNSResolver(config: homeDNS(profile.dns), blocker: blocker)
             resolver = dnsResolver
             let resolverBox = ResolverBox(companyResolver(dnsResolver))
@@ -223,7 +236,7 @@ public final class LeapinEngine: ObservableObject {
                                                   mitmHosts: general.mitmHosts,
                                                   socksUDPUpstreamPort: executionKernel == .mihomo ? managedKernel.proxyPort : nil)
                 return ProxyServer(options: options, router: routerBox, resolver: resolverBox,
-                                   blocker: blockerBox, rewrites: rewriteBox,
+                                   blocker: blockerBox, rewrites: rewriteBox, scripts: scriptBox,
                                    flows: sink, capture: sinkCapture, ca: ca)
             }
 
@@ -344,6 +357,7 @@ public final class LeapinEngine: ObservableObject {
         ruleEngine = nil
         adblock = nil
         rewriteBox = nil
+        scriptBox = nil
         ca = nil
         adblockActive = false
         mitmActive = false
@@ -815,6 +829,24 @@ public extension LeapinEngine {
         rewriteBox?.swap(compiled)
         updateProfile(restart: false) { $0.rewrites = lines }
         return compiled.issues
+    }
+
+    /// Replaces the script set and swaps it into the running proxy.
+    @discardableResult
+    public func replaceScripts(_ records: [ScriptRecord]) -> [String: String] {
+        let runtime = scriptBox?.current ?? ScriptRuntime()
+        runtime.update(Self.scriptSources(from: records))
+        runtime.host = scriptHost
+        scriptBox?.swap(runtime)
+        updateProfile(restart: false) { $0.scripts = records }
+        return runtime.disabledReasons
+    }
+
+    private static func scriptSources(from records: [ScriptRecord]) -> [ScriptSource] {
+        records.compactMap { record in
+            guard let phase = ScriptPhase(rawValue: record.phase) else { return nil }
+            return ScriptSource(name: record.name, phase: phase, code: record.code, enabled: record.enabled)
+        }
     }
 
     private static func reportRewriteIssues(_ engine: RewriteEngine) {

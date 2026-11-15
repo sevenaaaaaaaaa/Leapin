@@ -446,23 +446,26 @@ public struct Profile: Codable, Sendable, Identifiable, Hashable {
     public var proxyProviders: [RuleProvider]
     /// HTTP rewrite directives, one per line — see `RewriteEngine`.
     public var rewrites: [String]
+    /// User scripts (JavaScript), kept next to the rewrites they complement.
+    public var scripts: [ScriptRecord]
 
     public init(id: UUID = UUID(), name: String, general: GeneralConfig = .init(),
                 dns: DNSConfig = .init(), adblock: AdBlockConfig = .init(),
                 outbounds: [OutboundConfig] = [.direct, .reject], groups: [PolicyGroup] = [],
                 rules: [Rule] = [], sourcePath: String? = nil,
                 ruleProviders: [RuleProvider] = [], proxyProviders: [RuleProvider] = [],
-                rewrites: [String] = []) {
+                rewrites: [String] = [], scripts: [ScriptRecord] = []) {
         self.id = id; self.name = name; self.general = general; self.dns = dns
         self.adblock = adblock; self.outbounds = outbounds; self.groups = groups
         self.rules = rules; self.sourcePath = sourcePath
         self.ruleProviders = ruleProviders; self.proxyProviders = proxyProviders
         self.rewrites = rewrites
+        self.scripts = scripts
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, general, dns, adblock, outbounds, groups, rules, sourcePath
-        case ruleProviders, proxyProviders, rewrites
+        case ruleProviders, proxyProviders, rewrites, scripts
     }
 
     /// Hand-written so profiles saved by older builds (no `ruleProviders`) still decode.
@@ -480,10 +483,28 @@ public struct Profile: Codable, Sendable, Identifiable, Hashable {
         ruleProviders = try c.decodeIfPresent([RuleProvider].self, forKey: .ruleProviders) ?? []
         proxyProviders = try c.decodeIfPresent([RuleProvider].self, forKey: .proxyProviders) ?? []
         rewrites = try c.decodeIfPresent([String].self, forKey: .rewrites) ?? []
+        scripts = try c.decodeIfPresent([ScriptRecord].self, forKey: .scripts) ?? []
     }
 
     public func outbound(named name: String) -> OutboundConfig? {
         outbounds.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }
+    }
+}
+
+/// One stored JavaScript, as the editor and the runtime both see it.
+public struct ScriptRecord: Codable, Sendable, Hashable, Identifiable {
+    public var id: String { name }
+    public var name: String
+    /// "http.request" / "http.response" / "dns" / "cron" / "network.changed"
+    public var phase: String
+    public var code: String
+    public var enabled: Bool
+
+    public init(name: String, phase: String, code: String, enabled: Bool = true) {
+        self.name = name
+        self.phase = phase
+        self.code = code
+        self.enabled = enabled
     }
 }
 

@@ -103,12 +103,13 @@ final class ManagedKernelRuntimeTests: XCTestCase {
     }
 
     @MainActor
-    private func makeEngine(root: URL) throws -> LeapinEngine {
+    private func makeEngine(root: URL, scripts: [ScriptRecord] = []) throws -> LeapinEngine {
         let store = ProfileStore(root: root)
         let port = try availablePort()
         let profile = Profile(name: "Previous", general: GeneralConfig(mixedPort: port, httpPort: 0, socksPort: 0,
             captureEnabled: false, dnsHijack: false, controlEnabled: false),
-            rules: [Rule(kind: .match, value: "", policy: "DIRECT")])
+            rules: [Rule(kind: .match, value: "", policy: "DIRECT")],
+            scripts: scripts)
         _ = try store.save(profile)
         store.activeProfileID = profile.id
         return LeapinEngine(store: store)
@@ -124,6 +125,45 @@ final class ManagedKernelRuntimeTests: XCTestCase {
             if received.count > 64_000 { break }
         }
         return String(decoding: received, as: UTF8.self)
+    }
+
+    /// A script must actually see the response and be able to change it, not just run
+    /// in isolation: this drives a real request through the proxy.
+    @MainActor
+    func testScriptRewritesResponseBodyThroughProxy() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("leapin-script-e2e-\(UUID().uuidString)")
+        let script = ScriptRecord(name: "suffix", phase: "http.response", code: """
+        $done({ body: $response.body + "!" })
+        """)
+        let engine = try makeEngine(root: root, scripts: [script])
+        let origin = try LocalOrigin()
+        defer { engine.stop(); origin.stop(); try? FileManager.default.removeItem(at: root) }
+
+        let originPort = try await origin.start()
+        await engine.start()
+        XCTAssertEqual(engine.state, .running)
+
+        let response = try await getThroughProxy(port: engine.profile.general.mixedPort, origin: originPort)
+        XCTAssertTrue(response.contains("leapin-managed-kernel-e2e!"),
+                      "script did not rewrite the body: \(response)")
+    }
+
+    /// A request-phase script can answer without the origin ever being dialed.
+    @MainActor
+    func testScriptCanAnswerBeforeUpstream() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("leapin-script-mock-\(UUID().uuidString)")
+        let script = ScriptRecord(name: "mock", phase: "http.request", code: """
+        $done({ status: 200, contentType: "text/plain", body: "from-script" })
+        """)
+        let engine = try makeEngine(root: root, scripts: [script])
+        defer { engine.stop(); try? FileManager.default.removeItem(at: root) }
+        await engine.start()
+        XCTAssertEqual(engine.state, .running)
+
+        let response = try await getThroughProxy(port: engine.profile.general.mixedPort, origin: 1)
+        XCTAssertTrue(response.contains("from-script"), response)
     }
 
     /// Temporary rules are the ones a user adds from a connection row: they must take

@@ -1,4 +1,5 @@
 import Foundation
+import LeapinScript
 import Network
 import LeapinCore
 
@@ -16,6 +17,7 @@ final class MITMHandler: @unchecked Sendable {
     private let ca: CertificateAuthority
     private let blocker: DomainBlocking?
     private let rewrites: RewriteBox?
+    private let scripts: ScriptBox?
     private let capture: CaptureSink?
     private let dialer: OutboundDialer
     private let connectHost: String
@@ -30,6 +32,7 @@ final class MITMHandler: @unchecked Sendable {
     init(ca: CertificateAuthority,
          blocker: DomainBlocking?,
          rewrites: RewriteBox? = nil,
+         scripts: ScriptBox? = nil,
          capture: CaptureSink?,
          dialer: OutboundDialer,
          connectHost: String,
@@ -43,6 +46,7 @@ final class MITMHandler: @unchecked Sendable {
         self.ca = ca
         self.blocker = blocker
         self.rewrites = rewrites
+        self.scripts = scripts
         self.capture = capture
         self.dialer = dialer
         self.connectHost = connectHost
@@ -234,6 +238,46 @@ final class MITMHandler: @unchecked Sendable {
             }
         }
 
+        if let runtime = scripts?.current, !runtime.activeScripts.isEmpty {
+            let outcome = runtime.runRequest(
+                ScriptRequest(method: request.method, url: target.url,
+                              headers: requestHeaders.items.map { ($0.name, $0.value) },
+                              body: requestBody))
+            switch outcome.outcome {
+            case .respond(let status, let contentType, let payload):
+                var headers = HTTPHeaders()
+                headers.set("Content-Type", contentType)
+                headers.set("Content-Length", String(payload.count))
+                headers.set("Connection", connectionClose ? "close" : "keep-alive")
+                let head = HTTPResponseHead(status: status, reason: HTTPStatusText.reason(for: status), headers: headers)
+                var outData = head.serialized
+                outData.append(payload)
+                try await out.write(outData)
+                capture?.capture(CapturedRequest(
+                    method: request.method, url: target.url, host: target.host,
+                    requestHeaders: HTTPCodec.stripHopByHop(request.headers).dictionary,
+                    requestBody: body.isEmpty ? nil : body,
+                    statusCode: status, responseHeaders: headers.dictionary,
+                    responseBody: payload, mimeType: contentType,
+                    durationMs: elapsedMs(since: started), sourceApp: sourceApp,
+                    sourceIP: sourceIP, chain: chain))
+                LPLog.shared.info("script", "responded locally for \(target.url)")
+                return false
+            case .redirect(let destination, let status):
+                var headers = HTTPHeaders()
+                headers.set("Location", destination)
+                headers.set("Content-Length", "0")
+                headers.set("Connection", connectionClose ? "close" : "keep-alive")
+                let head = HTTPResponseHead(status: status, reason: HTTPStatusText.reason(for: status), headers: headers)
+                try await out.write(head.serialized)
+                LPLog.shared.info("script", "redirected \(target.url) → \(destination)")
+                return false
+            case .proceed(let headers, let body, _):
+                requestHeaders = HTTPHeaders(headers.items)
+                requestBody = body
+            }
+        }
+
         if let blocker, let verdict = blocker.verdict(for: target.host, path: target.path, thirdParty: false) as BlockVerdict?, verdict.blocked {
             let reason = verdict.reason ?? "blocked"
             LPLog.shared.info("net.mitm", "blocked \(request.method) \(target.url): \(reason)")
@@ -325,6 +369,15 @@ final class MITMHandler: @unchecked Sendable {
                 responseHeaders.remove("Content-Encoding")
                 responseHeaders.remove("Transfer-Encoding")
             }
+        }
+        if let runtime = scripts?.current, !runtime.activeScripts.isEmpty {
+            let result = runtime.runResponse(
+                url: target.url,
+                status: response.status,
+                headers: responseHeaders.items.map { ($0.name, $0.value) },
+                body: deliveredBody)
+            responseHeaders = HTTPHeaders(result.headers.items)
+            deliveredBody = result.body
         }
         if request.method.uppercased() != "HEAD", !(isHTML && !selectors.isEmpty && !isIdentity) {
             _ = HTTPCodec.serialize(body: deliveredBody, headers: &responseHeaders)
