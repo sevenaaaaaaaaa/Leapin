@@ -100,6 +100,15 @@ struct ImportCenter: View {
 
     private func preview(_ candidate: ImportPreparation) -> some View {
         VStack(alignment: .leading, spacing: 18) {
+            Color.clear.frame(height: 0)
+                .onAppear {
+                    // A vless-heavy subscription would otherwise open on "native", where
+                    // every node is listed as incompatible and the button is disabled.
+                    if kernel == .native, !candidate.nativeBlockers.isEmpty,
+                       KernelExecutable.mihomo() != nil {
+                        kernel = .mihomo
+                    }
+                }
             HStack {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(candidate.outcome.profile.name).font(.system(size: 18, weight: .semibold))
@@ -115,7 +124,7 @@ struct ImportCenter: View {
                 count("节点", candidate.outcome.profile.outbounds.filter { $0.type != .direct && $0.type != .reject }.count)
                 count("策略组", candidate.outcome.profile.groups.count)
                 count("规则", candidate.outcome.profile.rules.count)
-                count("原生不兼容项", candidate.nativeBlockers.count)
+                count(kernel == .mihomo ? "仅原生不支持" : "原生不兼容项", candidate.nativeBlockers.count)
             }
             LPDivider()
             VStack(alignment: .leading, spacing: 10) {
@@ -129,8 +138,20 @@ struct ImportCenter: View {
                     .font(.system(size: 12)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
             if !candidate.nativeBlockers.isEmpty {
-                DisclosureGroup("原生不兼容的 \(candidate.nativeBlockers.count) 项") {
+                DisclosureGroup(kernel == .mihomo
+                                ? "以下 \(candidate.nativeBlockers.count) 项原生内核做不到，已选 Mihomo 执行"
+                                : "原生不兼容的 \(candidate.nativeBlockers.count) 项") {
                     ForEach(candidate.nativeBlockers, id: \.self) { Text($0).font(.system(size: 12)).foregroundStyle(LP.amber) }
+                    if kernel == .mihomo {
+                        Text("Mihomo 直接运行原始 Clash 配置，这些节点按原样保留。")
+                            .font(.system(size: 12)).foregroundStyle(LP.mint)
+                    } else if KernelExecutable.mihomo() != nil {
+                        Text("换成 Mihomo 即可运行这些节点。")
+                            .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                    } else {
+                        Text("未检测到 Mihomo 可执行文件：安装后才能运行这些节点。")
+                            .font(.system(size: 12)).foregroundStyle(LP.danger)
+                    }
                 }.font(.system(size: 12))
             }
             if kernel == .mihomo && !candidate.externalConversionBlockers.isEmpty {
