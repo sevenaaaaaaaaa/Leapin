@@ -223,16 +223,46 @@ private fun wifiAddress(): String? {
     }
 }
 
+/**
+ * The tools page is the one page that works with no Mac, so a single unreachable host
+ * must not turn it into an error — that is exactly what happened with api.ipify.org on
+ * networks that block it. Endpoints are tried in order and the first body holding an
+ * address wins.
+ */
+private val publicAddressEndpoints = listOf(
+    "https://myip.ipip.net",   // answers 当前 IP：1.2.3.4 来自于：…
+    "https://api.ip.sb/ip",
+    "https://ifconfig.me/ip",
+    "https://api.ipify.org",
+)
+
+private val publicAddressPattern = Regex("""(?:\d{1,3}\.){3}\d{1,3}""")
+
+private fun parsePublicAddress(body: String): String? =
+    publicAddressPattern.find(body)?.value?.takeIf { candidate ->
+        val parts = candidate.split('.')
+        parts.size == 4 && parts.all { part -> part.toIntOrNull()?.let { it in 0..255 } == true }
+    }
+
 private fun fetchPublicAddress(): String {
-    val connection = (URL("https://api.ipify.org").openConnection() as HttpURLConnection).apply {
-        connectTimeout = 6000
-        readTimeout = 6000
+    var last: Exception? = null
+    for (endpoint in publicAddressEndpoints) {
+        try {
+            val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                connectTimeout = 6000
+                readTimeout = 6000
+            }
+            try {
+                val body = connection.inputStream.bufferedReader().use { it.readText() }
+                parsePublicAddress(body)?.let { return it }
+            } finally {
+                connection.disconnect()
+            }
+        } catch (e: Exception) {
+            last = e
+        }
     }
-    try {
-        return connection.inputStream.bufferedReader().use { it.readText() }.trim()
-    } finally {
-        connection.disconnect()
-    }
+    throw last ?: Exception("网络错误")
 }
 
 private fun probe(target: String): Int {

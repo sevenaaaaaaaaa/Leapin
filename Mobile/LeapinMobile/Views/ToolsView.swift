@@ -155,14 +155,9 @@ struct ToolsView: View {
         publicError = nil
         defer { loadingPublic = false }
         do {
-            var request = URLRequest(url: URL(string: "https://api.ipify.org")!)
-            request.timeoutInterval = 8
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
-                  let text = String(data: data, encoding: .utf8) else {
-                throw URLError(.cannotParseResponse)
-            }
-            publicAddress = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Several endpoints, because one unreachable host made this page look
+            // broken on the very networks the app is meant for.
+            publicAddress = try await PublicAddress.fetch()
         } catch {
             publicError = "公网地址查询失败：\(error.localizedDescription)"
         }
