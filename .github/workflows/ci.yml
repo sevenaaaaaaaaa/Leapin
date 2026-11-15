@@ -84,4 +84,6 @@ jobs:
       - uses: actions/checkout@v5
 
       - name: swift test
-        run: swift test 2>&1 | tail -40
+        # No `| tail`: piping to tail buffers everything until the process exits, so a
+        # hung test produced a log with no test names in it at all.
+        run: swift test 2>&1
