@@ -2,6 +2,9 @@
 
 手机端控制台：在同一个 Wi-Fi 下查看并操作你 Mac 上的 Leapin。与 iOS 版功能对齐，共用同一份 `/v1` 控制契约。
 
+**离线可用**：首屏是「工具」页（本机网络、DNS、HTTP 探测），不需要 Mac；连接是增强项。
+移动端 1.1 起，未配对也能进入 App，并可从工具页或设置进入配对，随时返回。
+
 - 包名：`app.leapin.mobile`
 - 最低系统：Android 8.0（API 26），targetSdk 34
 - 产物：`dist/LeapinMobile-Android-<版本>.apk`（用发布密钥签名，可直接侧载）

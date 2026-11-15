@@ -45,7 +45,7 @@ import kotlinx.coroutines.launch
 
 /** First-run pairing: the phone needs the Mac's address and control token. */
 @Composable
-fun SetupScreen(store: ConsoleStore) {
+fun SetupScreen(store: ConsoleStore, onCancel: (() -> Unit)? = null) {
     var host by remember { mutableStateOf("") }
     var port by remember { mutableStateOf("7900") }
     var token by remember { mutableStateOf("") }
@@ -128,6 +128,12 @@ fun SetupScreen(store: ConsoleStore) {
                 Spacer(Modifier.size(8.dp))
             }
             Text(if (busy) "正在连接…" else "连接", fontWeight = FontWeight.SemiBold)
+        }
+
+        onCancel?.let { cancel ->
+            TextButton(onClick = cancel) {
+                Text("先不连接，使用本机工具", fontSize = 12.sp, color = LP.textSecondary)
+            }
         }
 
         Text("令牌用 Android Keystore 加密后保存在本机。", fontSize = 11.sp, color = LP.textTertiary)

@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Layers
@@ -50,6 +51,7 @@ import app.leapin.mobile.ui.LeapinTheme
 import app.leapin.mobile.ui.PoliciesScreen
 import app.leapin.mobile.ui.SetupScreen
 import app.leapin.mobile.ui.SettingsScreen
+import app.leapin.mobile.ui.ToolsScreen
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -58,11 +60,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             LeapinTheme {
                 val store: ConsoleStore = viewModel()
-                if (store.endpoint == null) {
-                    SetupScreen(store)
-                } else {
-                    ConsoleScaffold(store)
-                }
+                // The tools page needs no Mac, so the app never dead-ends on pairing.
+                ConsoleScaffold(store)
             }
         }
     }
@@ -74,11 +73,13 @@ private data class Tab(val title: String, val icon: ImageVector)
 @Composable
 private fun ConsoleScaffold(store: ConsoleStore) {
     val tabs = listOf(
+        Tab("工具", Icons.Filled.Build),
         Tab("状态", Icons.Filled.Speed),
         Tab("连接", Icons.Filled.SwapHoriz),
         Tab("策略", Icons.Filled.Layers),
         Tab("诊断", Icons.Filled.MonitorHeart),
     )
+    var showSetup by remember { mutableStateOf(store.endpoint == null) }
     var selected by remember { mutableIntStateOf(0) }
     var showSettings by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -144,15 +145,17 @@ private fun ConsoleScaffold(store: ConsoleStore) {
                 }
             }
             Box(Modifier.weight(1f)) {
-                if (showSettings) {
-                    SettingsScreen(store, scope) { showSettings = false }
-                } else {
-                    when (selected) {
-                        0 -> DashboardScreen(store, scope)
-                        1 -> ConnectionsScreen(store, scope)
-                        2 -> PoliciesScreen(store, scope)
-                        3 -> DiagnosticsScreen(store, scope)
+                when {
+                    showSetup -> SetupScreen(store) {
+                        showSetup = false
+                        selected = 0
                     }
+                    showSettings -> SettingsScreen(store, scope) { showSettings = false }
+                    selected == 0 -> ToolsScreen(store, scope) { showSetup = true }
+                    selected == 1 -> DashboardScreen(store, scope)
+                    selected == 2 -> ConnectionsScreen(store, scope)
+                    selected == 3 -> PoliciesScreen(store, scope)
+                    else -> DiagnosticsScreen(store, scope)
                 }
             }
         }

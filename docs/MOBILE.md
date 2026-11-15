@@ -2,6 +2,10 @@
 
 手机端控制台：在同一个 Wi-Fi 下查看并操作你 Mac 上的 Leapin。
 
+**离线可用**：首屏是「工具」页，本机网络信息、DNS 解析、HTTP 探测都不需要 Mac；
+连接 Mac 是增强项（状态/连接/策略/诊断四个页面），不再是进入 App 的前提。
+早先版本把配对做成强制墙，打不开任何页面——那是缺陷，已在移动端 1.1 修正。
+
 - Bundle ID：`app.leapin.mobile`
 - 最低系统：iOS / iPadOS 17.0
 - 产物：`dist/LeapinMobile-1.0-unsigned.ipa`（未签名，见「安装」）
