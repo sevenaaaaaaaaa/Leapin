@@ -55,7 +55,11 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE/Payload"
 cp -R "$APP" "$STAGE/Payload/"
-(cd "$STAGE" && zip -qry "$ROOT/dist/LeapinMobile-1.0-unsigned.ipa" Payload)
+# Name the ipa after the app's own version, not a literal, so a version bump in
+# project.yml shows up in the file name.
+MVER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Info.plist")"
+rm -f "$ROOT"/dist/LeapinMobile-*-unsigned.ipa
+(cd "$STAGE" && zip -qry "$ROOT/dist/LeapinMobile-${MVER}-unsigned.ipa" Payload)
 
-echo "==> done: dist/LeapinMobile-1.0-unsigned.ipa"
+echo "==> done: dist/LeapinMobile-${MVER}-unsigned.ipa"
 echo "   install: Sideloadly / AltStore, sign with your own Apple ID"

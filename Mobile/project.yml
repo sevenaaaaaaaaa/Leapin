@@ -28,8 +28,6 @@ targets:
         product: LeapinCore
       - package: Leapin
         product: LeapinControl
-    info:
-      path: Info.plist
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.leapin.mobile
