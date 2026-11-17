@@ -447,6 +447,11 @@ public final class ProxyServer: @unchecked Sendable {
         // before anything is dialed, so a Mock never touches the network.
         var requestHeaders = HTTPHeaders(request.headers.items)
         var requestBody = body
+        // Locally generated short-circuit answers (rewrite Mock, redirects, scripts)
+        // must honor the client's connection preference: a client that sent
+        // `Connection: close` waits for EOF and would hang forever on a keep-alive
+        // answer it never reads past.
+        let clientWantsClose = (request.headers.first("Connection") ?? "").lowercased().contains("close")
         if let rules = rewrites?.current, !rules.isEmpty {
             switch rules.applyToRequest(url: request.target,
                                            headers: RewriteHeaders(requestHeaders.items),
@@ -455,7 +460,7 @@ public final class ProxyServer: @unchecked Sendable {
                 var headers = HTTPHeaders()
                 headers.set("Content-Type", contentType)
                 headers.set("Content-Length", String(payload.count))
-                headers.set("Connection", "keep-alive")
+                headers.set("Connection", clientWantsClose ? "close" : "keep-alive")
                 let head = HTTPResponseHead(status: status, reason: HTTPStatusText.reason(for: status), headers: headers)
                 var out = head.serialized
                 out.append(payload)
@@ -466,12 +471,12 @@ public final class ProxyServer: @unchecked Sendable {
                 flows?.record(makeEvent(phase: .closed, meta: meta, decision: decision,
                                         bytesIn: requestBody.count, bytesOut: out.count,
                                         durationMs: elapsedMs(since: started)))
-                return true
+                return !clientWantsClose
             case .redirect(let target, let status):
                 var headers = HTTPHeaders()
                 headers.set("Location", target)
                 headers.set("Content-Length", "0")
-                headers.set("Connection", "keep-alive")
+                headers.set("Connection", clientWantsClose ? "close" : "keep-alive")
                 let head = HTTPResponseHead(status: status, reason: HTTPStatusText.reason(for: status), headers: headers)
                 try await socket.write(head.serialized)
                 recordReplacedCapture(host: authority.host, request: request, requestBody: requestBody,
@@ -480,7 +485,7 @@ public final class ProxyServer: @unchecked Sendable {
                 flows?.record(makeEvent(phase: .closed, meta: meta, decision: decision,
                                         bytesIn: requestBody.count, bytesOut: 0,
                                         durationMs: elapsedMs(since: started)))
-                return true
+                return !clientWantsClose
             case .proceed(let headers, let newBody, _):
                 requestHeaders = HTTPHeaders(headers.items)
                 requestBody = newBody
@@ -518,7 +523,7 @@ public final class ProxyServer: @unchecked Sendable {
                 var headers = HTTPHeaders()
                 headers.set("Content-Type", contentType)
                 headers.set("Content-Length", String(payload.count))
-                headers.set("Connection", "keep-alive")
+                headers.set("Connection", clientWantsClose ? "close" : "keep-alive")
                 let head = HTTPResponseHead(status: status, reason: HTTPStatusText.reason(for: status), headers: headers)
                 var out = head.serialized
                 out.append(payload)
@@ -526,15 +531,15 @@ public final class ProxyServer: @unchecked Sendable {
                 recordReplacedCapture(host: authority.host, request: request, requestBody: requestBody,
                                       status: status, headers: headers, body: payload,
                                       meta: meta, decision: decision)
-                return true
+                return !clientWantsClose
             case .redirect(let target, let status):
                 var headers = HTTPHeaders()
                 headers.set("Location", target)
                 headers.set("Content-Length", "0")
-                headers.set("Connection", "keep-alive")
+                headers.set("Connection", clientWantsClose ? "close" : "keep-alive")
                 let head = HTTPResponseHead(status: status, reason: HTTPStatusText.reason(for: status), headers: headers)
                 try await socket.write(head.serialized)
-                return true
+                return !clientWantsClose
             case .proceed(let headers, let body, _):
                 requestHeaders = HTTPHeaders(headers.items)
                 requestBody = body
@@ -607,7 +612,7 @@ public final class ProxyServer: @unchecked Sendable {
             if request.method.uppercased() != "HEAD" {
                 _ = HTTPCodec.serialize(body: deliveredBody, headers: &responseHeaders)
             }
-            responseHeaders.set("Connection", "keep-alive")
+            responseHeaders.set("Connection", clientWantsClose ? "close" : "keep-alive")
             let head = HTTPResponseHead(status: response.status, reason: response.reason, headers: responseHeaders)
             var out = head.serialized
             out.append(deliveredBody)
@@ -616,7 +621,6 @@ public final class ProxyServer: @unchecked Sendable {
             flows?.record(makeEvent(phase: .closed, meta: meta, decision: decision,
                                     bytesIn: body.count, bytesOut: out.count,
                                     durationMs: elapsedMs(since: started)))
-            let clientWantsClose = (request.headers.first("Connection") ?? "").lowercased().contains("close")
             return !clientWantsClose
         } catch {
             flows?.record(makeEvent(phase: .failed, meta: meta, decision: decision,

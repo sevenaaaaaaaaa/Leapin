@@ -163,7 +163,11 @@ public final class ScriptRuntime: @unchecked Sendable {
         if let exception = state.exception {
             return "执行出错：\(exception)"
         }
-        let elapsed = Int(Date().timeIntervalSince(started) * 1000)
+        // The budget bounds the script's own evaluation, not the host's VM setup:
+        // creating a JSContext and installing globals routinely costs tens of ms on a
+        // loaded machine, and counting it disabled trivial scripts at random.
+        let clockStart = state.evalStarted ?? started
+        let elapsed = Int(Date().timeIntervalSince(clockStart) * 1000)
         if elapsed > budget.milliseconds {
             return "执行超时（\(elapsed) ms，上限 \(budget.milliseconds) ms）"
         }
@@ -189,6 +193,9 @@ public final class ScriptRuntime: @unchecked Sendable {
         let key = phase == .request ? "$request" : "$response"
         context.setObject(messageObject(message, status: status), forKeyedSubscript: key as NSString)
 
+        // The budget clock starts at the script's own evaluation; everything above is
+        // host setup and would otherwise eat the whole 50ms on a busy machine.
+        state.evalStarted = Date()
         context.evaluateScript(script.code, withSourceURL: URL(string: "leapin://\(script.name)"))
 
         if state.exception != nil { return nil }
@@ -324,6 +331,9 @@ private final class RunState: @unchecked Sendable {
     var doneCalled = false
     var donePayload: Any?
     var exception: String?
+    /// Set just before the script's own evaluateScript runs; the budget is measured
+    /// from here so VM setup never counts against the script.
+    var evalStarted: Date?
     var httpUsed = 0
     var statusOverride: Int?
 }
