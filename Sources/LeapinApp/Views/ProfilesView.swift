@@ -27,6 +27,12 @@ struct ProfilesView: View {
         metas.first { $0.id == engine.profile.id }
     }
 
+    /// Latency tests work in both modes: native dials the node, Mihomo asks the
+    /// kernel to (only the kernel can speak clash protocols).
+    private var canTestLatency: Bool {
+        engine.executionKernel == .native || engine.managedKernel.running
+    }
+
     private func activate(_ meta: ProfileMeta) {
         activating = meta.id
         Task {
@@ -385,9 +391,9 @@ struct ProfilesView: View {
                     }
                 }
                 .buttonStyle(LPPrimaryButtonStyle())
-                .disabled(testingAll || dialableNodes.isEmpty || engine.executionKernel == .mihomo)
-                .help(engine.executionKernel == .mihomo ? "Mihomo 模式下请在内核面板进行延迟测试"
-                                                        : "对所有节点做 TCP 握手延迟测试")
+                .disabled(testingAll || dialableNodes.isEmpty || !canTestLatency)
+                .help(canTestLatency ? "对所有节点做延迟测试（Mihomo 模式由内核拨号）"
+                                     : "Mihomo 内核未运行，先启动代理再测速")
                 .accessibilityLabel("全部测速")
             }
             .padding(18)
@@ -481,7 +487,7 @@ struct ProfilesView: View {
                     }
                 }
                 .buttonStyle(LPGhostButtonStyle())
-                .disabled(testingAll || testingNodes.contains(node.name) || engine.executionKernel == .mihomo)
+                .disabled(testingAll || testingNodes.contains(node.name) || !canTestLatency)
                 .help("复测 \(node.name) 的延迟")
                 .accessibilityLabel("复测 \(node.name)")
 
@@ -497,7 +503,9 @@ struct ProfilesView: View {
                 }
                 .buttonStyle(LPGhostButtonStyle())
                 .disabled(speedTesting.contains(node.name) || engine.executionKernel == .mihomo)
-                .help("带宽测速 \(node.name)（经节点下载 10MB 测试对象）")
+                .help(engine.executionKernel == .mihomo
+                      ? "Mihomo 模式的带宽测速需要内核拨号，暂未提供；延迟测速可用"
+                      : "带宽测速 \(node.name)（经节点下载 10MB 测试对象）")
                 .accessibilityLabel("带宽测速 \(node.name)")
             }
         }
@@ -539,7 +547,7 @@ struct ProfilesView: View {
     private func refreshNodesAndMaybeAutoTest() async {
         nodes = await engine.controlNodes()
         // 导入后不做任何操作也应看到链接状态：首次出现且没有任何探测记录时自动测一轮。
-        guard !autoTestTriggered, engine.executionKernel == .native else { return }
+        guard !autoTestTriggered, canTestLatency else { return }
         let dialable = dialableNodes
         guard !dialable.isEmpty, dialable.allSatisfy({ $0.checkedAtMs == nil }) else { return }
         autoTestTriggered = true

@@ -54,7 +54,10 @@ final class NetworkToolProcessTests: XCTestCase {
         let kernel = ManagedMihomo(executable: file)
         defer { kernel.stop(waitForExit: true) }
         let task = Task { try await kernel.start(source: "proxies: []\nrules: ['MATCH,DIRECT']", directory: directory) }
-        for _ in 0..<30 {
+        // 600ms was not enough on a loaded machine — the child only writes its pid
+        // after the kernel precheck has run. 3s is still a deadline, not a wait for
+        // success: nothing below is asserted any differently.
+        for _ in 0..<150 {
             if FileManager.default.fileExists(atPath: file.appendingPathExtension("pid").path) { break }
             try await Task.sleep(nanoseconds: 20_000_000)
         }

@@ -153,6 +153,9 @@ public final class ManagedMihomo: ObservableObject {
 
     private let executableOverride: URL?
     public init(executable: URL? = nil) { executableOverride = executable }
+    /// PID of the kernel this object owns, nil when stopped. The port audit needs
+    /// it to tell our own child from a leftover one.
+    public var childPID: Int32? { child?.processIdentifier }
     public var logs: String { output.text }
 
     public func discover() async {
@@ -240,7 +243,26 @@ public final class ManagedMihomo: ObservableObject {
         }
     }
 
-    public func request(_ path: String, method: String = "GET", body: Data? = nil, timeout: TimeInterval = 1) async throws -> Data {
+    /// The kernel's own answer, status included, so a failed delay test can say
+    /// what mihomo said instead of collapsing every 4xx into one sentence.
+    public struct Reply: Sendable, Equatable {
+        public var status: Int
+        public var body: Data
+    }
+
+    public struct Delay: Sendable, Equatable {
+        public var latencyMs: Int?
+        public var error: String?
+        public var status: Int
+        public init(latencyMs: Int? = nil, error: String? = nil, status: Int = 0) {
+            self.latencyMs = latencyMs; self.error = error; self.status = status
+        }
+    }
+
+    /// Transport only: returns whatever the kernel answered, 4xx/5xx included.
+    /// `request` keeps the throw-on-failure contract every other caller relies on.
+    public func send(_ path: String, method: String = "GET", body: Data? = nil,
+                     timeout: TimeInterval = 1) async throws -> Reply {
         guard controllerPort > 0, !path.contains(".."), !path.contains("://"), !path.hasPrefix("/") else {
             throw LeapinError.invalidConfiguration("控制接口路径无效")
         }
@@ -256,10 +278,75 @@ public final class ManagedMihomo: ObservableObject {
         let session = URLSession(configuration: options)
         defer { session.invalidateAndCancel() }
         let (data, response) = try await session.data(for: req)
-        guard let response = response as? HTTPURLResponse, (200..<300).contains(response.statusCode) else {
+        guard let response = response as? HTTPURLResponse else {
             throw LeapinError.connectionFailed("内核控制请求失败")
         }
-        return data
+        return Reply(status: response.statusCode, body: data)
+    }
+
+    public func request(_ path: String, method: String = "GET", body: Data? = nil, timeout: TimeInterval = 1) async throws -> Data {
+        let reply = try await send(path, method: method, body: body, timeout: timeout)
+        guard (200..<300).contains(reply.status) else {
+            throw LeapinError.connectionFailed(Self.message(in: reply.body) ?? "内核控制请求失败（HTTP \(reply.status)）")
+        }
+        return reply.body
+    }
+
+    /// `{"message": "..."}` from a kernel error, nil when the body carries none.
+    nonisolated static func message(in body: Data) -> String? {
+        guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let text = object["message"] as? String,
+              !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return text
+    }
+
+    /// One percent-encoded path segment: real group names carry emoji, spaces and
+    /// slashes, and an unencoded slash would address a different endpoint.
+    nonisolated public static func pathSegment(_ name: String) -> String? {
+        let allowed = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#%"))
+        return name.addingPercentEncoding(withAllowedCharacters: allowed)
+    }
+
+    // MARK: - Latency
+
+    /// Every group and node the kernel knows, with the delay history it keeps.
+    public func proxies() async throws -> [KernelProxy] {
+        try KernelProxy.parse(try await request("proxies", timeout: 3))
+    }
+
+    /// The kernel's routing mode ("rule" / "global" / "direct"), which decides
+    /// whether GLOBAL.now is the node traffic really uses.
+    public func mode() async -> String? {
+        guard let data = try? await request("configs", timeout: 2),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return object["mode"] as? String
+    }
+
+    /// `GET /proxies/{name}/delay`: the kernel dials the node itself and answers
+    /// with its own number. In Mihomo mode this is the only real measurement —
+    /// the app's own dialer cannot speak clash protocols.
+    public func delay(_ name: String, url: String, timeoutMs: Int = 4_000) async -> Delay {
+        guard let segment = Self.pathSegment(name) else {
+            return Delay(error: "节点名称无法编码", status: 0)
+        }
+        // The url value is encoded down to alphanumerics on purpose: a query that
+        // still contains "://" would look like a host to the path guard above.
+        let encodedURL = url.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? url
+        let path = "proxies/\(segment)/delay?url=\(encodedURL)&timeout=\(timeoutMs)"
+        do {
+            let reply = try await send(path, timeout: Double(timeoutMs) / 1000 + 3)
+            guard reply.status == 200 else {
+                let reason = Self.message(in: reply.body) ?? "内核测速失败（HTTP \(reply.status)）"
+                return Delay(error: reason, status: reply.status)
+            }
+            guard let object = try? JSONSerialization.jsonObject(with: reply.body) as? [String: Any],
+                  let delay = object["delay"] as? Int, delay > 0 else {
+                return Delay(error: "内核没有返回延迟数值", status: reply.status)
+            }
+            return Delay(latencyMs: delay, status: reply.status)
+        } catch {
+            return Delay(error: Redactor.redact(error.localizedDescription), status: 0)
+        }
     }
 
     public func stop(waitForExit: Bool = false) {

@@ -142,6 +142,13 @@ public final class LeapinEngine: ObservableObject {
         do {
             let source = try store.kernelSource(for: profile.id)
             executionKernel = source?.kernel ?? .native
+            // A port already held by someone else has to stop the start with a name.
+            // Binding on top of another listener is how "it started but nothing
+            // works" happens, so this runs before any kernel is spawned.
+            let requested = Self.portRequests(for: profile, kernel: executionKernel)
+            let own = Self.ownPIDs(managedKernel.childPID)
+            let audit = await Task.detached(priority: .userInitiated) { PortAudit.report(requested, excluding: own) }.value
+            if let summary = audit.summary { throw LeapinError.connectionFailed(summary) }
             var routingProfile = profile
             if let source, source.kernel == .mihomo {
                 guard !profile.general.mitmEnabled else {
@@ -1061,6 +1068,11 @@ extension LeapinEngine: ControlBackend {
 
     public func controlNodes() async -> [ControlNode] {
         let health = LPHealth.shared.snapshot()
+        // In Mihomo mode the kernel is the authority on which nodes exist and
+        // what they last measured; the profile only supplies server metadata.
+        if executionKernel == .mihomo, managedKernel.running, let proxies = try? await managedKernel.proxies() {
+            return Self.mergeKernelNodes(proxies: proxies, profile: profile, health: health)
+        }
         var membership: [String: [String]] = [:]
         for group in profile.groups {
             for member in group.proxies {
@@ -1086,9 +1098,16 @@ extension LeapinEngine: ControlBackend {
         }
     }
 
+    /// Control-plane entry point (protocol shape, no progress).
     public func controlTestNodes(names: [String]) async throws -> [ControlNodeTestResult] {
-        guard executionKernel == .native else {
-            throw ControlError.badRequest("Mihomo 模式请在内核面板中进行延迟测试")
+        try await controlTestNodes(names: names, onProgress: nil)
+    }
+
+    /// Same test with a (done, total) callback, for the menu bar's counter.
+    public func controlTestNodes(names: [String],
+                                 onProgress: ((Int, Int) -> Void)?) async throws -> [ControlNodeTestResult] {
+        if executionKernel == .mihomo {
+            return try await kernelTestNodes(names: names, onProgress: onProgress)
         }
         var targets: [OutboundConfig] = []
         if names.isEmpty {
@@ -1142,12 +1161,131 @@ extension LeapinEngine: ControlBackend {
                 }
             }
             start += chunk.count
+            onProgress?(min(start, targets.count), targets.count)
         }
         return targets.map { outbound in
             results[outbound.name.lowercased()] ?? ControlNodeTestResult(
                 name: outbound.name, latencyMs: nil, error: "no result",
                 checkedAtMs: Date().timeIntervalSince1970 * 1000)
         }
+    }
+
+    /// Mihomo mode: the kernel dials the node, because the app's own dialer cannot
+    /// speak clash protocols. Written into LPHealth so the profiles page, the menu
+    /// bar and the policy resolver all read the same number.
+    private func kernelTestNodes(names: [String],
+                                 onProgress: ((Int, Int) -> Void)?) async throws -> [ControlNodeTestResult] {
+        guard managedKernel.running else {
+            throw ControlError.unavailable("Mihomo 内核未运行，请先启动代理")
+        }
+        let proxies = try await managedKernel.proxies()
+        var targets: [KernelProxy] = []
+        if names.isEmpty {
+            targets = proxies.filter { $0.isTestable }
+        } else {
+            for name in names {
+                guard let proxy = proxies.first(where: { $0.name == name }) else {
+                    throw ControlError.notFound("node \(name)")
+                }
+                guard !proxy.isGroup else {
+                    throw ControlError.badRequest("\(name) 是策略组，不参与单点测速")
+                }
+                guard proxy.isTestable else {
+                    throw ControlError.badRequest("\(name) 是内置策略，不参与测速")
+                }
+                targets.append(proxy)
+            }
+        }
+        guard !targets.isEmpty else { return [] }
+        var results: [String: ControlNodeTestResult] = [:]
+        var start = 0
+        onProgress?(0, targets.count)
+        let handle = KernelHandle(managedKernel)
+        let url = MenuBarKit.testURL
+        while start < targets.count {
+            let chunk = Array(targets[start..<min(start + 6, targets.count)])
+            await withTaskGroup(of: ControlNodeTestResult.self) { group in
+                for proxy in chunk {
+                    group.addTask {
+                        let outcome = await handle.kernel.delay(proxy.name, url: url, timeoutMs: 4_000)
+                        return ControlNodeTestResult(name: proxy.name,
+                                                     latencyMs: outcome.latencyMs,
+                                                     error: outcome.error,
+                                                     checkedAtMs: Date().timeIntervalSince1970 * 1000)
+                    }
+                }
+                for await result in group {
+                    LPHealth.shared.record(name: result.name, latencyMs: result.latencyMs, error: result.error)
+                    results[result.name.lowercased()] = result
+                }
+            }
+            start += chunk.count
+            onProgress?(min(start, targets.count), targets.count)
+        }
+        return targets.map { proxy in
+            results[proxy.name.lowercased()] ?? ControlNodeTestResult(
+                name: proxy.name, latencyMs: nil, error: "no result",
+                checkedAtMs: Date().timeIntervalSince1970 * 1000)
+        }
+    }
+
+    /// Kernel nodes merged with the profile's server metadata. A node the kernel
+    /// knows but the profile does not keeps its name and delay with an empty
+    /// server, instead of disappearing from the list.
+    static func mergeKernelNodes(proxies: [KernelProxy], profile: Profile,
+                                 health: [String: OutboundHealth]) -> [ControlNode] {
+        let known = Dictionary(profile.outbounds.map { ($0.name.lowercased(), $0) }) { first, _ in first }
+        var membership: [String: [String]] = [:]
+        for group in proxies where group.isGroup {
+            for member in group.members { membership[member.lowercased(), default: []].append(group.name) }
+        }
+        return KernelProxy.ordered(proxies).filter { !$0.isGroup }.map { proxy in
+            let key = proxy.name.lowercased()
+            let entry = health[key]
+            let outbound = known[key]
+            let failed = entry.map { $0.latencyMs == nil } ?? proxy.lastTestFailed
+            return ControlNode(name: proxy.name,
+                               type: outbound?.rawType ?? proxy.type,
+                               server: outbound?.host ?? "",
+                               port: Int(outbound?.port ?? 0),
+                               dialable: proxy.isTestable,
+                               groups: membership[key] ?? [],
+                               latencyMs: entry?.latencyMs ?? proxy.latestLatencyMs,
+                               checkedAtMs: (entry?.checkedAt ?? proxy.latestSampleAt)
+                                   .map { $0.timeIntervalSince1970 * 1000 },
+                               lastError: entry?.lastError ?? (proxy.lastTestFailed ? "内核最近一次测速失败" : nil),
+                               consecutiveFailures: entry?.consecutiveFailures ?? (proxy.lastTestFailed ? 1 : 0))
+        }
+    }
+
+    // MARK: - Ports
+
+    /// Ports a start would bind, in bind order.
+    static func portRequests(for profile: Profile, kernel: ExecutionKernel) -> [PortRequest] {
+        let general = profile.general
+        let dns: UInt16? = (general.dnsHijack && kernel == .native) ? profile.dns.listenPort : nil
+        return PortAudit.requests(mixed: general.mixedPort, http: general.httpPort, socks: general.socksPort,
+                                  dns: dns, control: general.controlEnabled ? general.controlPort : nil)
+    }
+
+    public func portRequests() -> [PortRequest] {
+        Self.portRequests(for: profile, kernel: executionKernel)
+    }
+
+    /// Read-only audit for the UI: who holds the ports, and is a foreign kernel
+    /// running beside ours. Runs the shell tools off the main actor.
+    public func portReport() async -> PortReport {
+        let requests = portRequests()
+        let own = Self.ownPIDs(managedKernel.childPID)
+        return await Task.detached(priority: .utility) { PortAudit.report(requests, excluding: own) }.value
+    }
+
+    /// This process plus the kernel child it owns — the two listeners that are not
+    /// conflicts. Anything else on those ports is.
+    nonisolated static func ownPIDs(_ child: Int32?) -> Set<Int32> {
+        var pids: Set<Int32> = [getpid()]
+        if let child, child > 0 { pids.insert(child) }
+        return pids
     }
 
     public func controlSpeedTestNode(name: String, url: String?, sizeMb: Int?) async throws -> ControlNodeSpeedResult {
@@ -1446,4 +1584,12 @@ extension LeapinEngine: ControlBackend {
     private static func ruleLabel(_ rule: Rule) -> String {
         rule.raw.isEmpty ? "FINAL,\(rule.value),\(rule.policy)" : rule.raw
     }
+}
+
+
+/// Carries the kernel across a task group. ManagedMihomo is main-actor isolated;
+/// the box only lets a detached task `await` it instead of reading its state.
+private final class KernelHandle: @unchecked Sendable {
+    let kernel: ManagedMihomo
+    init(_ kernel: ManagedMihomo) { self.kernel = kernel }
 }

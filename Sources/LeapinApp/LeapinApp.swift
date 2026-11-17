@@ -92,8 +92,11 @@ struct LeapinApp: App {
             MenuBarPanel()
                 .environmentObject(app)
         } label: {
-            Image(systemName: app.engine.state == .running ? "shield.lefthalf.filled" : "shield.slash")
+            MenuBarLabel(running: app.engine.state == .running)
         }
+        // A window-style extra is what makes the node search field, the scroll
+        // list and the nested menus usable; menu style cannot host them.
+        .menuBarExtraStyle(.window)
     }
 
     private static func key(for index: Int) -> KeyEquivalent {
@@ -1033,146 +1036,21 @@ struct StatusPill: View {
     var body: some View { StatusChip(state: state) }
 }
 
-// MARK: - Menu bar
 
+/// The status-bar item: shield plus the last measured latency, so the number is
+/// visible with the panel closed.
 @MainActor
-struct MenuBarPanel: View {
-    @EnvironmentObject private var app: AppModel
-    @Environment(\.openWindow) private var openWindow
-    @ObservedObject private var floating = FloatingPanelController.shared
-
-    private func metric(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(value).font(LPFont.num(11, weight: .semibold)).foregroundStyle(LP.text)
-            Text(label).font(.system(size: 9)).foregroundStyle(LP.textTertiary)
-        }
-    }
+private struct MenuBarLabel: View {
+    let running: Bool
+    @ObservedObject private var status = MenuBarStatus.shared
 
     var body: some View {
-        let engine = app.engine
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 9) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(LP.accentFill)
-                    Image(systemName: "shield.lefthalf.filled")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
-                .frame(width: 24, height: 24)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("Leapin").font(LPFont.display(12.5, weight: .bold))
-                    Text(engine.state.label).font(.system(size: 9)).foregroundStyle(LP.textTertiary)
-                }
-                Spacer()
-                StatusDot(color: engine.state == .running ? LP.mint : LP.textTertiary,
-                          pulsing: engine.state == .running)
-            }
-
-            Button {
-                app.toggle()
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
-                        .font(.system(size: 9, weight: .bold))
-                    Text(engine.state == .running ? "停止代理" : "启动代理")
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(LPPrimaryButtonStyle(tint: engine.state == .running ? LP.dangerFill : nil))
-
-            HStack(spacing: 8) {
-                Text("系统代理").font(.system(size: 12))
-                Spacer()
-                LPSwitch(isOn: Binding(
-                    get: { engine.systemProxyActive },
-                    set: { engine.toggleSystemProxy($0) }
-                ), width: 30)
-            }
-
-            HStack(spacing: 8) {
-                Text("实时浮窗").font(.system(size: 12))
-                Spacer()
-                LPSwitch(isOn: Binding(
-                    get: { floating.isVisible },
-                    set: { $0 ? floating.show() : floating.hide() }
-                ), width: 30)
-            }
-
-            HStack(spacing: 10) {
-                metric("连接", "\(engine.activeConnections)")
-                metric("请求", "\(engine.stats.requests)")
-                metric("拦截", "\(engine.stats.blocked)")
-                Spacer()
-                metric("流量", Fmt.bytes(engine.stats.bytesIn + engine.stats.bytesOut))
-            }
-
-            Button {
-                LPClipboard.copy("127.0.0.1:\(engine.profile.general.mixedPort)")
-                app.showToast("已复制代理地址")
-            } label: {
-                HStack(spacing: 5) {
-                    Text("127.0.0.1:\(engine.profile.general.mixedPort)")
-                        .font(LPFont.mono(10, weight: .medium))
-                    Image(systemName: "doc.on.doc").font(.system(size: 9))
-                }
-                .foregroundStyle(LP.textTertiary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .buttonStyle(.plain)
-            .help("复制代理地址")
-
-            LPDivider()
-
-            VStack(spacing: 1) {
-                ForEach([AppModel.Section.dashboard, .rules, .capture, .settings]) { section in
-                    Button {
-                        app.go(to: section)
-                        openWindow(id: "main")
-                        NSApp.activate(ignoringOtherApps: true)
-                    } label: {
-                        HStack(spacing: 7) {
-                            Image(systemName: section.icon).font(.system(size: 9)).frame(width: 14)
-                            Text(section.title).font(.system(size: 12))
-                            Spacer()
-                        }
-                        .foregroundStyle(LP.textSecondary)
-                        .padding(.vertical, 3)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            LPDivider()
-
-            Button {
-                app.showPalette = true
-                openWindow(id: "main")
-                NSApp.activate(ignoringOtherApps: true)
-            } label: {
-                HStack(spacing: 5) {
-                    Text("命令面板").font(.system(size: 12))
-                    Spacer()
-                    LPKeyCap(keys: "⌘K")
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Button("打开主窗口") {
-                openWindow(id: "main")
-                NSApp.activate(ignoringOtherApps: true)
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 12))
-
-            Button("退出 Leapin") { NSApp.terminate(nil) }
-                .buttonStyle(.plain)
-                .font(.system(size: 12))
-                .foregroundStyle(LP.textSecondary)
+        if let badge = status.badge {
+            Label(badge, systemImage: icon)
+        } else {
+            Image(systemName: icon)
         }
-        .padding(14)
-        .frame(width: 236)
     }
+
+    private var icon: String { running ? "shield.lefthalf.filled" : "shield.slash" }
 }
