@@ -25,6 +25,43 @@ final class ControlContractTests: XCTestCase {
         XCTAssertEqual(back.diagnostics.first?.kind, .shadowed)
     }
 
+    func testNodeRoundTripsThroughJSON() throws {
+        let node = ControlNode(name: "HK-01", type: "trojan", server: "hk.example.com", port: 443,
+                               dialable: true, groups: ["Proxy", "Auto"], latencyMs: 87,
+                               checkedAtMs: 1_700_000_000_000, consecutiveFailures: 0)
+        let back = try JSONDecoder().decode(ControlNode.self, from: try JSONEncoder().encode(node))
+        XCTAssertEqual(back, node)
+
+        // A never-tested node: both observation fields stay nil through the round trip.
+        let fresh = ControlNode(name: "JP-01", type: "vmess", server: "jp.example.com", port: 80,
+                                dialable: true, groups: [])
+        let freshBack = try JSONDecoder().decode(ControlNode.self,
+                                                 from: try JSONEncoder().encode(fresh))
+        XCTAssertNil(freshBack.latencyMs)
+        XCTAssertNil(freshBack.checkedAtMs)
+        XCTAssertNil(freshBack.lastError)
+    }
+
+    func testNodeTestResultRoundTripsThroughJSON() throws {
+        let result = ControlNodeTestResult(name: "HK-01", latencyMs: nil, error: "timeout",
+                                           checkedAtMs: 1_700_000_001_000)
+        let back = try JSONDecoder().decode(ControlNodeTestResult.self,
+                                            from: try JSONEncoder().encode(result))
+        XCTAssertEqual(back, result)
+        XCTAssertNil(back.latencyMs)
+        XCTAssertEqual(back.error, "timeout")
+    }
+
+    func testNodeSpeedResultRoundTripsThroughJSON() throws {
+        let result = ControlNodeSpeedResult(name: "HK-01", url: "http://x/100mb",
+                                            bytes: 10_000_000, elapsedMs: 3_200, mbps: 25.0,
+                                            checkedAtMs: 1_700_000_002_000)
+        let back = try JSONDecoder().decode(ControlNodeSpeedResult.self,
+                                            from: try JSONEncoder().encode(result))
+        XCTAssertEqual(back, result)
+        XCTAssertNil(back.error)
+    }
+
     func testControlErrorStatusCodes() {
         XCTAssertEqual(ControlError.unauthorized.statusCode, 401)
         XCTAssertEqual(ControlError.badRequest("x").statusCode, 400)

@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import LeapinCore
+import LeapinControl
 import LeapinRuntime
 import LeapinPolicy
 import LeapinNet
@@ -15,6 +16,12 @@ struct ProfilesView: View {
     @State private var search = ""
     @State private var activating: UUID?
     @FocusState private var searchFocused: Bool
+    @State private var nodes: [ControlNode] = []
+    @State private var testingAll = false
+    @State private var testingNodes: Set<String> = []
+    @State private var autoTestTriggered = false
+    @State private var speedResults: [String: ControlNodeSpeedResult] = [:]
+    @State private var speedTesting: Set<String> = []
 
     private var currentMeta: ProfileMeta? {
         metas.first { $0.id == engine.profile.id }
@@ -45,6 +52,7 @@ struct ProfilesView: View {
             VStack(spacing: 22) {
                 heroPanel
                 if engine.executionKernel == .mihomo { ManagedKernelPanel() }
+                nodesPanel
                 listPanel
                 importSourcesPanel
             }
@@ -52,7 +60,12 @@ struct ProfilesView: View {
         }
         .navigationTitle("配置")
         .onAppear(perform: refresh)
-        .onChange(of: engine.profile.id) { _, _ in refresh() }
+        .task { await refreshNodesAndMaybeAutoTest() }
+        .onChange(of: engine.profile.id) { _, _ in
+            refresh()
+            autoTestTriggered = false
+            Task { await refreshNodesAndMaybeAutoTest() }
+        }
         .onChange(of: app.searchFocusRequest) { _, _ in searchFocused = true }
         .lpConfirm("删除配置？",
                    message: "将同时删除该配置的本地 JSON 文件，不可恢复。",
@@ -324,6 +337,247 @@ struct ProfilesView: View {
             }
             Divider()
             Button("删除…", role: .destructive) { pendingDelete = meta }
+        }
+    }
+
+
+    // MARK: Nodes (M1)
+
+    private var dialableNodes: [ControlNode] { nodes.filter(\.dialable) }
+
+    private var sortedNodes: [ControlNode] {
+        nodes.sorted { a, b in
+            func rank(_ n: ControlNode) -> Int {
+                if n.latencyMs != nil { return 0 }
+                if n.checkedAtMs == nil { return 1 }
+                return 2
+            }
+            let ra = rank(a), rb = rank(b)
+            if ra != rb { return ra < rb }
+            if ra == 0 { return (a.latencyMs ?? .max) < (b.latencyMs ?? .max) }
+            return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+        }
+    }
+
+    private var aliveCount: Int { dialableNodes.filter { $0.latencyMs != nil }.count }
+
+    private var nodesPanel: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                SectionHeader(title: "节点",
+                              subtitle: dialableNodes.isEmpty ? "当前配置没有可测速的节点"
+                                                             : "\(aliveCount) / \(dialableNodes.count) 在线",
+                              icon: "network")
+                Spacer(minLength: 8)
+                if testingAll {
+                    ProgressView().controlSize(.small)
+                }
+                Button {
+                    testAllNodes()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "speedometer")
+                            .font(.system(size: 9, weight: .bold))
+                        Text("全部测速")
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                            .fixedSize()
+                    }
+                }
+                .buttonStyle(LPPrimaryButtonStyle())
+                .disabled(testingAll || dialableNodes.isEmpty || engine.executionKernel == .mihomo)
+                .help(engine.executionKernel == .mihomo ? "Mihomo 模式下请在内核面板进行延迟测试"
+                                                        : "对所有节点做 TCP 握手延迟测试")
+                .accessibilityLabel("全部测速")
+            }
+            .padding(18)
+
+            LPDivider()
+
+            if dialableNodes.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("没有节点")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(LP.textSecondary)
+                    Text("导入订阅或节点 URI 后，这里会列出每个节点的在线状态与延迟。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(LP.textTertiary)
+                    Button("导入配置") { app.beginImport() }
+                        .buttonStyle(LPGhostButtonStyle())
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(18)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(sortedNodes.enumerated()), id: \.element.name) { index, node in
+                        nodeRow(node)
+                        if index < sortedNodes.count - 1 {
+                            LPDivider().padding(.leading, 37)
+                        }
+                    }
+                }
+            }
+        }
+        .lpPanel(padding: 0)
+        .lpAppear(0.02)
+    }
+
+    private func nodeRow(_ node: ControlNode) -> some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(latencyColor(node))
+                .frame(width: 7, height: 7)
+                .padding(.leading, 2)
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(node.name)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(LP.text)
+                        .lineLimit(1)
+                    Badge(text: node.type, color: LP.textTertiary)
+                    if !node.groups.isEmpty {
+                        Text(node.groups.joined(separator: " · "))
+                            .font(LPFont.mono(9))
+                            .foregroundStyle(LP.textTertiary)
+                            .lineLimit(1)
+                    }
+                }
+                if !node.server.isEmpty {
+                    Text("\(node.server):\(node.port)")
+                        .font(LPFont.mono(10))
+                        .foregroundStyle(LP.textTertiary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 3) {
+                latencyLabel(node)
+                if let speed = speedResults[node.name] {
+                    if let error = speed.error {
+                        Text("测速失败")
+                            .font(LPFont.mono(10))
+                            .foregroundStyle(LP.danger)
+                            .help(error)
+                    } else {
+                        Text("\(speed.mbps, specifier: "%.2f") Mbps")
+                            .font(LPFont.mono(10, weight: .semibold))
+                            .foregroundStyle(LP.accent)
+                    }
+                }
+            }
+
+            if node.dialable {
+                Button {
+                    testOneNode(node.name)
+                } label: {
+                    if testingNodes.contains(node.name) {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                }
+                .buttonStyle(LPGhostButtonStyle())
+                .disabled(testingAll || testingNodes.contains(node.name) || engine.executionKernel == .mihomo)
+                .help("复测 \(node.name) 的延迟")
+                .accessibilityLabel("复测 \(node.name)")
+
+                Button {
+                    testSpeed(node.name)
+                } label: {
+                    if speedTesting.contains(node.name) {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: "bolt")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                }
+                .buttonStyle(LPGhostButtonStyle())
+                .disabled(speedTesting.contains(node.name) || engine.executionKernel == .mihomo)
+                .help("带宽测速 \(node.name)（经节点下载 10MB 测试对象）")
+                .accessibilityLabel("带宽测速 \(node.name)")
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 10)
+    }
+
+    private func latencyLabel(_ node: ControlNode) -> some View {
+        Group {
+            if let ms = node.latencyMs {
+                Text("\(ms) ms")
+                    .font(LPFont.mono(12, weight: .semibold))
+                    .foregroundStyle(latencyColor(node))
+            } else if node.checkedAtMs != nil {
+                Text("失败")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(LP.danger)
+                    .help(node.lastError ?? "测试失败")
+            } else if !node.dialable {
+                Text("原生不可拨")
+                    .font(.system(size: 11))
+                    .foregroundStyle(LP.textTertiary)
+                    .help("原生内核无法拨号该协议；Mihomo 模式下请在内核面板测试")
+            } else {
+                Text("未测")
+                    .font(.system(size: 11))
+                    .foregroundStyle(LP.textTertiary)
+            }
+        }
+    }
+
+    private func latencyColor(_ node: ControlNode) -> Color {
+        guard let ms = node.latencyMs else { return LP.textTertiary }
+        if ms < 200 { return LP.mint }
+        if ms <= 800 { return LP.amber }
+        return LP.danger
+    }
+
+    private func refreshNodesAndMaybeAutoTest() async {
+        nodes = await engine.controlNodes()
+        // 导入后不做任何操作也应看到链接状态：首次出现且没有任何探测记录时自动测一轮。
+        guard !autoTestTriggered, engine.executionKernel == .native else { return }
+        let dialable = dialableNodes
+        guard !dialable.isEmpty, dialable.allSatisfy({ $0.checkedAtMs == nil }) else { return }
+        autoTestTriggered = true
+        testAllNodes()
+    }
+
+    private func testAllNodes() {
+        guard !testingAll else { return }
+        testingAll = true
+        Task {
+            _ = try? await engine.controlTestNodes(names: [])
+            nodes = await engine.controlNodes()
+            testingAll = false
+        }
+    }
+
+    private func testOneNode(_ name: String) {
+        testingNodes.insert(name)
+        Task {
+            _ = try? await engine.controlTestNodes(names: [name])
+            nodes = await engine.controlNodes()
+            testingNodes.remove(name)
+        }
+    }
+
+    private func testSpeed(_ name: String) {
+        speedTesting.insert(name)
+        Task {
+            do {
+                let result = try await engine.controlSpeedTestNode(name: name, url: nil, sizeMb: nil)
+                speedResults[name] = result
+                if let error = result.error {
+                    app.showToast("\(name) 带宽测速失败：\(error)", kind: .error)
+                }
+            } catch {
+                app.showToast("\(name) 带宽测速失败：\(error.localizedDescription)", kind: .error)
+            }
+            speedTesting.remove(name)
         }
     }
 

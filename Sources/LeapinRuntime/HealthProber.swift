@@ -81,14 +81,32 @@ public final class HealthProber: @unchecked Sendable {
     }
 
     private func probe(_ probe: Probe) async {
+        let outcome = await Self.measure(dialer: dialer, outbound: probe.outbound,
+                                         host: probe.host, port: probe.port, timeout: timeout)
+        if let ms = outcome.latencyMs {
+            LPHealth.shared.record(name: probe.name, latencyMs: ms)
+            LPLog.shared.debug("health", "\(probe.name) \(ms)ms -> \(probe.host):\(probe.port)")
+        } else {
+            LPHealth.shared.record(name: probe.name, latencyMs: nil, error: outcome.error)
+            LPLog.shared.debug("health", "\(probe.name) failed: \(outcome.error ?? "unknown")")
+        }
+    }
+
+    /// One-shot latency measurement through the real dial path (including the proxy
+    /// handshake), so a node that resolves but cannot carry traffic shows up as dead.
+    /// Shared by the background prober and the on-demand /v1/nodes/test action;
+    /// records nothing itself — the caller decides where the outcome lands.
+    public static func measure(dialer: OutboundDialer, outbound: OutboundConfig,
+                               host: String, port: UInt16, timeout: TimeInterval) async
+        -> (latencyMs: Int?, error: String?) {
         let started = Date()
         do {
             let stream = try await withThrowingTaskGroup(of: ByteStream.self) { group -> ByteStream in
                 group.addTask {
-                    try await self.dialer.connect(via: probe.outbound, host: probe.host, port: probe.port)
+                    try await dialer.connect(via: outbound, host: host, port: port)
                 }
                 group.addTask {
-                    try await Task.sleep(nanoseconds: UInt64(self.timeout * 1_000_000_000))
+                    try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
                     throw LeapinError.timeout
                 }
                 defer { group.cancelAll() }
@@ -96,12 +114,9 @@ public final class HealthProber: @unchecked Sendable {
                 return first
             }
             stream.close()
-            let ms = max(1, Int(Date().timeIntervalSince(started) * 1000))
-            LPHealth.shared.record(name: probe.name, latencyMs: ms)
-            LPLog.shared.debug("health", "\(probe.name) \(ms)ms -> \(probe.host):\(probe.port)")
+            return (max(1, Int(Date().timeIntervalSince(started) * 1000)), nil)
         } catch {
-            LPHealth.shared.record(name: probe.name, latencyMs: nil, error: error.localizedDescription)
-            LPLog.shared.debug("health", "\(probe.name) failed: \(error.localizedDescription)")
+            return (nil, error.localizedDescription)
         }
     }
 }

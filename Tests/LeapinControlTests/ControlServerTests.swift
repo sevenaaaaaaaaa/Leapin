@@ -202,6 +202,90 @@ final class ControlServerTests: XCTestCase {
         XCTAssertEqual(backend.lastSelection, ["Proxy", "HK-01"])
     }
 
+    func testNodesRouteReturnsNodeList() async throws {
+        let (status, object) = try await send("/v1/nodes", token: server.token)
+        XCTAssertEqual(status, 200)
+        XCTAssertEqual(object["ok"] as? Bool, true)
+        XCTAssertEqual(object["count"] as? Int, 2)
+        let nodes = object["nodes"] as? [[String: Any]] ?? []
+        let hk = nodes.first { ($0["name"] as? String) == "HK-01" }
+        XCTAssertEqual(hk?["type"] as? String, "trojan")
+        XCTAssertEqual(hk?["server"] as? String, "hk.example.com")
+        XCTAssertEqual(hk?["dialable"] as? Bool, true)
+        XCTAssertEqual(hk?["groups"] as? [String], ["Proxy"])
+        XCTAssertEqual(hk?["latencyMs"] as? Int, 87)
+        let direct = nodes.first { ($0["name"] as? String) == "DIRECT" }
+        XCTAssertEqual(direct?["dialable"] as? Bool, false)
+    }
+
+    func testNodesRouteRequiresToken() async throws {
+        let (status, _) = try await send("/v1/nodes")
+        XCTAssertEqual(status, 401)
+    }
+
+    func testNodeTestRouteReachesBackend() async throws {
+        let (status, object) = try await send("/v1/nodes/test", method: "POST",
+                                              token: server.token,
+                                              body: ["names": ["HK-01"]])
+        XCTAssertEqual(status, 200)
+        XCTAssertEqual(object["ok"] as? Bool, true)
+        XCTAssertEqual(object["count"] as? Int, 1)
+        let results = object["results"] as? [[String: Any]] ?? []
+        XCTAssertEqual(results.first?["name"] as? String, "HK-01")
+        XCTAssertEqual(results.first?["latencyMs"] as? Int, 91)
+        XCTAssertEqual(backend.lastNodeTestNames, ["HK-01"])
+
+        let records = try auditRecords()
+        let record = try XCTUnwrap(records.last)
+        XCTAssertEqual(record.path, "/v1/nodes/test")
+        XCTAssertEqual(record.action, "nodes.test")
+        XCTAssertEqual(record.status, 200)
+    }
+
+    func testNodeTestEmptyNamesMeansAll() async throws {
+        let (status, object) = try await send("/v1/nodes/test", method: "POST",
+                                              token: server.token, body: ["names": [String]()])
+        XCTAssertEqual(status, 200)
+        XCTAssertEqual(object["ok"] as? Bool, true)
+        XCTAssertEqual(backend.lastNodeTestNames, [])
+    }
+
+    func testNodeTestWithoutBodyIs400() async throws {
+        let (status, object) = try await send("/v1/nodes/test", method: "POST", token: server.token)
+        XCTAssertEqual(status, 400)
+        XCTAssertEqual(object["error"] as? String, "bad_request")
+    }
+
+    func testNodesRouteRejectsPost() async throws {
+        let (status, object) = try await send("/v1/nodes", method: "POST", token: server.token)
+        XCTAssertEqual(status, 405)
+        XCTAssertEqual(object["error"] as? String, "method_not_allowed")
+    }
+
+    func testNodeSpeedTestRouteReachesBackend() async throws {
+        let (status, object) = try await send("/v1/nodes/speedtest", method: "POST",
+                                              token: server.token,
+                                              body: ["name": "HK-01", "sizeMb": 5])
+        XCTAssertEqual(status, 200)
+        XCTAssertEqual(object["ok"] as? Bool, true)
+        let result = object["result"] as? [String: Any] ?? [:]
+        XCTAssertEqual(result["name"] as? String, "HK-01")
+        XCTAssertEqual(result["mbps"] as? Double, 25.0)
+        XCTAssertEqual(result["bytes"] as? Int, 10_000_000)
+        XCTAssertEqual(backend.lastSpeedTest, ["HK-01", "default", "5"])
+
+        let records = try auditRecords()
+        let record = try XCTUnwrap(records.last)
+        XCTAssertEqual(record.action, "nodes.speedtest")
+    }
+
+    func testNodeSpeedTestWithoutNameIs400() async throws {
+        let (status, object) = try await send("/v1/nodes/speedtest", method: "POST",
+                                              token: server.token, body: ["sizeMb": 5])
+        XCTAssertEqual(status, 400)
+        XCTAssertEqual(object["error"] as? String, "bad_request")
+    }
+
     func testAuditRouteReturnsRecords() async throws {
         _ = try await send("/v1/status", token: server.token)
         let (status, object) = try await send("/v1/audit?limit=10", token: server.token)
@@ -302,6 +386,8 @@ private final class FakeBackend: ControlBackend {
     private(set) var reloadCount = 0
     private(set) var lastConnectionLimit = 0
     private(set) var lastSelection: [String] = []
+    private(set) var lastNodeTestNames: [String]?
+    private(set) var lastSpeedTest: [String] = []
 
     func controlStatus() async -> ControlStatus {
         ControlStatus(engineState: "running", mixedPort: 7890, httpPort: 7891, socksPort: 7892,
@@ -346,5 +432,26 @@ private final class FakeBackend: ControlBackend {
 
     func controlHTTPProbe(url: String, timeoutMs: Int) async throws -> HTTPProbeResult {
         HTTPProbeResult(url: url, statusCode: 204, elapsedMs: 5)
+    }
+
+    func controlNodes() async -> [ControlNode] {
+        [ControlNode(name: "HK-01", type: "trojan", server: "hk.example.com", port: 443,
+                     dialable: true, groups: ["Proxy"], latencyMs: 87,
+                     checkedAtMs: 1_700_000_000_000, consecutiveFailures: 0),
+         ControlNode(name: "DIRECT", type: "direct", server: "", port: 0,
+                     dialable: false, groups: ["Proxy"])]
+    }
+
+    func controlTestNodes(names: [String]) async throws -> [ControlNodeTestResult] {
+        lastNodeTestNames = names
+        return [ControlNodeTestResult(name: "HK-01", latencyMs: 91, error: nil,
+                                      checkedAtMs: 1_700_000_001_000)]
+    }
+
+    func controlSpeedTestNode(name: String, url: String?, sizeMb: Int?) async throws -> ControlNodeSpeedResult {
+        lastSpeedTest = [name, url ?? "default", String(sizeMb ?? 0)]
+        return ControlNodeSpeedResult(name: name, url: url ?? "http://cachefly.cachefly.net/100mb.test",
+                                      bytes: 10_000_000, elapsedMs: 3_200, mbps: 25.0,
+                                      checkedAtMs: 1_700_000_002_000)
     }
 }

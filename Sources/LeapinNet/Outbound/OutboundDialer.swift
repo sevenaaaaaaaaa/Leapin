@@ -98,7 +98,10 @@ public struct OutboundDialer: Sendable {
     private func connectHTTP(outbound: OutboundConfig, host: String, port: UInt16) async throws -> ByteStream {
         let tls: NWProtocolTLS.Options?
         if outbound.tls {
-            tls = TLSFactory.clientOptions(serverName: outbound.sni ?? outbound.host)
+            // Honor the subscription's skip-cert-verify: nodes presenting decoy or
+            // self-signed certificates could never be dialed otherwise.
+            tls = TLSFactory.clientOptions(serverName: outbound.sni ?? outbound.host,
+                                           customVerify: outbound.skipCertVerify == true ? { _ in true } : nil)
         } else {
             tls = nil
         }
@@ -241,7 +244,9 @@ public struct OutboundDialer: Sendable {
             throw LeapinError.invalidConfiguration("trojan outbound \(outbound.name) has no password")
         }
         let serverName = outbound.sni ?? outbound.host
-        let options = TLSFactory.clientOptions(serverName: serverName)
+        // Same skip-cert-verify handling as the HTTP CONNECT path above.
+        let options = TLSFactory.clientOptions(serverName: serverName,
+                                               customVerify: outbound.skipCertVerify == true ? { _ in true } : nil)
         let socket = try await openServerConnection(outbound, tls: options)
         do {
             let head = try TrojanProtocol.requestHead(password: password, host: host, port: port)

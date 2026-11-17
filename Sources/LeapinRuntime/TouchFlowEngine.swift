@@ -83,6 +83,9 @@ public final class LeapinEngine: ObservableObject {
     private lazy var scriptHost = EngineScriptHost()
     private var ca: CertificateAuthority?
     private var healthProber: HealthProber?
+    /// Serializes bandwidth tests: one node saturated at a time, everything else
+    /// gets a clear 503 instead of contending for the same pipe. MainActor-isolated.
+    private var speedTestRunning = false
     private let sink = EngineSink()
     private var logObserverInstalled = false
 
@@ -1052,6 +1055,143 @@ extension LeapinEngine: ControlBackend {
         }
         let timeout = timeoutMs > 0 ? min(timeoutMs, 60_000) : 8_000
         return await HTTPProbe.probe(trimmed, timeoutMs: timeout)
+    }
+
+    // MARK: Node list + on-demand latency test
+
+    public func controlNodes() async -> [ControlNode] {
+        let health = LPHealth.shared.snapshot()
+        var membership: [String: [String]] = [:]
+        for group in profile.groups {
+            for member in group.proxies {
+                membership[member.lowercased(), default: []].append(group.name)
+            }
+        }
+        return profile.outbounds.map { outbound in
+            let entry = health[outbound.name.lowercased()]
+            return ControlNode(
+                name: outbound.name,
+                type: outbound.rawType ?? outbound.type.rawValue,
+                server: outbound.host,
+                port: Int(outbound.port),
+                // REJECT is dialable on paper (it "connects" by throwing) but a
+                // latency number for it would be meaningless; DIRECT stays testable
+                // as the baseline reference.
+                dialable: outbound.type.isDialable && outbound.type != .reject,
+                groups: membership[outbound.name.lowercased()] ?? [],
+                latencyMs: entry?.latencyMs,
+                checkedAtMs: entry?.checkedAt.map { $0.timeIntervalSince1970 * 1000 },
+                lastError: entry?.lastError,
+                consecutiveFailures: entry?.consecutiveFailures ?? 0)
+        }
+    }
+
+    public func controlTestNodes(names: [String]) async throws -> [ControlNodeTestResult] {
+        guard executionKernel == .native else {
+            throw ControlError.badRequest("Mihomo 模式请在内核面板中进行延迟测试")
+        }
+        var targets: [OutboundConfig] = []
+        if names.isEmpty {
+            targets = profile.outbounds.filter { $0.type.isDialable && $0.type != .reject }
+        } else {
+            for name in names {
+                guard let outbound = profile.outbound(named: name) else {
+                    throw ControlError.notFound("node \(name)")
+                }
+                guard outbound.type.isDialable, outbound.type != .reject else {
+                    throw ControlError.badRequest("\(outbound.name) 是内置策略，不参与测速")
+                }
+                targets.append(outbound)
+            }
+        }
+        guard !targets.isEmpty else { return [] }
+
+        // Dial through the live resolver while the engine runs; otherwise resolve
+        // with the profile's own DNS config so nodes are testable before start.
+        let dialer = resolver.map { OutboundDialer(resolver: $0) }
+            ?? OutboundDialer(resolver: DNSResolver(config: homeDNS(profile.dns), blocker: nil))
+
+        // A node in a url-test / fallback group is measured against that group's own
+        // test URL, so the number matches what automatic selection sees.
+        var groupTarget: [String: (host: String, port: UInt16)] = [:]
+        for group in profile.groups where group.type == .urlTest || group.type == .fallback {
+            let endpoint = Self.probeEndpoint(group.url)
+            for member in group.proxies { groupTarget[member.lowercased()] = endpoint }
+        }
+
+        let timeout: TimeInterval = 4
+        var results: [String: ControlNodeTestResult] = [:]
+        var start = 0
+        while start < targets.count {
+            let chunk = Array(targets[start..<min(start + 4, targets.count)])
+            await withTaskGroup(of: (String, Int?, String?).self) { taskGroup in
+                for outbound in chunk {
+                    let endpoint = groupTarget[outbound.name.lowercased()] ?? Self.probeEndpoint(nil)
+                    taskGroup.addTask {
+                        let outcome = await HealthProber.measure(
+                            dialer: dialer, outbound: outbound,
+                            host: endpoint.host, port: endpoint.port, timeout: timeout)
+                        return (outbound.name, outcome.latencyMs, outcome.error)
+                    }
+                }
+                for await (name, ms, error) in taskGroup {
+                    LPHealth.shared.record(name: name, latencyMs: ms, error: error)
+                    results[name.lowercased()] = ControlNodeTestResult(
+                        name: name, latencyMs: ms, error: error,
+                        checkedAtMs: Date().timeIntervalSince1970 * 1000)
+                }
+            }
+            start += chunk.count
+        }
+        return targets.map { outbound in
+            results[outbound.name.lowercased()] ?? ControlNodeTestResult(
+                name: outbound.name, latencyMs: nil, error: "no result",
+                checkedAtMs: Date().timeIntervalSince1970 * 1000)
+        }
+    }
+
+    public func controlSpeedTestNode(name: String, url: String?, sizeMb: Int?) async throws -> ControlNodeSpeedResult {
+        guard executionKernel == .native else {
+            throw ControlError.badRequest("Mihomo 模式请在内核面板中测速")
+        }
+        guard let outbound = profile.outbound(named: name) else {
+            throw ControlError.notFound("node \(name)")
+        }
+        guard outbound.type.isDialable, outbound.type != .reject else {
+            throw ControlError.badRequest("\(outbound.name) 是内置策略，不参与测速")
+        }
+        guard !speedTestRunning else {
+            throw ControlError.unavailable("另一个测速任务正在进行中")
+        }
+        let trimmed = url?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rawURL = (trimmed?.isEmpty == false) ? trimmed! : "http://cachefly.cachefly.net/100mb.test"
+        guard let parsed = URLComponents(string: rawURL),
+              parsed.scheme?.lowercased() == "http",
+              let host = parsed.host, !host.isEmpty else {
+            throw ControlError.badRequest("测速地址必须是 http:// 明文地址（拨号路径无法在流内叠加 TLS）")
+        }
+        let port = UInt16(clamping: parsed.port ?? 80)
+        var path = parsed.path.isEmpty ? "/" : parsed.path
+        if let query = parsed.query, !query.isEmpty { path += "?\(query)" }
+        let cap = max(1, min(sizeMb ?? 10, 25)) * 1_000_000
+
+        speedTestRunning = true
+        defer { speedTestRunning = false }
+        let dialer = resolver.map { OutboundDialer(resolver: $0) }
+            ?? OutboundDialer(resolver: DNSResolver(config: homeDNS(profile.dns), blocker: nil))
+        do {
+            let result = try await NodeSpeedTest.measure(dialer: dialer, outbound: outbound,
+                                                         host: host, port: port, path: path,
+                                                         maxBytes: cap, timeout: 20)
+            LPLog.shared.info("health", "\(outbound.name) speed: \(result.mbps) Mbps (\(result.bytes)B)")
+            return ControlNodeSpeedResult(name: outbound.name, url: rawURL, bytes: result.bytes,
+                                          elapsedMs: result.elapsedMs, mbps: result.mbps,
+                                          checkedAtMs: Date().timeIntervalSince1970 * 1000)
+        } catch {
+            return ControlNodeSpeedResult(name: outbound.name, url: rawURL, bytes: 0, elapsedMs: 0,
+                                          mbps: 0, error: error.localizedDescription,
+                                          checkedAtMs: Date().timeIntervalSince1970 * 1000)
+        }
     }
 
     // MARK: Reload (hot path)

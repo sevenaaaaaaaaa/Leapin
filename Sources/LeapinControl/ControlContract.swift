@@ -183,6 +183,82 @@ public struct ControlSelectionResult: Codable, Sendable, Hashable {
     }
 }
 
+/// One outbound node with its latest probe observation, for the node list.
+/// `latencyMs == nil` with `checkedAtMs != nil` means the last test failed;
+/// `checkedAtMs == nil` means the node was never tested.
+public struct ControlNode: Codable, Sendable, Hashable {
+    public var name: String
+    /// Protocol label: the original config token when present ("vmess", "hysteria2", ...).
+    public var type: String
+    public var server: String
+    public var port: Int
+    /// false for built-in pseudo outbounds (DIRECT / REJECT) that cannot be tested.
+    public var dialable: Bool
+    /// Names of the policy groups this node is a member of.
+    public var groups: [String]
+    public var latencyMs: Int?
+    public var checkedAtMs: Double?
+    public var lastError: String?
+    public var consecutiveFailures: Int
+
+    public init(name: String, type: String, server: String, port: Int, dialable: Bool,
+                groups: [String], latencyMs: Int? = nil, checkedAtMs: Double? = nil,
+                lastError: String? = nil, consecutiveFailures: Int = 0) {
+        self.name = name
+        self.type = type
+        self.server = server
+        self.port = port
+        self.dialable = dialable
+        self.groups = groups
+        self.latencyMs = latencyMs
+        self.checkedAtMs = checkedAtMs
+        self.lastError = lastError
+        self.consecutiveFailures = consecutiveFailures
+    }
+}
+
+/// One outcome of an on-demand bandwidth test through a node.
+/// Throughput is measured over a plain-HTTP download (the dial path cannot
+/// layer TLS on an existing stream), so the number is a close approximation
+/// that includes response headers and chunk framing.
+public struct ControlNodeSpeedResult: Codable, Sendable, Hashable {
+    public var name: String
+    public var url: String
+    /// Body + framing bytes actually read before the cap or the deadline hit.
+    public var bytes: Int
+    public var elapsedMs: Double
+    /// Downlink throughput in megabits per second.
+    public var mbps: Double
+    public var error: String?
+    public var checkedAtMs: Double
+
+    public init(name: String, url: String, bytes: Int, elapsedMs: Double, mbps: Double,
+                error: String? = nil, checkedAtMs: Double) {
+        self.name = name
+        self.url = url
+        self.bytes = bytes
+        self.elapsedMs = elapsedMs
+        self.mbps = mbps
+        self.error = error
+        self.checkedAtMs = checkedAtMs
+    }
+}
+
+/// One outcome of an on-demand node latency test.
+public struct ControlNodeTestResult: Codable, Sendable, Hashable {
+    public var name: String
+    public var latencyMs: Int?
+    public var error: String?
+    public var checkedAtMs: Double
+
+    public init(name: String, latencyMs: Int?, error: String?, checkedAtMs: Double) {
+        self.name = name
+        self.latencyMs = latencyMs
+        self.error = error
+        self.checkedAtMs = checkedAtMs
+    }
+}
+
 public struct ControlAuditRecord: Codable, Sendable, Hashable {
     public var timestampMs: Double
     public var method: String
@@ -261,4 +337,11 @@ public protocol ControlBackend: AnyObject {
     func controlExplain(host: String, port: Int) async throws -> ControlExplainResult
     func controlDNSTrace(host: String) async throws -> DNSTrace
     func controlHTTPProbe(url: String, timeoutMs: Int) async throws -> HTTPProbeResult
+    func controlNodes() async -> [ControlNode]
+    /// Latency-tests the named nodes through their real dial path; an empty
+    /// names list means every dialable outbound in the active profile.
+    func controlTestNodes(names: [String]) async throws -> [ControlNodeTestResult]
+    /// Measures downlink throughput through one node. The URL must be plain HTTP;
+    /// sizeMb caps the download (default 10 MB, ceiling 25 MB).
+    func controlSpeedTestNode(name: String, url: String?, sizeMb: Int?) async throws -> ControlNodeSpeedResult
 }

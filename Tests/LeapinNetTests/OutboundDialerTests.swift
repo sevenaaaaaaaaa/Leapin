@@ -212,4 +212,47 @@ final class OutboundDialerTests: XCTestCase {
             XCTAssertTrue("\(error)".contains("rc4-md5"), "unexpected error \(error)")
         }
     }
+
+    // MARK: - trojan skip-cert-verify
+
+    /// The subscription's `skip-cert-verify: true` must reach the TLS options of the
+    /// trojan dial path: with default verification the untrusted throwaway CA fails,
+    /// with the flag set the tunnel opens and carries the trojan head.
+    func testTrojanOutboundHonorsSkipCertVerify() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("trojan-skip-verify-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let ca = try CertificateAuthority(directory: directory)
+        let identity = try ca.identity(for: "127.0.0.1")
+        let dialer = OutboundDialer(resolver: MapResolver())
+
+        // Strict verification: the test CA is anchored nowhere, so the handshake fails.
+        let strictListener = try await LocalTLSServer.start(identity: identity)
+        defer { strictListener.close() }
+        let strict = OutboundConfig(name: "trojan-strict", type: .trojan, host: "127.0.0.1",
+                                    port: strictListener.port, password: "pw",
+                                    tls: true, sni: "127.0.0.1")
+        do {
+            let stream = try await dialer.connect(via: strict, host: "10.0.0.9", port: 443)
+            stream.close()
+            XCTFail("strict verification must reject the untrusted CA")
+        } catch { /* expected: the certificate chain does not verify */ }
+
+        // skip-cert-verify: the tunnel opens and the trojan head lands on the server.
+        let laxListener = try await LocalTLSServer.start(identity: identity)
+        defer { laxListener.close() }
+        let lax = OutboundConfig(name: "trojan-lax", type: .trojan, host: "127.0.0.1",
+                                 port: laxListener.port, password: "pw",
+                                 tls: true, sni: "127.0.0.1", skipCertVerify: true)
+        async let acceptedSocket = laxListener.accept(timeout: 15)
+        let stream = try await dialer.connect(via: lax, host: "10.0.0.9", port: 443)
+        defer { stream.close() }
+        let server = try await acceptedSocket
+        defer { server.close() }
+        // The head starts with the SHA-224 password token as 56 lowercase hex chars.
+        let head = try await BufferedStream(server).readExactly(58)
+        XCTAssertEqual(String(decoding: head.prefix(56), as: UTF8.self),
+                       TrojanProtocol.passwordHash("pw"))
+    }
 }

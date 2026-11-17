@@ -392,6 +392,34 @@ public final class ControlServer: @unchecked Sendable {
                 finish(200, "url=\(probe.url) status=\(probe.statusCode ?? 0)")
                 sendObject(["ok": true, "probe": Self.jsonObject(probe) ?? [:]], to: connection)
 
+            case ("GET", "/v1/nodes"):
+                let nodes = try await callBackend { await $0.controlNodes() }
+                finish(200, "count=\(nodes.count)")
+                let items = nodes.compactMap { Self.jsonObject($0) }
+                sendObject(["ok": true, "count": items.count, "nodes": items], to: connection)
+
+            case ("POST", "/v1/nodes/test"):
+                let body = try decodeBody(NodeTestBody.self, from: request)
+                let names = (body.names ?? []).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                let results = try await callBackend(timeout: 90) {
+                    try await $0.controlTestNodes(names: names)
+                }
+                let alive = results.filter { $0.latencyMs != nil }.count
+                finish(200, "count=\(results.count) alive=\(alive)")
+                let items = results.compactMap { Self.jsonObject($0) }
+                sendObject(["ok": true, "count": items.count, "results": items], to: connection)
+
+            case ("POST", "/v1/nodes/speedtest"):
+                let body = try decodeBody(NodeSpeedBody.self, from: request)
+                let name = body.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { throw ControlError.badRequest("name is required") }
+                let result = try await callBackend(timeout: 60) {
+                    try await $0.controlSpeedTestNode(name: name, url: body.url, sizeMb: body.sizeMb)
+                }
+                finish(200, "node=\(result.name) mbps=\(result.mbps) bytes=\(result.bytes)")
+                sendObject(["ok": true, "result": Self.jsonObject(result) ?? [:]], to: connection)
+
             case ("GET", "/v1/audit"):
                 let limit = queryLimit(request, defaultValue: 100, maximum: 1000)
                 let records = loadAudit(limit: limit)
@@ -483,6 +511,8 @@ public final class ControlServer: @unchecked Sendable {
     private struct ExplainBody: Decodable { var host: String; var port: Int? }
     private struct TraceBody: Decodable { var host: String }
     private struct ProbeBody: Decodable { var url: String; var timeoutMs: Int? }
+    private struct NodeTestBody: Decodable { var names: [String]? }
+    private struct NodeSpeedBody: Decodable { var name: String; var url: String?; var sizeMb: Int? }
 
     private static let headerSeparator = Data("\r\n\r\n".utf8)
 
@@ -767,6 +797,9 @@ public final class ControlServer: @unchecked Sendable {
         case "/v1/explain": return "explain"
         case "/v1/dns/trace": return "dns.trace"
         case "/v1/http/probe": return "http.probe"
+        case "/v1/nodes": return "nodes"
+        case "/v1/nodes/test": return "nodes.test"
+        case "/v1/nodes/speedtest": return "nodes.speedtest"
         case "/v1/audit": return "audit"
         case "/v1/events": return "events"
         default: return "unknown"
@@ -782,6 +815,9 @@ public final class ControlServer: @unchecked Sendable {
         "/v1/explain": ["POST"],
         "/v1/dns/trace": ["POST"],
         "/v1/http/probe": ["POST"],
+        "/v1/nodes": ["GET"],
+        "/v1/nodes/test": ["POST"],
+        "/v1/nodes/speedtest": ["POST"],
         "/v1/audit": ["GET"],
         "/v1/events": ["GET"]
     ]

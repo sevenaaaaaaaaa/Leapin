@@ -131,6 +131,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NSApp.terminate(nil)
             }
         }
+        // UI check for the Profiles node panel: boots the engine for real, opens the
+        // 配置 page in the live window, waits until the node list carries at least one
+        // probe result (the panel's auto-test landing), then captures the window's view
+        // hierarchy — no screen-recording permission needed. Never in release.
+        if let path = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_PROFILES"] {
+            Task { @MainActor in
+                let engine = LeapinEngine.shared
+                if engine.state != .running { await engine.start() }
+                var window: NSWindow?
+                for _ in 0..<20 {
+                    window = NSApp.windows.first(where: { !($0 is NSPanel) && $0.contentView != nil })
+                    if window != nil { break }
+                    try? await Task.sleep(for: .milliseconds(250))
+                }
+                NotificationCenter.default.post(name: .lpNavigate, object: AppModel.Section.profiles.rawValue)
+                let deadline = Date().addingTimeInterval(40)
+                while Date() < deadline {
+                    let nodes = await engine.controlNodes()
+                    // Every dialable node must carry a probe record — a single fast
+                    // failure (e.g. a junk 0.0.0.0 entry) must not end the wait early.
+                    let dialable = nodes.filter(\.dialable)
+                    if !dialable.isEmpty, dialable.allSatisfy({ $0.checkedAtMs != nil }) { break }
+                    try? await Task.sleep(for: .milliseconds(500))
+                }
+                try? await Task.sleep(for: .seconds(1))
+                if let view = window?.contentView,
+                   let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    if let data = rep.representation(using: .png, properties: [:]) {
+                        try? data.write(to: URL(fileURLWithPath: path))
+                    }
+                }
+                NSApp.terminate(nil)
+            }
+        }
         #endif
     }
 
