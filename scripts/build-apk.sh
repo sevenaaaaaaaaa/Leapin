@@ -27,11 +27,12 @@ GRADLE_NET=(-Dorg.gradle.internal.http.connectionTimeout=15000
             -Dorg.gradle.internal.http.socketTimeout=20000)
 
 echo "==> gradle assembleRelease"
-if ! (cd Android && ./gradlew assembleRelease --no-daemon "${GRADLE_NET[@]}" >/tmp/leapin-apk.log 2>&1); then
-    # The dependency cache is normally warm, and an offline build produces the same
-    # APK; falling back beats failing the whole release on a flaky network.
-    echo "  ! online build failed, retrying from the dependency cache (--offline)" >&2
-    (cd Android && ./gradlew assembleRelease --no-daemon --offline "${GRADLE_NET[@]}" >/tmp/leapin-apk-offline.log 2>&1) || {
+# Offline first: the dependency cache is normally warm, and an offline build makes
+# the same APK. Going online first means a dead network stalls the release in
+# timedFinishConnect for minutes before the fallback even starts.
+if ! (cd Android && ./gradlew assembleRelease --no-daemon --offline "${GRADLE_NET[@]}" >/tmp/leapin-apk-offline.log 2>&1); then
+    echo "  ! offline build failed (cold dependency cache?), retrying online" >&2
+    (cd Android && ./gradlew assembleRelease --no-daemon "${GRADLE_NET[@]}" >/tmp/leapin-apk.log 2>&1) || {
         echo "error: build failed; last lines of /tmp/leapin-apk.log:" >&2
         tail -25 /tmp/leapin-apk.log >&2
         echo "offline attempt:" >&2
