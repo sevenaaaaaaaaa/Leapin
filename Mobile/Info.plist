@@ -18,5 +18,15 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>在同一个 Wi-Fi 下发现并连接你 Mac 上的 Leapin 控制面。</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_leapin-control._tcp</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>扫描 Mac 上显示的配对二维码，一次连上控制面。</string>
 </dict>
 </plist>

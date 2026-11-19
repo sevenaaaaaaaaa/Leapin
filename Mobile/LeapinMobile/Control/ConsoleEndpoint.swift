@@ -39,6 +39,35 @@ public struct ConsoleEndpoint: Equatable, Sendable {
         return ConsoleEndpoint(host: host, port: resolvedPort, token: token)
     }
 
+    /// `leapin://pair?host=192.168.1.8&port=7900&token=…` — exactly what the Mac's
+    /// QR encodes. Anything else is rejected so a stray QR cannot fill the fields.
+    public static func parse(pairingURL raw: String) -> ConsoleEndpoint? {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed),
+              url.scheme?.lowercased() == "leapin",
+              url.host?.lowercased() == "pair" else { return nil }
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        func value(_ name: String) -> String? {
+            items.first { $0.name == name }?.value?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let host = value("host"), let token = value("token"),
+              !host.isEmpty, !token.isEmpty else { return nil }
+        return parse(host: host, port: value("port") ?? "7900", token: token)
+    }
+
+    /// The pairing payload this endpoint encodes; the Mac renders it as a QR.
+    public var pairingURL: String {
+        var components = URLComponents()
+        components.scheme = "leapin"
+        components.host = "pair"
+        components.queryItems = [
+            URLQueryItem(name: "host", value: host),
+            URLQueryItem(name: "port", value: "\(port)"),
+            URLQueryItem(name: "token", value: token),
+        ]
+        return components.string ?? ""
+    }
+
     public var displayAddress: String { "\(host):\(port)" }
 
     var baseURL: URL? {

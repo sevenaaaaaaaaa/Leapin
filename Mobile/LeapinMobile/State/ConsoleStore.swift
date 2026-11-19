@@ -19,6 +19,9 @@ public final class ConsoleStore {
 
     /// Live polling keeps the dashboard honest without the user pulling to refresh.
     public var autoRefresh = true
+
+    /// Root-level pairing sheet; any page can ask for it without owning a sheet.
+    public var pairingSheetShown = false
     private var pollTask: Task<Void, Never>?
 
     public init() {
@@ -38,6 +41,11 @@ public final class ConsoleStore {
             lastError = "请填写 Mac 的 IP、端口和令牌"
             return false
         }
+        return await connect(to: candidate)
+    }
+
+    /// Connects to an endpoint that already arrived fully formed (QR payload, deep link).
+    public func connect(to candidate: ConsoleEndpoint) async -> Bool {
         isConnecting = true
         lastError = nil
         defer { isConnecting = false }
