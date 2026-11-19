@@ -653,15 +653,17 @@ struct CaptureView: View {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = "leapin.har"
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            let data = try engine.exportHAR()
-            try data.write(to: url)
-            let count = engine.captures.count
-            app.showToast("已导出 \(count) 条请求（敏感头已脱敏）", kind: .success, actionTitle: "在访达中显示") {
-                NSWorkspace.shared.activateFileViewerSelecting([url])
+        let count = engine.captures.count
+        Task { @MainActor in
+            do {
+                let data = try await engine.exportHAR()
+                try data.write(to: url)
+                app.showToast("已导出 \(count) 条请求（敏感头已脱敏）", kind: .success, actionTitle: "在访达中显示") {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+            } catch {
+                app.showToast("导出失败：\(error.localizedDescription)", kind: .error)
             }
-        } catch {
-            app.showToast("导出失败：\(error.localizedDescription)", kind: .error)
         }
     }
 }

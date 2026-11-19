@@ -304,7 +304,9 @@ public final class LeapinEngine: ObservableObject {
     private func rollbackSystemProxyIfNeeded() -> Bool {
         guard systemProxyActive else { return true }
         do {
-            try SystemProxy.disable()
+            // Bounded: quitting or stopping must never sit in a wedged networksetup
+            // for a minute. The rollback gets 3 s; anything left behind is reported.
+            try SystemProxy.disable(deadline: 3)
             systemProxyActive = false
             LPLog.shared.info("system", "已回滚系统代理")
             return true
@@ -638,8 +640,14 @@ public final class LeapinEngine: ObservableObject {
 
     public func clearFlows() { flows.removeAll(); captures.removeAll() }
 
-    public func exportHAR() throws -> Data {
-        try HARExporter.export(captures, redact: true)
+    /// Encoding a few thousand captures builds a large JSON tree; doing it on the
+    /// main actor froze the window for the whole export. The snapshot is taken
+    /// here (cheap), the encoding runs off the UI thread.
+    public func exportHAR() async throws -> Data {
+        let snapshot = captures
+        return try await Task.detached(priority: .userInitiated) {
+            try HARExporter.export(snapshot, redact: true)
+        }.value
     }
 
     // MARK: - Sink callbacks
