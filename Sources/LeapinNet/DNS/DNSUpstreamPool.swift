@@ -59,28 +59,32 @@ final class SerialGate: @unchecked Sendable {
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
     func acquire() async {
-        lock.lock()
-        if !busy {
-            busy = true
-            lock.unlock()
-            return
-        }
+        // Resuming inside the lock would let the continuation run inline and call
+        // release re-entrantly, so the hand-off happens after the lock is dropped.
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            waiters.append(continuation)
-            lock.unlock()
+            let entered = lock.withLock { () -> Bool in
+                if !busy {
+                    busy = true
+                    return true
+                }
+                waiters.append(continuation)
+                return false
+            }
+            if entered { continuation.resume() }
         }
     }
 
     func release() {
-        lock.lock()
-        if waiters.isEmpty {
-            busy = false
-            lock.unlock()
-            return
+        let next = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            guard !waiters.isEmpty else {
+                busy = false
+                return nil
+            }
+            // Ownership passes straight to the next waiter, so nobody can slip in
+            // between a release and the hand-over.
+            return waiters.removeFirst()
         }
-        let next = waiters.removeFirst()
-        lock.unlock()
-        next.resume()
+        next?.resume()
     }
 }
 
