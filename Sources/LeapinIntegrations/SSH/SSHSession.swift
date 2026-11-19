@@ -61,10 +61,7 @@ final class SSHProcessBox: @unchecked Sendable {
 
         output?.fileHandleForReading.readabilityHandler = nil
         if let process, process.isRunning {
-            process.terminate()
-            let deadline = Date().addingTimeInterval(0.5)
-            while process.isRunning && Date() < deadline { usleep(10_000) }
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            ProcessExit.terminate(process, grace: 0.5)
         }
         try? input?.fileHandleForWriting.close()
         try? output?.fileHandleForReading.close()
@@ -257,11 +254,7 @@ public actor SSHSession {
 
     private static func exitStatus(of process: Process) async -> Int32 {
         // `terminationStatus` is only meaningful once the process has exited.
-        let deadline = Date().addingTimeInterval(1)
-        while process.isRunning && Date() < deadline {
-            try? await Task.sleep(nanoseconds: 20_000_000)
-        }
-        return process.isRunning ? -1 : process.terminationStatus
+        await ProcessExit.status(of: process, timeout: 1)
     }
 
     static func decode(_ data: Data) -> String {

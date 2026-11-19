@@ -362,18 +362,14 @@ public final class ManagedMihomo: ObservableObject {
         pipe?.fileHandleForReading.readabilityHandler = nil
         pipe = nil
         if let process, process.isRunning {
-            process.terminate()
             if waitForExit {
                 // The foreground TUN CLI must finish teardown before it exits;
                 // an async timer cannot clean up after its parent has exited.
-                let deadline = Date().addingTimeInterval(1.5)
-                while process.isRunning && Date() < deadline { usleep(10_000) }
-                if process.isRunning { Darwin.kill(process.processIdentifier, SIGKILL) }
-                let killedDeadline = Date().addingTimeInterval(0.3)
-                while process.isRunning && Date() < killedDeadline { usleep(10_000) }
+                ProcessExit.terminate(process, grace: 1.5)
                 if let directory { try? FileManager.default.removeItem(at: directory) }
                 return
             }
+            process.terminate()
             // Never leave an owned child behind if SIGTERM is ignored.
             DispatchQueue.global().asyncAfter(deadline: .now() + 1) {
                 if process.isRunning { Darwin.kill(process.processIdentifier, SIGKILL) }

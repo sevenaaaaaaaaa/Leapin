@@ -404,6 +404,7 @@ echo "总计失败项: $fails"; exit "$fails"
 | POL-02 | 已修 | Sources/LeapinPolicy/Rules/RuleIndex.swift（反转标签 Trie + Aho-Corasick + IP 前缀 Trie）、RuleEngine.match() | 后缀 Trie 其实在 2026-11-10 的改名提交里就落码了，`docs/perf.md` 的「严格 O(规则数)」是 11-05 的旧测量。本轮实测：10 万规则 decide p50 0.002 ms / p95 0.004 ms、索引构建 68.4 ms（release，`LEAPIN_PERF=1 swift test --filter RuleIndexPerf`）。「最小下标优先」由候选集升序去重保证，`useIndex:false` 仍保留线性扫描做对拍（RuleIndexDifferentialTests） |
 | DNS-02 | 已修 | Sources/LeapinNet/DNS/DNSResolver.swift `respond(to:)` + ResolverState 的 replies/inflightReplies | 本地 DNS 服务先查地址缓存与整包应答缓存（TXT/MX/CNAME 也能重放），并发同名/同类型查询走单飞；命中即不再打上游 |
 | DNS-03 | 已修 | Sources/LeapinNet/DNS/DNSUpstreamPool.swift + DNSResolver.exchange | 每个 upstream 只建一条长连接：UDP/DoT 各一个 actor，查询在该 actor 内串行化；UDP 按报文 id 丢弃超时残留应答，DoT 复用 socket、空闲 60 s 后重连，DoH 走共享 URLSession。testUpstreamUDPSocketIsReusedAcrossQueries：4 次查询只开 1 个 socket |
+| INT-04 | 已修 | Sources/LeapinIntegrations/Support/ProcessExit.swift + SSH/SSHSession.swift、ManagedMihomo.swift | 新增 `ProcessExit`：terminationHandler + 信号量/续体，不再 10 ms 轮询 `isRunning`；`terminate(grace:)` 先 SIGTERM 等 grace 再 SIGKILL，`status(of:timeout:)` 只在退出后读 terminationStatus（-1 表示仍在跑）。SSH teardown、Mihomo 前台 TUN 退出、ssh 退出码全部改用它 |
 | CA-01 | 已修 | Sources/LeapinNet/Capture/CertificateAuthority.swift `identity(for:)` / `runProcess` | 锁只负责「认领/等待」，openssl 在锁外跑；同 host 并发握手共享一次生成（IdentitySlot 用 NSCondition 广播，信号量会被一个 waiter 吃掉）。`runProcess` 并发排空 stdout/stderr，30 s 超时 terminate→SIGKILL，错误带 stderr 尾部 |
 | INT-01 | 已修 | Sources/LeapinIntegrations/Support/CommandRunner.swift、System/SystemProxy.swift | 忙等改 terminationHandler + 信号量；新增 runAsync/runCheckedAsync（专用并发队列）。SystemProxy 改为 async 核心（enable/disable/status/currentService），engine 与 UI 全部 await，CLI 与退出路径用 ResultBox 桥；UI 不再被 9 次 networksetup 串行压住 |
 | RT-06 | 部分缓解 | FakeIPPool `allowLocalEndpointReuse` + DNS 失败不阻塞启动 | stop→start 的 DNS 端口竞态已消；`ProxyServer.stop()` 仍不等 `.cancelled`，切配置的 mixed 端口竞态未彻底解决 |
@@ -413,7 +414,7 @@ echo "总计失败项: $fails"; exit "$fails"
 POL-02 / DNS-02 / DNS-03 / CA-01 / INT-01 已在 2026-11-19 这一轮落地（见上表新增行），下面只剩真没做的：
 
 1. CA-02：CA 目录/私钥权限已补（0700/0600），leaf 目录的清理与旧 CA 迁移仍无。
-2. INT-04：`SSHSession` teardown 仍在调用线程忙等。
+2. INT-04：已修（见下表），`SSHSession`/`ManagedMihomo` 的 teardown 改由 `ProcessExit` 驱动。
 3. RT-02：退出路径仍是同步 `disable`（现在只是不再忙等，最长等待由 CommandRunner 的 10 s 超时界定，主线程仍会被占用一次）。
 4. RT-05 / RT-07：启动期同步加载规则/AdBlock、HAR 在 UI 线程全量序列化。
 5. NET-02 / NET-03 / NET-05 / NET-07 ~ NET-12、DNS-04、RT-08、INT-05 / INT-06：连接数上限、Bytes 缓冲 O(n²)、SS 读路径 salt/nonce、Happy Eyeballs、MITM 上游复用/编码、LocalTLSServer 每连接 listener、FakeIP 分配 O(n)、ProfileStore 锁内 IO 等。
