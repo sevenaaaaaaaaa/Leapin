@@ -48,6 +48,82 @@ final class CaptureTests: XCTestCase {
         XCTAssertGreaterThan(p12Size, 0)
     }
 
+    func testCertificateAuthorityRestrictsKeyMaterialPermissions() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("leapin-ca-modes-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let ca = try CertificateAuthority(directory: directory)
+        _ = try ca.identity(for: "modes.test")
+        let leafDirectory = ca.leafCertificateURL(for: "modes.test").deletingLastPathComponent()
+
+        func mode(_ url: URL) throws -> Int {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            let number = attributes[.posixPermissions] as? NSNumber
+            return (number?.intValue ?? 0) & 0o777
+        }
+
+        XCTAssertEqual(try mode(directory), 0o700,
+                       "the CA directory holds a trust-anchor key and must be private")
+        XCTAssertEqual(try mode(directory.appendingPathComponent("ca-private.pem")), 0o600)
+        XCTAssertEqual(try mode(leafDirectory), 0o700)
+        XCTAssertEqual(try mode(leafDirectory.appendingPathComponent("leaf-private.pem")), 0o600)
+    }
+
+    /// Two handshakes for the same host must share one openssl run, and a host
+    /// that is already cached must not wait for another host's keygen.
+    func testCertificateAuthorityDeduplicatesConcurrentLeafGeneration() throws {
+        let directory = try makeTempDirectory("ca-dedupe")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let ca = try CertificateAuthority(directory: directory)
+
+        let hosts = 5
+        let lock = NSLock()
+        var identities: [String: Int] = [:]
+        DispatchQueue.concurrentPerform(iterations: hosts * 4) { iteration in
+            let host = "dedupe\(iteration % hosts).test"
+            if (try? ca.identity(for: host)) != nil {
+                lock.withLock { identities[host, default: 0] += 1 }
+            }
+        }
+
+        XCTAssertEqual(identities.count, hosts, "every host must get an identity")
+        XCTAssertEqual(ca.leafGenerationCount, hosts,
+                       "one openssl run per host, however many handshakes race for it")
+
+        // A cached host answers while a fresh host is still minting its leaf.
+        let cohort = try makeTempDirectory("ca-dedupe-2")
+        defer { try? FileManager.default.removeItem(at: cohort) }
+        let warm = try CertificateAuthority(directory: cohort)
+        _ = try warm.identity(for: "warm.test")
+        let started = Date()
+        _ = try warm.identity(for: "warm.test")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.5,
+                          "a cache hit must not go through openssl at all")
+    }
+
+    /// The helper runner must drain stdout and stderr at the same time and must
+    /// enforce its deadline. The old runner read stdout to EOF first, which
+    /// deadlocks as soon as a child fills the 64 KB stderr buffer.
+    func testHelperRunnerDrainsBothPipesAndTimesOut() throws {
+        let noisy = try CertificateAuthority.runProcess(
+            executable: "/bin/sh",
+            arguments: ["-c", "dd if=/dev/zero bs=1024 count=512 2>/dev/null | tr '\\000' x >&2; printf done"],
+            timeout: 20)
+        XCTAssertEqual(noisy.status, 0)
+        XCTAssertEqual(noisy.stdoutText, "done")
+        XCTAssertEqual(noisy.stderr.count, 512 * 1024, "stderr must be captured in full")
+
+        let started = Date()
+        XCTAssertThrowsError(try CertificateAuthority.runProcess(executable: "/bin/sleep",
+                                                                arguments: ["30"],
+                                                                timeout: 0.4)) { error in
+            XCTAssertTrue("\(error)".contains("timed out"), "got \(error)")
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5,
+                          "the deadline must kill the child instead of waiting 30 s")
+    }
+
     func testCertificateAuthorityHandlesIPHosts() throws {
         let directory = try makeTempDirectory("ca-ip")
         defer { try? FileManager.default.removeItem(at: directory) }

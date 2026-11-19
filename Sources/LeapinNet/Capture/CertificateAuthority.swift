@@ -1,8 +1,34 @@
 import CryptoKit
+import Darwin
 import Foundation
 import Network
 import Security
 import LeapinCore
+
+/// One in-progress leaf generation that other handshakes for the same host wait on.
+/// `openssl` runs outside the cache lock, so this is what keeps two concurrent
+/// handshakes for one host from minting two certificates.
+private final class IdentitySlot: @unchecked Sendable {
+    // A condition, not a semaphore: every waiter for this host must observe the
+    // result, and a semaphore signal is consumed by exactly one of them.
+    private let condition = NSCondition()
+    private var stored: Result<sec_identity_t, Error>?
+
+    func finish(_ result: Result<sec_identity_t, Error>) {
+        condition.lock()
+        stored = result
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func wait() -> Result<sec_identity_t, Error> {
+        condition.lock()
+        while stored == nil { condition.wait() }
+        let result = stored ?? .failure(LeapinError.connectionFailed("leaf generation lost its result"))
+        condition.unlock()
+        return result
+    }
+}
 
 /// Generates (and caches) a root CA plus per-host leaf certificates with
 /// `/usr/bin/openssl`, then hands back `sec_identity_t` values for TLS
@@ -24,6 +50,11 @@ public final class CertificateAuthority: @unchecked Sendable {
     private var cachedP12Password: String?
     private let lock = NSLock()
     private var identityCache: [String: sec_identity_t] = [:]
+    /// Leaf generations in flight, keyed by host. Concurrent handshakes for one
+    /// host share a single `openssl` run instead of each minting its own cert.
+    private var pendingIdentities: [String: IdentitySlot] = [:]
+    /// Leaf certificate runs this process really performed (test aid).
+    private var generatedLeaves = 0
 
     /// PEM-encoded root certificate. UI installs this into the trust store.
     public var caCertificateURL: URL { caCertificatePath }
@@ -56,6 +87,25 @@ public final class CertificateAuthority: @unchecked Sendable {
         } else {
             LPLog.shared.debug("net.ca", "reusing root CA at \(caCertificatePath.path)")
         }
+
+        // The CA key can mint a certificate trusted by this machine for any host,
+        // so neither the key nor the directory may be readable by other accounts.
+        restrictPermissions()
+    }
+
+    /// Tightens the modes of the CA material. A mode we cannot set is never fatal:
+    /// HTTPS interception keeps working, and the next launch tries again.
+    private func restrictPermissions() {
+        Self.restrict(directory, mode: 0o700)
+        Self.restrict(leafRoot, mode: 0o700)
+        Self.restrict(caPrivateKeyPath, mode: 0o600)
+        Self.restrict(configPath, mode: 0o600)
+        Self.restrict(serialPath, mode: 0o600)
+    }
+
+    private static func restrict(_ url: URL, mode: Int) {
+        try? FileManager.default.setAttributes([.posixPermissions: mode],
+                                               ofItemAtPath: url.path)
     }
 
     // MARK: - Public API
@@ -73,18 +123,47 @@ public final class CertificateAuthority: @unchecked Sendable {
     }
 
     /// Returns a TLS server identity (certificate + private key) for `host`.
+    ///
+    /// Minting a leaf runs two RSA-2048 key generations, so it must never happen
+    /// under the cache lock: one slow host would otherwise queue every other
+    /// host's handshake behind it. The lock only claims the work; concurrent
+    /// callers for the same host wait on that host's slot and share the result.
     public func identity(for host: String) throws -> sec_identity_t {
         let key = host.lowercased()
         if let cached = lock.withLock({ identityCache[key] }) {
             return cached
         }
-        return try lock.withLock { () -> sec_identity_t in
-            if let cached = identityCache[key] { return cached }
-            let created = try loadOrCreateIdentity(for: key)
-            identityCache[key] = created
-            return created
+
+        let (slot, isOwner) = lock.withLock { () -> (IdentitySlot, Bool) in
+            if let running = pendingIdentities[key] { return (running, false) }
+            let fresh = IdentitySlot()
+            pendingIdentities[key] = fresh
+            return (fresh, true)
         }
+        // A handshake for a host that is already being minted waits for that run
+        // instead of starting a second one.
+        guard isOwner else { return try slot.wait().get() }
+
+        let outcome: Result<sec_identity_t, Error>
+        do {
+            let created = try loadOrCreateIdentity(for: key)
+            lock.withLock {
+                identityCache[key] = created
+                generatedLeaves += 1
+            }
+            outcome = .success(created)
+        } catch {
+            outcome = .failure(error)
+        }
+        slot.finish(outcome)
+        lock.withLock {
+            if pendingIdentities[key] === slot { pendingIdentities.removeValue(forKey: key) }
+        }
+        return try outcome.get()
     }
+
+    /// Leaf certificates this process really generated (imported cache hits excluded).
+    var leafGenerationCount: Int { lock.withLock { generatedLeaves } }
 
     public func leafCertificateURL(for host: String) -> URL {
         leafDirectory(for: host).appendingPathComponent("leaf.pem")
@@ -147,6 +226,8 @@ public final class CertificateAuthority: @unchecked Sendable {
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             try generateLeaf(for: host, in: dir)
+            Self.restrict(dir, mode: 0o700)
+            Self.restrict(dir.appendingPathComponent("leaf-private.pem"), mode: 0o600)
             if FileManager.default.fileExists(atPath: p12.path) {
                 _ = try? FileManager.default.removeItem(at: p12)
             }
@@ -250,39 +331,133 @@ public final class CertificateAuthority: @unchecked Sendable {
 
     @discardableResult
     private static func run(_ arguments: [String], workingDirectory: URL) throws -> String {
+        let result = try runProcess(executable: opensslPath, arguments: arguments,
+                                    workingDirectory: workingDirectory)
+        guard result.status == 0 else {
+            let message = result.stderrText.isEmpty
+                ? "exit \(result.status)" : result.stderrText
+            throw LeapinError.connectionFailed(
+                "openssl \(arguments.first ?? "") failed: \(message)")
+        }
+        return result.stdoutText
+    }
+
+    /// Output of one helper process run to completion, or killed at the deadline.
+    struct ProcessResult: Sendable {
+        var status: Int32
+        var stdout: Data
+        var stderr: Data
+
+        var stdoutText: String { String(decoding: stdout, as: UTF8.self) }
+        var stderrText: String {
+            String(decoding: stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
+    /// Runs a helper process with both pipes drained concurrently and a hard deadline.
+    ///
+    /// Both readers start before the child is asked to run, and each drains its own
+    /// pipe on its own thread. Reading stdout to EOF first — the previous
+    /// implementation — blocks forever the moment a child fills the 64 KB stderr
+    /// buffer, and waitUntilExit() then never returns. A deadline keeps a wedged
+    /// openssl from holding the handshake (and the CA) up indefinitely.
+    @discardableResult
+    static func runProcess(executable: String,
+                           arguments: [String],
+                           workingDirectory: URL? = nil,
+                           timeout: TimeInterval = 30,
+                           environment: [String: String]? = nil) throws -> ProcessResult {
         #if os(macOS)
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: opensslPath)
+        process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
-        process.currentDirectoryURL = workingDirectory
+        if let workingDirectory { process.currentDirectoryURL = workingDirectory }
+        if let environment {
+            var merged = ProcessInfo.processInfo.environment
+            for (key, value) in environment { merged[key] = value }
+            process.environment = merged
+        }
+        process.standardInput = FileHandle.nullDevice
+
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
+        let outBox = ByteBox()
+        let errBox = ByteBox()
+        let readers = DispatchGroup()
+        for (pipe, box) in [(stdoutPipe, outBox), (stderrPipe, errBox)] {
+            readers.enter()
+            DispatchQueue.global(qos: .userInitiated).async {
+                box.set(pipe.fileHandleForReading.readDataToEndOfFile())
+                readers.leave()
+            }
+        }
+
+        // Arm the exit signal before running, or a fast child can finish before the
+        // handler exists and the wait below would never be released.
+        let exitSignal = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exitSignal.signal() }
+
         do {
             try process.run()
         } catch {
-            throw LeapinError.connectionFailed("cannot launch openssl: \(error.localizedDescription)")
-        }
-
-        let outData = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-
-        let stderr = String(decoding: errData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard process.terminationStatus == 0 else {
-            let message = stderr.isEmpty ? "exit \(process.terminationStatus)" : stderr
+            try? stdoutPipe.fileHandleForWriting.close()
+            try? stderrPipe.fileHandleForWriting.close()
+            _ = readers.wait(timeout: .now() + 1)
             throw LeapinError.connectionFailed(
-                "openssl \(arguments.first ?? "") failed: \(message)")
+                "cannot launch \((executable as NSString).lastPathComponent): \(error.localizedDescription)")
         }
-        return String(decoding: outData, as: UTF8.self)
+        // Our own copies of the write ends would otherwise hold the pipes open.
+        try? stdoutPipe.fileHandleForWriting.close()
+        try? stderrPipe.fileHandleForWriting.close()
+
+        if exitSignal.wait(timeout: .now() + max(0.5, timeout)) == .timedOut {
+            process.terminate()
+            if exitSignal.wait(timeout: .now() + 1) == .timedOut {
+                kill(process.processIdentifier, SIGKILL)
+                _ = exitSignal.wait(timeout: .now() + 2)
+            }
+            _ = readers.wait(timeout: .now() + 2)
+            let tail = String(decoding: errBox.get(), as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            LPLog.shared.error("net.ca", "\((executable as NSString).lastPathComponent) timed out after \(timeout)s")
+            throw LeapinError.connectionFailed(
+                "openssl timed out after \(timeout)s\(tail.isEmpty ? "" : ": \(tail)")")
+        }
+
+        _ = readers.wait(timeout: .now() + 2)
+        // Reading terminationStatus while the child is alive raises an Objective-C
+        // exception Swift cannot catch; a child that outlived SIGKILL is a failure.
+        guard !process.isRunning else {
+            throw LeapinError.connectionFailed("openssl did not exit after SIGKILL")
+        }
+        return ProcessResult(status: process.terminationStatus,
+                             stdout: outBox.get(), stderr: errBox.get())
         #else
         // iOS cannot spawn helper processes, so on-device CA generation is unavailable.
         // The mobile client never decrypts TLS; it only talks to the desktop control plane.
+        _ = executable
         _ = arguments
         _ = workingDirectory
+        _ = timeout
+        _ = environment
         throw LeapinError.connectionFailed("certificate generation requires the macOS CLI (openssl is not spawnable on iOS)")
         #endif
+    }
+}
+
+/// Thread-safe byte accumulator for the two pipe reader threads.
+private final class ByteBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+
+    func set(_ value: Data) {
+        lock.withLock { data = value }
+    }
+
+    func get() -> Data {
+        lock.withLock { data }
     }
 }
