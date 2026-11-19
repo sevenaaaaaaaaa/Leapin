@@ -91,6 +91,9 @@ public final class CertificateAuthority: @unchecked Sendable {
         // The CA key can mint a certificate trusted by this machine for any host,
         // so neither the key nor the directory may be readable by other accounts.
         restrictPermissions()
+        // One leaf directory per host ever intercepted: browsing adds up forever
+        // unless something trims it.
+        Self.pruneLeaves(in: leafRoot)
     }
 
     /// Tightens the modes of the CA material. A mode we cannot set is never fatal:
@@ -106,6 +109,50 @@ public final class CertificateAuthority: @unchecked Sendable {
     private static func restrict(_ url: URL, mode: Int) {
         try? FileManager.default.setAttributes([.posixPermissions: mode],
                                                ofItemAtPath: url.path)
+    }
+
+    /// How many leaf directories stay on disk, and how long an unused one lives.
+    static let maxLeafDirectories = 256
+    static let leafLifetime: TimeInterval = 30 * 24 * 60 * 60
+
+    /// Deletes leaf directories that are past their lifetime or beyond the newest
+    /// kept entries. Leaf material is regenerateable from the CA, so the only cost
+    /// of a trim is one extra openssl run the next time that host shows up.
+    ///
+    /// A failure here is never fatal: interception keeps working with the leaves
+    /// that are already present.
+    @discardableResult
+    static func pruneLeaves(in leafRoot: URL,
+                            keep: Int = maxLeafDirectories,
+                            maxAge: TimeInterval = leafLifetime,
+                            now: Date = Date()) -> Int {
+        let manager = FileManager.default
+        guard let entries = try? manager.contentsOfDirectory(at: leafRoot,
+                                                             includingPropertiesForKeys: [.contentModificationDateKey],
+                                                             options: [.skipsHiddenFiles]) else { return 0 }
+
+        struct Leaf { let url: URL; let modified: Date }
+        var leaves: [Leaf] = []
+        leaves.reserveCapacity(entries.count)
+        for entry in entries {
+            var isDirectory: ObjCBool = false
+            guard manager.fileExists(atPath: entry.path, isDirectory: &isDirectory), isDirectory.boolValue else { continue }
+            let modified = (try? entry.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            leaves.append(Leaf(url: entry, modified: modified))
+        }
+        // Newest first: the ones kept are the ones a user is most likely to revisit.
+        leaves.sort { $0.modified > $1.modified }
+
+        var removed = 0
+        for (index, leaf) in leaves.enumerated() {
+            let expired = now.timeIntervalSince(leaf.modified) > maxAge
+            guard expired || index >= keep else { continue }
+            if (try? manager.removeItem(at: leaf.url)) != nil { removed += 1 }
+        }
+        if removed > 0 {
+            LPLog.shared.info("net.ca", "pruned \(removed) stale leaf certificate(s)")
+        }
+        return removed
     }
 
     // MARK: - Public API

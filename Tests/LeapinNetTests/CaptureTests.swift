@@ -124,6 +124,33 @@ final class CaptureTests: XCTestCase {
                           "the deadline must kill the child instead of waiting 30 s")
     }
 
+    /// Leaf directories accumulate one per host; the trim must bound them and let
+    /// expired material go without touching the CA itself.
+    func testLeafDirectoriesArePruned() throws {
+        let directory = try makeTempDirectory("ca-prune")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let ca = try CertificateAuthority(directory: directory)
+        for host in ["a.prune.test", "b.prune.test", "c.prune.test"] {
+            _ = try ca.identity(for: host)
+        }
+        let leafRoot = directory.appendingPathComponent("leaves", isDirectory: true)
+
+        // Kept budget: newest two survive, the third goes.
+        XCTAssertEqual(CertificateAuthority.pruneLeaves(in: leafRoot, keep: 2, maxAge: 3600), 1)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: leafRoot.path).count, 2)
+
+        // Lifetime: ageing them past 30 days removes the rest.
+        let old = Date().addingTimeInterval(-60 * 24 * 60 * 60)
+        for entry in try FileManager.default.contentsOfDirectory(at: leafRoot,
+                                                                 includingPropertiesForKeys: nil) {
+            try? FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: entry.path)
+        }
+        XCTAssertEqual(CertificateAuthority.pruneLeaves(in: leafRoot), 2)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: leafRoot.path).count, 0)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: ca.caCertificateURL.path),
+                      "pruning leaves must never touch the root CA")
+    }
+
     func testCertificateAuthorityHandlesIPHosts() throws {
         let directory = try makeTempDirectory("ca-ip")
         defer { try? FileManager.default.removeItem(at: directory) }
