@@ -77,15 +77,20 @@ public final class ProfileStore: @unchecked Sendable {
     private var activeURL: URL { root.appendingPathComponent("active.json") }
 
     public func list() -> [ProfileMeta] {
-        lock.withLock {
-            guard let files = try? fm.contentsOfDirectory(at: profilesDirectory, includingPropertiesForKeys: [.contentModificationDateKey]) else { return [] }
-            return files.filter { $0.pathExtension == "json" }.compactMap { url -> ProfileMeta? in
-                guard let data = try? Data(contentsOf: url),
-                      let profile = try? JSONDecoder.leapin.decode(Profile.self, from: data) else { return nil }
-                let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
-                return ProfileMeta(id: profile.id, name: profile.name, updatedAt: date, ruleCount: profile.rules.count)
-            }.sorted { $0.updatedAt > $1.updatedAt }
+        // Only the directory scan needs the lock. Decoding one profile per file is
+        // the expensive half, and holding the store lock through it made every save
+        // (and every import) wait behind a UI listing.
+        let urls: [URL] = lock.withLock {
+            (try? fm.contentsOfDirectory(at: profilesDirectory,
+                                         includingPropertiesForKeys: [.contentModificationDateKey]))?
+                .filter { $0.pathExtension == "json" } ?? []
         }
+        return urls.compactMap { url -> ProfileMeta? in
+            guard let data = try? Data(contentsOf: url),
+                  let profile = try? JSONDecoder.leapin.decode(Profile.self, from: data) else { return nil }
+            let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date()
+            return ProfileMeta(id: profile.id, name: profile.name, updatedAt: date, ruleCount: profile.rules.count)
+        }.sorted { $0.updatedAt > $1.updatedAt }
     }
 
     @discardableResult
