@@ -53,6 +53,9 @@ public final class CertificateAuthority: @unchecked Sendable {
     /// Leaf generations in flight, keyed by host. Concurrent handshakes for one
     /// host share a single `openssl` run instead of each minting its own cert.
     private var pendingIdentities: [String: IdentitySlot] = [:]
+    /// openssl keeps the leaf serial in one shared file, so the signing step must
+    /// not run twice at once. Key generation (the slow half) stays parallel.
+    private let signingLock = NSLock()
     /// Leaf certificate runs this process really performed (test aid).
     private var generatedLeaves = 0
 
@@ -327,16 +330,20 @@ public final class CertificateAuthority: @unchecked Sendable {
             "-config", configURL.path,
         ], workingDirectory: dir)
 
-        try Self.run([
-            "x509", "-req", "-in", csr.path, "-sha256", "-days", "825",
-            "-CA", caCertificatePath.path,
-            "-CAkey", caPrivateKeyPath.path,
-            "-CAserial", serialPath.path,
-            "-CAcreateserial",
-            "-extfile", configURL.path,
-            "-extensions", "leaf",
-            "-out", cert.path,
-        ], workingDirectory: dir)
+        // -CAserial/-CAcreateserial read and rewrite one shared counter file; two
+        // hosts signing at the same time can lose that race and fail the handshake.
+        try signingLock.withLock {
+            try Self.run([
+                "x509", "-req", "-in", csr.path, "-sha256", "-days", "825",
+                "-CA", caCertificatePath.path,
+                "-CAkey", caPrivateKeyPath.path,
+                "-CAserial", serialPath.path,
+                "-CAcreateserial",
+                "-extfile", configURL.path,
+                "-extensions", "leaf",
+                "-out", cert.path,
+            ], workingDirectory: dir)
+        }
     }
 
     private func importIdentity(p12: URL) throws -> sec_identity_t {
