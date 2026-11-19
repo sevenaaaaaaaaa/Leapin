@@ -412,6 +412,95 @@ final class DNSTests: XCTestCase {
         XCTAssertNil(DNSUpstream.parse("quic://1.1.1.1"))
     }
 
+    func testDNSServerServesSecondQueryFromCache() async throws {
+        let upstream = try await makeUpstream()
+        let resolver = makeResolver(upstream: upstream, cacheTTL: 300)
+        let (server, port) = try startServer(resolver: resolver, fakeIP: nil)
+        defer { server.stop() }
+
+        let first = try await ask(port: port, name: "repeat.test", id: 31)
+        XCTAssertEqual(first.resolvedAddresses, ["93.184.216.34"])
+        XCTAssertEqual(upstream.queryCount, 1)
+
+        let second = try await ask(port: port, name: "repeat.test", id: 32)
+        XCTAssertEqual(second.id, 32, "the replay must carry the new query id")
+        XCTAssertEqual(second.resolvedAddresses, ["93.184.216.34"])
+        XCTAssertEqual(upstream.queryCount, 1,
+                       "the local server must answer a repeated query from its cache")
+    }
+
+    func testConcurrentServerQueriesShareOneUpstreamQuery() async throws {
+        let upstream = try await makeUpstream()
+        let resolver = makeResolver(upstream: upstream, cacheTTL: 300)
+        let (server, port) = try startServer(resolver: resolver, fakeIP: nil)
+        defer { server.stop() }
+
+        let replies = await withTaskGroup(of: DNSMessage?.self) { group -> [DNSMessage?] in
+            for index in 0..<5 {
+                group.addTask {
+                    let query = DNSMessage.query("burst.test", type: .a, id: UInt16(100 + index))
+                    guard let raw = try? await DNSDatagram.exchange(host: "127.0.0.1",
+                                                                    port: port,
+                                                                    payload: query.encode(),
+                                                                    timeout: 3) else { return nil }
+                    return try? DNSMessage.decode(raw)
+                }
+            }
+            var collected: [DNSMessage?] = []
+            for await value in group { collected.append(value) }
+            return collected
+        }
+        XCTAssertEqual(replies.count, 5)
+        for reply in replies {
+            XCTAssertEqual(reply?.resolvedAddresses, ["93.184.216.34"])
+        }
+        XCTAssertEqual(upstream.queryCount, 1,
+                       "concurrent identical queries must share one upstream round trip")
+    }
+
+    /// DNS-03: one UDP socket per upstream endpoint, not one per query.
+    func testUpstreamUDPSocketIsReusedAcrossQueries() async throws {
+        let upstream = try await makeUpstream()
+        let resolver = DNSResolver(config: DNSConfig(mode: .doh,
+                                                      upstreams: ["udp://127.0.0.1:\(upstream.port)"],
+                                                      fallback: [],
+                                                      cacheTTL: 0),
+                                   blocker: nil)
+        for index in 0..<4 {
+            _ = try await resolver.resolve("reuse\(index).test")
+        }
+        let stats = await resolver.upstreamConnectionStats()
+        XCTAssertEqual(stats.udp, 1, "the second query must reuse the first query's socket")
+        XCTAssertEqual(upstream.queryCount, 4, "every query still reaches the upstream")
+        await resolver.closeUpstreams()
+    }
+
+    /// A pooled socket is shared, so concurrent queries must not steal each
+    /// other's answers: every one of them still has to come back with its own.
+    func testConcurrentQueriesShareOneSocketWithoutCrossTalk() async throws {
+        let upstream = try await makeUpstream()
+        let resolver = DNSResolver(config: DNSConfig(mode: .doh,
+                                                      upstreams: ["udp://127.0.0.1:\(upstream.port)"],
+                                                      fallback: [],
+                                                      cacheTTL: 0),
+                                   blocker: nil)
+        let answers = await withTaskGroup(of: Bool.self) { group -> [Bool] in
+            for index in 0..<8 {
+                group.addTask {
+                    let addresses = try? await resolver.resolve("concurrent\(index).test")
+                    return addresses?.first == "93.184.216.34"
+                }
+            }
+            var collected: [Bool] = []
+            for await ok in group { collected.append(ok) }
+            return collected
+        }
+        XCTAssertEqual(answers.filter { $0 }.count, 8, "every concurrent query must get an answer")
+        let stats = await resolver.upstreamConnectionStats()
+        XCTAssertEqual(stats.udp, 1, "eight concurrent queries still share one socket")
+        await resolver.closeUpstreams()
+    }
+
     // MARK: - Helpers
 
     private func makeUpstream() async throws -> FakeDNSServer {

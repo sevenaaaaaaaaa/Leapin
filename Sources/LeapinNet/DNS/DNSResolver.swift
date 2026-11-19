@@ -54,6 +54,14 @@ private struct DNSCacheEntry: Sendable {
     var expiresAt: Date
 }
 
+/// A whole upstream reply, keyed by name + record type. Keeping the answers lets
+/// the local DNS server replay TXT/MX/CNAME too, not just A/AAAA.
+private struct DNSRawReply: Sendable {
+    var rcode: UInt8
+    var answers: [DNSResourceRecord]
+    var expiresAt: Date
+}
+
 private actor ResolverState {
     private var cache: [String: DNSCacheEntry] = [:]
     private var inflight: [String: Task<[String], Error>] = [:]
@@ -83,8 +91,40 @@ private actor ResolverState {
         inflight.removeValue(forKey: key)
     }
 
+    // MARK: Raw replies (served to the local DNS server)
+
+    private var replies: [String: DNSRawReply] = [:]
+    private var inflightReplies: [String: Task<DNSMessage, Never>] = [:]
+
+    func cachedReply(_ key: String) -> DNSRawReply? {
+        guard let entry = replies[key] else { return nil }
+        if entry.expiresAt <= Date() {
+            replies.removeValue(forKey: key)
+            return nil
+        }
+        return entry
+    }
+
+    func storeReply(_ key: String, _ entry: DNSRawReply) {
+        replies[key] = entry
+    }
+
+    /// Atomically returns the in-flight upstream task for this key, or installs one.
+    func replyTaskOrInsert(_ key: String,
+                           make: @Sendable () -> Task<DNSMessage, Never>) -> (task: Task<DNSMessage, Never>, isNew: Bool) {
+        if let existing = inflightReplies[key] { return (existing, false) }
+        let task = make()
+        inflightReplies[key] = task
+        return (task, true)
+    }
+
+    func finishReply(_ key: String) {
+        inflightReplies.removeValue(forKey: key)
+    }
+
     func removeAll() {
         cache.removeAll()
+        replies.removeAll()
     }
 
     func count() -> Int { cache.count }
@@ -100,6 +140,8 @@ public final class DNSResolver: NameResolving, @unchecked Sendable {
     private let fallbacks: [DNSUpstream]
     private let hosts: [String: [String]]
     private let session: URLSession
+    /// One long-lived transport per upstream endpoint, reused across queries (DNS-03).
+    private let upstreamPool = DNSUpstreamPool()
     private let queue = DispatchQueue(label: "com.leapin.dns.resolver", attributes: .concurrent)
 
     public init(config: DNSConfig, blocker: DomainBlocking? = nil) {
@@ -391,6 +433,58 @@ public final class DNSResolver: NameResolving, @unchecked Sendable {
             return DNSMessage.reply(to: message, rcode: .noError, answers: records)
         }
 
+        let key = name.lowercased()
+        let replyKey = key + "|" + String(queryType.rawValue)
+        let caching = config.cacheTTL > 0
+
+        // Addresses already learned on the proxy path: answer A/AAAA from them.
+        if caching, queryType == .a || queryType == .aaaa, let entry = await state.cached(key) {
+            if entry.negative {
+                return DNSMessage.reply(to: message, rcode: .nameError)
+            }
+            let family = queryType == .a
+                ? entry.addresses.filter { NetAddress.ipv4Bytes($0) != nil }
+                : entry.addresses.filter { NetAddress.ipv6Bytes($0) != nil }
+            if !family.isEmpty {
+                let records = Self.records(name: name, type: queryType, addresses: family, ttl: 60)
+                return DNSMessage.reply(to: message, rcode: .noError, answers: records)
+            }
+        }
+
+        // Whole replies (TXT/MX/CNAME included) are cached per name and type, so a
+        // repeated query never reaches the upstream twice.
+        if caching, let cached = await state.cachedReply(replyKey) {
+            let rcode = DNSRCode(rawValue: cached.rcode) ?? .serverFailure
+            return DNSMessage.reply(to: message, rcode: rcode, answers: cached.answers)
+        }
+
+        // One upstream round trip serves every concurrent query for this name/type.
+        let (task, isNew) = await state.replyTaskOrInsert(replyKey) { [self] in
+            Task { await forward(message, name: name, queryType: queryType) }
+        }
+        let answer = await task.value
+        if isNew {
+            await state.finishReply(replyKey)
+            let replayable = answer.isSuccess || answer.rcode == DNSRCode.nameError.rawValue
+            if caching, replayable {
+                let lifetime = Self.replyLifetime(answer, cap: config.cacheTTL)
+                await state.storeReply(replyKey, DNSRawReply(rcode: answer.rcode,
+                                                            answers: answer.answers,
+                                                            expiresAt: Date().addingTimeInterval(lifetime)))
+                if queryType == .a || queryType == .aaaa {
+                    let addresses = queryType == .a ? answer.aRecords : answer.aaaaRecords
+                    if !addresses.isEmpty {
+                        await cache(key: key, addresses: addresses, ttl: answer.minimumTTL, negative: false)
+                    }
+                }
+            }
+        }
+        let rcode = DNSRCode(rawValue: answer.rcode) ?? .serverFailure
+        return DNSMessage.reply(to: message, rcode: rcode, answers: answer.answers)
+    }
+
+    /// Upstream forwarding for one question, shared by the single-flight task.
+    private func forward(_ message: DNSMessage, name: String, queryType: DNSRecordType) async -> DNSMessage {
         let chain = upstreams + fallbacks
         if config.mode == .system || chain.isEmpty {
             do {
@@ -416,6 +510,13 @@ public final class DNSResolver: NameResolving, @unchecked Sendable {
         return DNSMessage.reply(to: message, rcode: .serverFailure)
     }
 
+    /// How long a forwarded reply may be replayed: upstream TTL wins, then clamped.
+    static func replyLifetime(_ message: DNSMessage, cap: Int) -> TimeInterval {
+        let upstream = Double(message.minimumTTL)
+        let base = upstream > 0 ? upstream : 30
+        return min(max(base, 5), Double(max(cap, 30)))
+    }
+
     static func records(name: String, type: DNSRecordType, addresses: [String], ttl: UInt32) -> [DNSResourceRecord] {
         var out: [DNSResourceRecord] = []
         for address in addresses {
@@ -432,15 +533,32 @@ public final class DNSResolver: NameResolving, @unchecked Sendable {
 
     // MARK: Transports
 
+    /// Sends one payload through the pooled transport for this upstream.
+    ///
+    /// DoH goes through the shared URLSession, which already keeps its TLS
+    /// connection alive between requests; UDP and DoT keep one socket each.
     private func exchange(_ payload: Data, via upstream: DNSUpstream) async throws -> Data {
         switch upstream {
         case .doh(let url):
             return try await dohExchange(url: url, payload: payload)
         case .dot(let host, let port):
-            return try await doTExchange(host: host, port: port, payload: payload)
+            let connection = await upstreamPool.dot(host: host, port: port)
+            return try await connection.exchange(payload, timeout: 5)
         case .udp(let host, let port):
-            return try await udpExchange(host: host, port: port, payload: payload)
+            let connection = await upstreamPool.udp(host: host, port: port)
+            return try await connection.exchange(payload, timeout: 4)
         }
+    }
+
+    /// Sockets this resolver actually opened per upstream kind (test aid).
+    func upstreamConnectionStats() async -> (udp: Int, dot: Int) {
+        await upstreamPool.openedConnections()
+    }
+
+    /// Drops every pooled upstream socket. Safe to call at any time: the next
+    /// query opens a fresh transport.
+    public func closeUpstreams() async {
+        await upstreamPool.closeAll()
     }
 
     private func dohExchange(url: URL, payload: Data) async throws -> Data {
@@ -459,39 +577,6 @@ public final class DNSResolver: NameResolving, @unchecked Sendable {
             throw LeapinError.connectionFailed("doh \(url.host ?? "?"): empty body")
         }
         return data
-    }
-
-    private func doTExchange(host: String, port: UInt16, payload: Data) async throws -> Data {
-        let options = TLSFactory.clientOptions(serverName: host, alpn: ["dot"])
-        let params = NWParameters(tls: options, tcp: NWProtocolTCP.Options())
-        let connection = NWConnection(host: NWEndpoint.Host(host), port: NWEndpoint.Port(rawValue: port) ?? 853, using: params)
-        let socket = NetSocket(connection: connection, description: "dot:\(host):\(port)")
-        do {
-            try await socket.start(timeout: 5)
-            var framed = Data([UInt8(payload.count >> 8), UInt8(payload.count & 0xFF)])
-            framed.append(payload)
-            try await socket.write(framed)
-            let buffered = BufferedStream(socket)
-            let lengthData = try await buffered.readExactly(2)
-            guard lengthData.count == 2 else {
-                throw LeapinError.connectionFailed("dot \(host): short length prefix")
-            }
-            let bytes = Array(lengthData)
-            let length = Int(bytes[0]) << 8 | Int(bytes[1])
-            guard length > 0 else {
-                throw LeapinError.connectionFailed("dot \(host): empty response")
-            }
-            let body = try await buffered.readExactly(length)
-            socket.close()
-            return body
-        } catch {
-            socket.close()
-            throw error
-        }
-    }
-
-    private func udpExchange(host: String, port: UInt16, payload: Data) async throws -> Data {
-        try await DNSDatagram.exchange(host: host, port: port, payload: payload, timeout: 4)
     }
 
     // MARK: System resolver
