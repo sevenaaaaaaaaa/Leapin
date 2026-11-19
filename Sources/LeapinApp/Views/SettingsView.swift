@@ -354,8 +354,20 @@ struct SettingsView: View {
             p.dns = next.dns
         }
         if wasRunning {
-            Task { await engine.start() }
-            app.showToast("设置已保存，正在重启代理", kind: .info)
+            // Report what really happened. A failed restart must not be dressed up
+            // as "saved" while the proxy is actually down.
+            Task { @MainActor in
+                await engine.start()
+                if engine.state == .running {
+                    app.showToast("设置已保存，代理已重启", kind: .success)
+                } else {
+                    let reason = engine.lastError ?? "代理未能启动"
+                    app.showToast("设置已保存，但代理启动失败：\(reason)", kind: .error,
+                                  actionTitle: "重试") {
+                        Task { @MainActor in await engine.start() }
+                    }
+                }
+            }
         } else {
             app.showToast("设置已保存", kind: .success)
         }
