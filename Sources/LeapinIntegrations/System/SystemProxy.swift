@@ -47,8 +47,8 @@ public enum SystemProxy {
         try bridge { try await enableAsync(host: host, port: port, socksPort: socksPort) }
     }
 
-    public static func disable() throws {
-        try bridge { try await disableAsync() }
+    public static func disable(deadline: TimeInterval = 10) throws {
+        try bridge { try await disableAsync(deadline: deadline) }
     }
 
     public static func currentService() -> String? {
@@ -64,33 +64,35 @@ public enum SystemProxy {
 
     /// Reads the three proxy kinds for one service. Stops at the first enabled one,
     /// and costs one `networksetup` spawn per kind.
-    public static func statusAsync(service: String) async -> SystemProxyStatus {
+    public static func statusAsync(service: String, timeout: TimeInterval = 10) async -> SystemProxyStatus {
         for kind in ["webproxy", "securewebproxy", "socksfirewallproxy"] {
             guard let output = try? await CommandRunner.runAsync(executable: networksetup,
                                                                  arguments: ["-get\(kind)", service],
-                                                                 timeout: 10) else { continue }
+                                                                 timeout: min(10, max(0.2, timeout))) else { continue }
             let parsed = parseProxy(output.stdout)
             if parsed.enabled { return parsed }
         }
         return SystemProxyStatus(enabled: false)
     }
 
-    public static func enableAsync(host: String, port: Int, socksPort: Int) async throws {
+    public static func enableAsync(host: String, port: Int, socksPort: Int,
+                                   deadline: TimeInterval = 15) async throws {
         let host = host.trimmingCharacters(in: .whitespaces)
         guard host.isEmpty == false, (1...65535).contains(port), (1...65535).contains(socksPort) else {
             throw LeapinError.invalidConfiguration("invalid proxy host or port")
         }
         let service = try await resolveServiceAsync()
+        let budget = Budget(deadline)
         do {
-            try await runAsync(["-setwebproxy", service, host, String(port)])
-            try await runAsync(["-setsecurewebproxy", service, host, String(port)])
-            try await runAsync(["-setsocksfirewallproxy", service, host, String(socksPort)])
-            try await runAsync(["-setwebproxystate", service, "on"])
-            try await runAsync(["-setsecurewebproxystate", service, "on"])
-            try await runAsync(["-setsocksfirewallproxystate", service, "on"])
+            try await runAsync(["-setwebproxy", service, host, String(port)], timeout: budget.remaining)
+            try await runAsync(["-setsecurewebproxy", service, host, String(port)], timeout: budget.remaining)
+            try await runAsync(["-setsocksfirewallproxy", service, host, String(socksPort)], timeout: budget.remaining)
+            try await runAsync(["-setwebproxystate", service, "on"], timeout: budget.remaining)
+            try await runAsync(["-setsecurewebproxystate", service, "on"], timeout: budget.remaining)
+            try await runAsync(["-setsocksfirewallproxystate", service, "on"], timeout: budget.remaining)
             // networksetup can exit 0 while refusing the change (e.g. missing admin rights);
             // read the state back so the caller never believes a no-op succeeded.
-            let state = await statusAsync(service: service)
+            let state = await statusAsync(service: service, timeout: budget.remaining)
             guard state.enabled else {
                 throw LeapinError.connectionFailed("networksetup did not enable the proxy on \(service); administrator privileges may be required")
             }
@@ -103,16 +105,17 @@ public enum SystemProxy {
         LPLog.shared.info("integrations.proxy", "enabled \(host):\(port) (socks \(socksPort)) on \(service)")
     }
 
-    public static func disableAsync() async throws {
+    public static func disableAsync(deadline: TimeInterval = 10) async throws {
         let service = try await resolveServiceAsync()
-        try await disableAsync(service: service)
+        try await disableAsync(service: service, deadline: deadline)
     }
 
-    static func disableAsync(service: String) async throws {
-        try await runAsync(["-setwebproxystate", service, "off"])
-        try await runAsync(["-setsecurewebproxystate", service, "off"])
-        try await runAsync(["-setsocksfirewallproxystate", service, "off"])
-        let state = await statusAsync(service: service)
+    static func disableAsync(service: String, deadline: TimeInterval = 10) async throws {
+        let budget = Budget(deadline)
+        try await runAsync(["-setwebproxystate", service, "off"], timeout: budget.remaining)
+        try await runAsync(["-setsecurewebproxystate", service, "off"], timeout: budget.remaining)
+        try await runAsync(["-setsocksfirewallproxystate", service, "off"], timeout: budget.remaining)
+        let state = await statusAsync(service: service, timeout: budget.remaining)
         guard state.enabled == false else {
             throw LeapinError.connectionFailed("networksetup did not disable the proxy on \(service); administrator privileges may be required")
         }
@@ -238,8 +241,22 @@ public enum SystemProxy {
 
     // MARK: - Execution
 
-    static func runAsync(_ arguments: [String]) async throws {
-        try await CommandRunner.runCheckedAsync(executable: networksetup, arguments: arguments, timeout: 10)
+    static func runAsync(_ arguments: [String], timeout: TimeInterval = 10) async throws {
+        try await CommandRunner.runCheckedAsync(executable: networksetup, arguments: arguments,
+                                                timeout: min(10, max(0.2, timeout)))
+    }
+
+    /// A wall-clock budget shared by every command of one operation. Without it a
+    /// single wedged networksetup costs its full timeout, and "switch the proxy off
+    /// before quitting" can add up to a minute.
+    private struct Budget {
+        private let endsAt: Date
+
+        init(_ seconds: TimeInterval) {
+            endsAt = Date().addingTimeInterval(max(0.2, seconds))
+        }
+
+        var remaining: TimeInterval { max(0.2, endsAt.timeIntervalSinceNow) }
     }
 
     /// Runs the async implementation and blocks until it returns. Used by the CLI
