@@ -97,6 +97,12 @@ public enum CommandRunner {
             group.leave()
         }
 
+        // Exit is signalled by the process itself: polling with usleep() burns a
+        // core for the whole run of every shelled-out tool and made the caller
+        // (often the main thread) look hung.
+        let exitSignal = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in exitSignal.signal() }
+
         do {
             try process.run()
         } catch {
@@ -106,19 +112,15 @@ public enum CommandRunner {
             throw LeapinError.connectionFailed("failed to launch \(executable): \(error.localizedDescription)")
         }
 
-        let deadline = Date().addingTimeInterval(max(0.1, timeout))
-        while process.isRunning && Date() < deadline {
-            usleep(10_000) // 10 ms polls
-        }
-
         var timedOut = false
-        if process.isRunning {
+        if exitSignal.wait(timeout: .now() + max(0.1, timeout)) == .timedOut {
             timedOut = true
             LPLog.shared.warn("integrations.cmd", "\(executable) timed out after \(timeout)s, terminating")
             process.terminate()
-            let graceDeadline = Date().addingTimeInterval(0.5)
-            while process.isRunning && Date() < graceDeadline { usleep(10_000) }
-            if process.isRunning { kill(process.processIdentifier, SIGKILL) }
+            if exitSignal.wait(timeout: .now() + 0.5) == .timedOut {
+                kill(process.processIdentifier, SIGKILL)
+                _ = exitSignal.wait(timeout: .now() + 2)
+            }
         }
 
         // Readers see EOF once the child and our write ends are gone.
@@ -152,6 +154,49 @@ public enum CommandRunner {
                                   currentDirectory: URL? = nil) throws -> CommandOutput {
         let output = try run(executable: executable, arguments: arguments, timeout: timeout,
                              environment: environment, currentDirectory: currentDirectory)
+        if output.timedOut { throw LeapinError.timeout }
+        guard output.status == 0 else {
+            let name = (executable as NSString).lastPathComponent
+            throw LeapinError.connectionFailed("\(name) exited with \(output.status): \(output.tail())")
+        }
+        return output
+    }
+
+    // MARK: - Async API
+
+    /// Blocking waits run here, never on a caller's thread. It is concurrent so
+    /// two unrelated commands (a networksetup write and a status read) overlap.
+    private static let waitQueue = DispatchQueue(label: "com.leapin.commands",
+                                                 qos: .userInitiated,
+                                                 attributes: .concurrent)
+
+    /// Async form of `run`: same process, same deadline, but the waiting happens
+    /// off the caller's thread — a UI action never freezes while a tool runs.
+    @discardableResult
+    public static func runAsync(executable: String,
+                                arguments: [String],
+                                timeout: TimeInterval = defaultTimeout,
+                                environment: [String: String]? = nil,
+                                currentDirectory: URL? = nil) async throws -> CommandOutput {
+        try await withCheckedThrowingContinuation { continuation in
+            waitQueue.async {
+                continuation.resume(with: Result {
+                    try run(executable: executable, arguments: arguments, timeout: timeout,
+                            environment: environment, currentDirectory: currentDirectory)
+                })
+            }
+        }
+    }
+
+    /// Async form of `runChecked`.
+    @discardableResult
+    public static func runCheckedAsync(executable: String,
+                                       arguments: [String],
+                                       timeout: TimeInterval = defaultTimeout,
+                                       environment: [String: String]? = nil,
+                                       currentDirectory: URL? = nil) async throws -> CommandOutput {
+        let output = try await runAsync(executable: executable, arguments: arguments, timeout: timeout,
+                                        environment: environment, currentDirectory: currentDirectory)
         if output.timedOut { throw LeapinError.timeout }
         guard output.status == 0 else {
             let name = (executable as NSString).lastPathComponent

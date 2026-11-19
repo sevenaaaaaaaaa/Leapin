@@ -508,7 +508,7 @@ public final class LeapinEngine: ObservableObject {
             }
             if connectSystem || wasSystem {
                 lastError = nil
-                toggleSystemProxy(true)
+                await toggleSystemProxy(true)
                 guard lastError == nil, systemProxyActive else {
                     throw LeapinError.connectionFailed(lastError ?? "系统代理未接入")
                 }
@@ -521,7 +521,7 @@ public final class LeapinEngine: ObservableObject {
             executionKernel = previousSource?.kernel ?? .native
             store.activeProfileID = previous.id
             if wasRunning { await start() }
-            if wasSystem, state == .running { toggleSystemProxy(true) }
+            if wasSystem, state == .running { await toggleSystemProxy(true) }
             let restored = (!wasRunning || state == .running) && (!wasSystem || systemProxyActive)
             lastError = "\(failure)；\(restored ? "已恢复原配置" : "原配置恢复未完成，请检查连接状态")"
             throw LeapinError.connectionFailed(lastError!)
@@ -590,13 +590,15 @@ public final class LeapinEngine: ObservableObject {
 
     // MARK: - System proxy
 
-    public func toggleSystemProxy(_ enabled: Bool) {
+    /// Async on purpose: every networksetup call waits off the main thread, so a
+    /// slow or wedged tool can no longer freeze the window.
+    public func toggleSystemProxy(_ enabled: Bool) async {
         do {
             if enabled {
-                try enableSystemProxy()
+                try await enableSystemProxy()
                 systemProxyActive = true
             } else {
-                try SystemProxy.disable()
+                try await SystemProxy.disableAsync()
                 systemProxyActive = false
             }
         } catch {
@@ -610,7 +612,7 @@ public final class LeapinEngine: ObservableObject {
     /// The dedicated HTTP/SOCKS ports are best-effort (see `start()`), so writing
     /// `general.httpPort`/`general.socksPort` could aim the whole machine at a port
     /// that never came up. The mixed port speaks both protocols and is mandatory.
-    private func enableSystemProxy() throws {
+    private func enableSystemProxy() async throws {
         guard state == .running, let proxy, proxy.isRunning else {
             throw LeapinError.invalidConfiguration("代理尚未运行，无法开启系统代理")
         }
@@ -618,15 +620,15 @@ public final class LeapinEngine: ObservableObject {
         guard (1...65535).contains(port) else {
             throw LeapinError.invalidConfiguration("代理监听端口不可用（\(port)）")
         }
-        try SystemProxy.enable(host: "127.0.0.1", port: port, socksPort: port)
+        try await SystemProxy.enableAsync(host: "127.0.0.1", port: port, socksPort: port)
         LPLog.shared.info("system", "系统代理已指向 127.0.0.1:\(port)")
     }
 
     /// The bound mandatory listener; avoids probing an unbound optional port.
     public var diagnosticProxyPort: UInt16? { state == .running ? proxy?.listeningPort : nil }
 
-    public func refreshSystemProxyStatus() {
-        let status = SystemProxy.status()
+    public func refreshSystemProxyStatus() async {
+        let status = await SystemProxy.statusAsync()
         let port = Int(proxy?.listeningPort ?? profile.general.mixedPort)
         systemProxyActive = state == .running && status.enabled
             && ["127.0.0.1", "localhost"].contains(status.host) && status.port == port

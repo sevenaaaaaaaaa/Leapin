@@ -21,6 +21,11 @@ public struct SystemProxyStatus: Sendable, Hashable {
 ///
 /// Every call is bounded by a 10 s timeout, captures stderr and surfaces failures
 /// as `LeapinError`. `status()` never throws and never mutates anything.
+///
+/// The async API is the one to use from anything a user can see: each
+/// `networksetup` spawn waits off the caller's thread, so toggling the system
+/// proxy cannot freeze the window. The blocking wrappers exist for the CLI and for
+/// shutdown paths that cannot await; they bridge onto the same async code.
 public enum SystemProxy {
     static let networksetup = "/usr/sbin/networksetup"
     static let routeBinary = "/sbin/route"
@@ -28,60 +33,86 @@ public enum SystemProxy {
     /// Preference order when the default route interface cannot be mapped.
     static let preferredServices = ["Wi-Fi", "USB 10/100/1000 LAN", "Ethernet", "Thunderbolt Bridge"]
 
+    // MARK: - Blocking API
+
     public static func status() -> SystemProxyStatus {
-        guard let service = currentService() else { return SystemProxyStatus(enabled: false) }
-        return status(service: service)
+        (try? bridge { await statusAsync() }) ?? SystemProxyStatus(enabled: false)
     }
 
     public static func status(service: String) -> SystemProxyStatus {
+        (try? bridge { await statusAsync(service: service) }) ?? SystemProxyStatus(enabled: false)
+    }
+
+    public static func enable(host: String, port: Int, socksPort: Int) throws {
+        try bridge { try await enableAsync(host: host, port: port, socksPort: socksPort) }
+    }
+
+    public static func disable() throws {
+        try bridge { try await disableAsync() }
+    }
+
+    public static func currentService() -> String? {
+        (try? bridge { await currentServiceAsync() }) ?? nil
+    }
+
+    // MARK: - Async API
+
+    public static func statusAsync() async -> SystemProxyStatus {
+        guard let service = await currentServiceAsync() else { return SystemProxyStatus(enabled: false) }
+        return await statusAsync(service: service)
+    }
+
+    /// Reads the three proxy kinds for one service. Stops at the first enabled one,
+    /// and costs one `networksetup` spawn per kind.
+    public static func statusAsync(service: String) async -> SystemProxyStatus {
         for kind in ["webproxy", "securewebproxy", "socksfirewallproxy"] {
-            guard let output = try? CommandRunner.run(executable: networksetup,
-                                                      arguments: ["-get\(kind)", service],
-                                                      timeout: 10) else { continue }
+            guard let output = try? await CommandRunner.runAsync(executable: networksetup,
+                                                                 arguments: ["-get\(kind)", service],
+                                                                 timeout: 10) else { continue }
             let parsed = parseProxy(output.stdout)
             if parsed.enabled { return parsed }
         }
         return SystemProxyStatus(enabled: false)
     }
 
-    public static func enable(host: String, port: Int, socksPort: Int) throws {
+    public static func enableAsync(host: String, port: Int, socksPort: Int) async throws {
         let host = host.trimmingCharacters(in: .whitespaces)
         guard host.isEmpty == false, (1...65535).contains(port), (1...65535).contains(socksPort) else {
             throw LeapinError.invalidConfiguration("invalid proxy host or port")
         }
-        let service = try resolveService()
+        let service = try await resolveServiceAsync()
         do {
-            try run(["-setwebproxy", service, host, String(port)])
-            try run(["-setsecurewebproxy", service, host, String(port)])
-            try run(["-setsocksfirewallproxy", service, host, String(socksPort)])
-            try run(["-setwebproxystate", service, "on"])
-            try run(["-setsecurewebproxystate", service, "on"])
-            try run(["-setsocksfirewallproxystate", service, "on"])
+            try await runAsync(["-setwebproxy", service, host, String(port)])
+            try await runAsync(["-setsecurewebproxy", service, host, String(port)])
+            try await runAsync(["-setsocksfirewallproxy", service, host, String(socksPort)])
+            try await runAsync(["-setwebproxystate", service, "on"])
+            try await runAsync(["-setsecurewebproxystate", service, "on"])
+            try await runAsync(["-setsocksfirewallproxystate", service, "on"])
             // networksetup can exit 0 while refusing the change (e.g. missing admin rights);
             // read the state back so the caller never believes a no-op succeeded.
-            let state = status(service: service)
+            let state = await statusAsync(service: service)
             guard state.enabled else {
                 throw LeapinError.connectionFailed("networksetup did not enable the proxy on \(service); administrator privileges may be required")
             }
         } catch {
             // A half-applied setup (HTTP proxy on, SOCKS off, or a stale host) breaks
             // every app on the machine, so never leave one behind.
-            try? disable(service: service)
+            try? await disableAsync(service: service)
             throw error
         }
         LPLog.shared.info("integrations.proxy", "enabled \(host):\(port) (socks \(socksPort)) on \(service)")
     }
 
-    public static func disable() throws {
-        let service = try resolveService()
-        try disable(service: service)
+    public static func disableAsync() async throws {
+        let service = try await resolveServiceAsync()
+        try await disableAsync(service: service)
     }
 
-    private static func disable(service: String) throws {
-        try run(["-setwebproxystate", service, "off"])
-        try run(["-setsecurewebproxystate", service, "off"])
-        try run(["-setsocksfirewallproxystate", service, "off"])
-        let state = status(service: service)
+    static func disableAsync(service: String) async throws {
+        try await runAsync(["-setwebproxystate", service, "off"])
+        try await runAsync(["-setsecurewebproxystate", service, "off"])
+        try await runAsync(["-setsocksfirewallproxystate", service, "off"])
+        let state = await statusAsync(service: service)
         guard state.enabled == false else {
             throw LeapinError.connectionFailed("networksetup did not disable the proxy on \(service); administrator privileges may be required")
         }
@@ -92,14 +123,14 @@ public enum SystemProxy {
 
     /// The network service that owns the default route, falling back to the first
     /// enabled service and finally to a well-known name.
-    public static func currentService() -> String? {
-        let services = (try? CommandRunner.run(executable: networksetup,
-                                               arguments: ["-listallnetworkservices"],
-                                               timeout: 10)).map { parseServices($0.stdout) } ?? []
-        if let device = defaultRouteDevice(),
-           let order = (try? CommandRunner.run(executable: networksetup,
-                                               arguments: ["-listnetworkserviceorder"],
-                                               timeout: 10)).map({ parseServiceOrder($0.stdout) }),
+    public static func currentServiceAsync() async -> String? {
+        let services = (try? await CommandRunner.runAsync(executable: networksetup,
+                                                          arguments: ["-listallnetworkservices"],
+                                                          timeout: 10)).map { parseServices($0.stdout) } ?? []
+        if let device = await defaultRouteDeviceAsync(),
+           let order = (try? await CommandRunner.runAsync(executable: networksetup,
+                                                          arguments: ["-listnetworkserviceorder"],
+                                                          timeout: 10)).map({ parseServiceOrder($0.stdout) }),
            let match = order.first(where: { $0.device == device }) {
             return match.service
         }
@@ -109,20 +140,20 @@ public enum SystemProxy {
         return services.first
     }
 
-    static func resolveService() throws -> String {
+    static func resolveServiceAsync() async throws -> String {
         guard FileManager.default.isExecutableFile(atPath: networksetup) else {
             throw LeapinError.unsupported("\(networksetup) not found")
         }
-        guard let service = currentService() else {
+        guard let service = await currentServiceAsync() else {
             throw LeapinError.connectionFailed("no active network service found")
         }
         return service
     }
 
-    static func defaultRouteDevice() -> String? {
-        guard let output = try? CommandRunner.run(executable: routeBinary,
-                                                  arguments: ["-n", "get", "default"],
-                                                  timeout: 10) else { return nil }
+    static func defaultRouteDeviceAsync() async -> String? {
+        guard let output = try? await CommandRunner.runAsync(executable: routeBinary,
+                                                             arguments: ["-n", "get", "default"],
+                                                             timeout: 10) else { return nil }
         for line in output.stdout.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("interface:") {
@@ -207,7 +238,36 @@ public enum SystemProxy {
 
     // MARK: - Execution
 
-    static func run(_ arguments: [String]) throws {
-        try CommandRunner.runChecked(executable: networksetup, arguments: arguments, timeout: 10)
+    static func runAsync(_ arguments: [String]) async throws {
+        try await CommandRunner.runCheckedAsync(executable: networksetup, arguments: arguments, timeout: 10)
+    }
+
+    /// Runs the async implementation and blocks until it returns. Used by the CLI
+    /// and by shutdown paths that cannot await; the wait happens on this thread,
+    /// the work itself does not.
+    private static func bridge<T: Sendable>(_ body: @escaping @Sendable () async throws -> T) throws -> T {
+        let semaphore = DispatchSemaphore(value: 0)
+        let box = ResultBox<T>()
+        Task.detached(priority: .userInitiated) {
+            do { box.store(.success(try await body())) }
+            catch { box.store(.failure(error)) }
+            semaphore.signal()
+        }
+        semaphore.wait()
+        return try box.load()
+    }
+}
+
+/// Carries one result across the bridge above.
+private final class ResultBox<T: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var result: Result<T, Error>?
+
+    func store(_ value: Result<T, Error>) { lock.withLock { result = value } }
+
+    func load() throws -> T {
+        let stored = lock.withLock { result }
+        guard let stored else { throw LeapinError.connectionFailed("command bridge produced no result") }
+        return try stored.get()
     }
 }

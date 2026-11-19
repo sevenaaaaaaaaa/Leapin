@@ -141,7 +141,7 @@ private struct DashboardContent: View {
                 }
                 Spacer(minLength: 8)
                 Button(connected ? "暂停接管" : app.networkBusy ? "准备中…" : "连接网络") {
-                    if connected { app.pauseNetwork() } else { app.connectNetwork() }
+                    if connected { Task { await app.pauseNetwork() } } else { app.connectNetwork() }
                 }.buttonStyle(LPGhostButtonStyle()).disabled(app.networkBusy || app.engine.configurationBusy || model.state == .starting)
             }
             if let message = app.networkMessage {

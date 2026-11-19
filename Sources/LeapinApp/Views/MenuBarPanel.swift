@@ -289,7 +289,7 @@ struct MenuBarPanel: View {
                 Spacer()
                 LPSwitch(isOn: Binding(
                     get: { engine.systemProxyActive },
-                    set: { engine.toggleSystemProxy($0) }
+                    set: { on in Task { await engine.toggleSystemProxy(on) } }
                 ), width: 30)
             }
             HStack(spacing: 8) {

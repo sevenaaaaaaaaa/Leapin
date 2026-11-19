@@ -82,7 +82,7 @@ struct LeapinApp: App {
                 Button("启动 / 停止代理") { app.toggle() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])
                 Button(app.engine.systemProxyActive ? "关闭系统代理" : "开启系统代理") {
-                    app.engine.toggleSystemProxy(!app.engine.systemProxyActive)
+                    Task { await app.engine.toggleSystemProxy(!app.engine.systemProxyActive) }
                 }
                 .keyboardShortcut("y", modifiers: [.command, .shift])
             }
@@ -238,7 +238,7 @@ final class AppModel: ObservableObject {
         launchAtLogin = LaunchAtLogin.isEnabled
         autostartProxy = ProcessInfo.processInfo.environment["LEAPIN_AUTOSTART"] == "1"
             || UserDefaults.standard.bool(forKey: "autostartProxy")
-        engine.refreshSystemProxyStatus()
+        Task { await engine.refreshSystemProxyStatus() }
         if !UserDefaults.standard.bool(forKey: "lp.onboarded") {
             showOnboarding = true
         }
@@ -313,7 +313,7 @@ final class AppModel: ObservableObject {
             showPalette = true
         case "proxy":
             let on = parts.count > 1 ? parts[1] == "on" : !engine.systemProxyActive
-            engine.toggleSystemProxy(on)
+            Task { await engine.toggleSystemProxy(on) }
         case "capture":
             go(to: .capture)
         default:
@@ -339,7 +339,7 @@ final class AppModel: ObservableObject {
             engine.lastError = nil
             if engine.state != .running { await engine.start() }
             if engine.state == .running {
-                engine.toggleSystemProxy(true)
+                await engine.toggleSystemProxy(true)
             }
             networkFailed = engine.state != .running || !engine.systemProxyActive || engine.lastError != nil
             networkMessage = networkFailed
@@ -361,12 +361,12 @@ final class AppModel: ObservableObject {
         }) }
     }
 
-    func openCompanyResource(_ resource: CompanyResource) {
+    func openCompanyResource(_ resource: CompanyResource) async {
         guard let active = company.active, active.resources.contains(resource) else { return }
         do { try engine.refreshHomeRouting() }
         catch { company.notice(error.localizedDescription, failed: true); showCompany = true; return }
         if active.method.isProxy {
-            engine.refreshSystemProxyStatus()
+            await engine.refreshSystemProxyStatus()
             guard engine.state == .running, engine.systemProxyActive else {
                 company.notice("浏览器尚未通过 Leapin 使用内网代理。请先接入系统代理，或在目标 App 手动设置 Leapin 代理。", failed: true)
                 showCompany = true; return
@@ -389,10 +389,10 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func pauseNetwork() {
+    func pauseNetwork() async {
         guard !networkBusy, !engine.configurationBusy else { return }
         engine.lastError = nil
-        engine.toggleSystemProxy(false)
+        await engine.toggleSystemProxy(false)
         networkFailed = engine.systemProxyActive || engine.lastError != nil
         networkMessage = networkFailed
             ? "暂停失败：\(engine.lastError ?? "请重试")"
@@ -969,7 +969,9 @@ private struct PageHeaderBar: View {
                         .foregroundStyle(LP.textSecondary)
                     LPSwitch(isOn: Binding(
                         get: { engine.systemProxyActive },
-                        set: { if $0 { app.connectNetwork() } else { app.pauseNetwork() } }
+                        set: { on in
+                            if on { app.connectNetwork() } else { Task { await app.pauseNetwork() } }
+                        }
                     ), width: 30)
                     .disabled(app.networkBusy || engine.configurationBusy || engine.state == .starting)
                 }

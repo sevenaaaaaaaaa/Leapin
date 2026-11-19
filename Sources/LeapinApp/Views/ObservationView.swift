@@ -208,7 +208,7 @@ struct ObservationView: View {
             return NextStep(id: "proxy", icon: "network",
                             title: "代理已就绪，但系统流量还没经过它",
                             message: "开启系统代理后，浏览器与 App 的请求会自动走 127.0.0.1:\(engine.profile.general.mixedPort)。",
-                            actionTitle: "开启系统代理", action: { engine.toggleSystemProxy(true) })
+                            actionTitle: "开启系统代理", action: { Task { await engine.toggleSystemProxy(true) } })
         }
         if engine.state == EngineState.running, engine.flows.isEmpty {
             return NextStep(id: "verify", icon: "waveform.path.ecg",

@@ -70,7 +70,7 @@ struct CommandPalette: View {
             id: "system-proxy", title: engine.systemProxyActive ? "关闭系统代理" : "开启系统代理",
             subtitle: "写入网络服务的 HTTP/HTTPS/SOCKS 设置，可随时回滚",
             icon: "network", group: "操作", shortcut: "⌘⇧Y",
-            run: { engine.toggleSystemProxy(!engine.systemProxyActive) }))
+            run: { Task { await engine.toggleSystemProxy(!engine.systemProxyActive) } }))
 
         items.append(PaletteCommand(
             id: "adblock", title: engine.adblockActive ? "关闭去广告" : "开启去广告",

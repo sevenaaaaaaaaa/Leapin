@@ -219,7 +219,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func dockToggleSystemProxy() {
         let engine = LeapinEngine.shared
-        engine.toggleSystemProxy(!engine.systemProxyActive)
+        Task { await engine.toggleSystemProxy(!engine.systemProxyActive) }
     }
 
     @objc private func dockOpenSection(_ sender: NSMenuItem) {

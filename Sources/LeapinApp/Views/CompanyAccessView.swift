@@ -31,7 +31,7 @@ struct CompanyWidget: View {
                 Text(company.method.title).font(.system(size: 12)).foregroundStyle(LP.textSecondary)
                 ForEach(Array(company.resources.prefix(3))) { resource in
                     HStack {
-                        Button { app.openCompanyResource(resource) } label: {
+                        Button { Task { await app.openCompanyResource(resource) } } label: {
                             Label(resource.title, systemImage: "arrow.up.right.square").lineLimit(1)
                         }.buttonStyle(.plain).font(.system(size: 12))
                         Spacer()
@@ -195,7 +195,7 @@ struct CompanyAccessView: View {
                         if activeDraft, model.active?.resources.contains(resource) == true {
                             Button(model.checking == resource.id ? "检查中…" : "检查") { check(resource) }
                                 .buttonStyle(LPGhostButtonStyle()).disabled(model.checking != nil || unavailable)
-                            Button("打开") { app.openCompanyResource(resource) }.buttonStyle(LPGhostButtonStyle()).disabled(unavailable)
+                            Button("打开") { Task { await app.openCompanyResource(resource) } }.buttonStyle(LPGhostButtonStyle()).disabled(unavailable)
                         }
                     }
                     if let report = model.reports[resource.id], report.companyID == model.active?.id {
