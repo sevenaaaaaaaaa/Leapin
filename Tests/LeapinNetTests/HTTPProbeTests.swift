@@ -30,6 +30,10 @@ final class HTTPProbeTests: XCTestCase {
         private let queue = DispatchQueue(label: "test.http-probe-server")
         private let lock = NSLock()
         private var connections: [NWConnection] = []
+        /// Connections the responder deliberately left silent. They must outlive
+        /// `serve`, or deallocation closes them and the client reads EOF instead of
+        /// timing out — which is what the timeout test is measuring.
+        private var silentSockets: [NetSocket] = []
         private let responder: @Sendable (String) -> Response?
 
         private init(listener: NWListener, responder: @escaping @Sendable (String) -> Response?) {
@@ -54,7 +58,10 @@ final class HTTPProbeTests: XCTestCase {
                 try await socket.start(timeout: 5)
                 let request = try await socket.read(maxLength: 16 * 1024)
                 let target = request.flatMap(Self.requestTarget) ?? "/"
-                guard let response = responder(target) else { return }
+                guard let response = responder(target) else {
+                    lock.withLock { silentSockets.append(socket) }
+                    return
+                }
                 try await socket.write(Self.serialize(response))
                 socket.close()
             } catch {
@@ -86,6 +93,12 @@ final class HTTPProbeTests: XCTestCase {
         func stop() {
             listener.cancel()
             for connection in lock.withLock({ connections }) { connection.cancel() }
+            let silent = lock.withLock { () -> [NetSocket] in
+                let sockets = silentSockets
+                silentSockets.removeAll()
+                return sockets
+            }
+            for socket in silent { socket.close() }
             lock.withLock { connections.removeAll() }
         }
     }
