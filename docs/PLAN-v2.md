@@ -50,7 +50,7 @@ P1 交互 + P2 入口（同属 App 层，lead 串行，避免并行改同一批�
 - [x] `RuleEngine.match()` 免 trace 快路径（`decide` 由 `match` 组合），规则 0/1k/10k/100k 装载 + 判定 21/26/89/725ms
 - [x] 连接表 / 流事件 / 抓包存储硬上限与淘汰；UI 16ms 批量 flush，不再单条 flow 全量重绘
 - [x] 数字入 `docs/VERIFICATION.md §5`
-- [ ] `RuleEngine` 域名后缀 Trie（POL-02）：**未做**，需重排「最小下标优先」裁决顺序，属结构性改动；10 万规则下单次 28ms 仍可接受（真实配置 < 2k 条 → 282µs）
+- [x] `RuleEngine` 域名后缀 Trie（POL-02）：**已落码**（`RuleIndex`：反转标签 Trie + Aho-Corasick + IP 前缀 Trie，候选集升序保持「最小下标优先」）。2026-11-19 release 实测 10 万规则装载 68.4ms、`decide` p95 0.004ms（`LEAPIN_PERF=1 swift test -c release --filter RuleIndexPerf`）
 
 ## P5 稳定性提升 ✅
 

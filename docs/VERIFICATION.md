@@ -450,9 +450,11 @@ v1.1 变更：`stop()` 与 App 退出时**先回滚系统代理**再关监听（
 | DNS 冷 / 热 | 39 ms / 17 ms，缓存一致性 same |
 | SIGINT 退出 | 进程退出 ok，端口释放 yes |
 
-仍未做（已写入 docs/audit-runtime.md §7「仍未修」）：`RuleEngine.decide` 仍是 O(规则数)，
-10 万规则下单次判定 28 ms；POL-02（后缀反转标签 Trie）需要重排「最小下标优先」的裁决顺序，
-属结构性改动，本轮不做。真实家用配置通常 < 2k 条，该档 p50 282µs 不构成瓶颈。
+> **2026-11-19 更正**：上面这段「仍未做 POL-02」已经不成立。`RuleIndex`（反转标签 Trie +
+> Aho-Corasick + IP 前缀 Trie）已经在 `RuleEngine.match()` 里，候选集升序求值保持「最小下标优先」。
+> 同日 release 实测（`LEAPIN_PERF=1 swift test -c release --filter RuleIndexPerf`，10 万条）：
+> 装载 68.4 ms，`decide` p50 0.002 ms / p95 0.004 ms / p99 0.006 ms。表格里 28.3 ms 那行是索引落地
+> 之前的 debug 数字，保留作对照。
 
 ## 6. 稳定性（scripts/stress.sh）
 

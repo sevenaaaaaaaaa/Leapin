@@ -43,10 +43,13 @@ LEAPIN_BENCH_SKIP_BUILD=1 bash scripts/stress.sh
 | 10 000 | 2 875.1 µs | 3 182.5 µs | 2 911.7 µs | 3 223.8 µs |
 | 100 000 | 28 264.6 µs | 28 995.7 µs | 28 499.3 µs | 29 198.6 µs |
 
-结论：`decide` 仍是**严格 O(规则数)**（≈2.8 µs/条，debug；release 约快 2-4 倍但仍线性）。
-10 万条规则时单次连接判定 28 ms，直接跑在 Swift 并发协作线程池上，会同时拖慢所有隧道。
-本轮 P4 对这条路径只做了 `explain` 的 trace 字符串消除（不再为每条规则拼字符串），**未建索引**。
-后续建议：domain/domainSuffix 规则建反转标签 Trie（同 AdBlockEngine 做法），用「命中规则的最小下标」保序；regex/CIDR/process/geoip 规则单独线性扫，两者取最小 index，语义等价。
+> **2026-11-19 更正**：上表是 2026-11-05 的测量，当时命中路径还走线性扫描。此后 `RuleIndex`
+> （反转标签 Trie + Aho-Corasick + IP 前缀 Trie）已经落进 `RuleEngine.match()`，`decide` 只按候选集
+> 升序求值，仍是「最小下标优先」的 first-match 语义（`useIndex:false` 的线性实现留作对拍）。
+>
+> 同日实测（`LEAPIN_PERF=1 swift test -c release --filter RuleIndexPerf`，10 万条混合规则）：
+> 装载 **68.4 ms**，`decide` **p50 0.002 ms / p95 0.004 ms / p99 0.006 ms**。上表的 28 ms 属于被索引
+> 取代的历史数字，保留在此只为对照。
 
 ## 2. AdBlock
 

@@ -401,14 +401,20 @@ echo "总计失败项: $fails"; exit "$fails"
 | RT-04 | 已修 | Sources/LeapinRuntime/LeapinEngine.swift `EngineSink`/`applyBuffered`/`trim`/`resetRecordings()` | 每事件入队（无 Task），16 ms 或 4096 条批量 flush 到 MainActor；flows/captures/logs 滞后裁剪；`sink.reset()` 现在真正清空 flows/captures/stats |
 | INT-02 | 已修 | Sources/LeapinIntegrations/Support/CommandRunner.swift `run()` 尾部 | 只在 `!process.isRunning` 时读 `terminationStatus`，否则 `-1` + error 日志，消除对运行中 Process 取值抛 ObjC 异常 |
 | INT-03 | 已修 | Sources/LeapinIntegrations/NAS/NASMounter.swift `makeMountPoint(share:)` | 拒绝空/`.`/`..`/含 `..` 段；`standardizedFileURL` 后校验父目录等于挂载根，错误文案 "escapes the mount root" |
+| POL-02 | 已修 | Sources/LeapinPolicy/Rules/RuleIndex.swift（反转标签 Trie + Aho-Corasick + IP 前缀 Trie）、RuleEngine.match() | 后缀 Trie 其实在 2026-11-10 的改名提交里就落码了，`docs/perf.md` 的「严格 O(规则数)」是 11-05 的旧测量。本轮实测：10 万规则 decide p50 0.002 ms / p95 0.004 ms、索引构建 68.4 ms（release，`LEAPIN_PERF=1 swift test --filter RuleIndexPerf`）。「最小下标优先」由候选集升序去重保证，`useIndex:false` 仍保留线性扫描做对拍（RuleIndexDifferentialTests） |
+| DNS-02 | 已修 | Sources/LeapinNet/DNS/DNSResolver.swift `respond(to:)` + ResolverState 的 replies/inflightReplies | 本地 DNS 服务先查地址缓存与整包应答缓存（TXT/MX/CNAME 也能重放），并发同名/同类型查询走单飞；命中即不再打上游 |
+| DNS-03 | 已修 | Sources/LeapinNet/DNS/DNSUpstreamPool.swift + DNSResolver.exchange | 每个 upstream 只建一条长连接：UDP/DoT 各一个 actor，查询在该 actor 内串行化；UDP 按报文 id 丢弃超时残留应答，DoT 复用 socket、空闲 60 s 后重连，DoH 走共享 URLSession。testUpstreamUDPSocketIsReusedAcrossQueries：4 次查询只开 1 个 socket |
+| CA-01 | 已修 | Sources/LeapinNet/Capture/CertificateAuthority.swift `identity(for:)` / `runProcess` | 锁只负责「认领/等待」，openssl 在锁外跑；同 host 并发握手共享一次生成（IdentitySlot 用 NSCondition 广播，信号量会被一个 waiter 吃掉）。`runProcess` 并发排空 stdout/stderr，30 s 超时 terminate→SIGKILL，错误带 stderr 尾部 |
+| INT-01 | 已修 | Sources/LeapinIntegrations/Support/CommandRunner.swift、System/SystemProxy.swift | 忙等改 terminationHandler + 信号量；新增 runAsync/runCheckedAsync（专用并发队列）。SystemProxy 改为 async 核心（enable/disable/status/currentService），engine 与 UI 全部 await，CLI 与退出路径用 ResultBox 桥；UI 不再被 9 次 networksetup 串行压住 |
 | RT-06 | 部分缓解 | FakeIPPool `allowLocalEndpointReuse` + DNS 失败不阻塞启动 | stop→start 的 DNS 端口竞态已消；`ProxyServer.stop()` 仍不等 `.cancelled`，切配置的 mixed 端口竞态未彻底解决 |
 
-### 仍未修（下一轮，按优先级）
+### 仍未修（2026-11-19 复核后，按优先级）
 
-1. POL-02：RuleEngine 无后缀 Trie —— 实测 `decide` 线性：1k 282 µs / 10k 2.88 ms / 100k 28.3 ms（debug p50，见 docs/perf.md）。
-2. DNS-02：`DNSResolver.respond(to:)` 不查缓存、不单飞，本地 DNS 服务每个查询直打上游。
-3. CA-01 / CA-02：`identity(for:)` 仍持锁跑 openssl；openssl 管道无超时；CA 目录/私钥权限与 leaf 目录清理。
-4. INT-01 / INT-04：CommandRunner 仍线程内 usleep 忙等；SSHSession teardown 忙等；SystemProxy 一次 enable 最坏 9 次阻塞 spawn 仍在 MainActor 调用链上。
-5. RT-02 / RT-05 / RT-07：退出时同步 disable、启动期同步加载规则/AdBlock、HAR 在 UI 线程全量序列化。
-6. NET-02 / NET-03 / NET-05 / NET-07 ~ NET-12、DNS-03 / DNS-04、RT-08、INT-05 / INT-06：连接数上限、Bytes 缓冲 O(n²)、SS 读路径 salt/nonce、Happy Eyeballs、MITM 上游复用/编码、LocalTLSServer 每连接 listener、FakeIP 分配 O(n)、ProfileStore 锁内 IO 等。
+POL-02 / DNS-02 / DNS-03 / CA-01 / INT-01 已在 2026-11-19 这一轮落地（见上表新增行），下面只剩真没做的：
+
+1. CA-02：CA 目录/私钥权限已补（0700/0600），leaf 目录的清理与旧 CA 迁移仍无。
+2. INT-04：`SSHSession` teardown 仍在调用线程忙等。
+3. RT-02：退出路径仍是同步 `disable`（现在只是不再忙等，最长等待由 CommandRunner 的 10 s 超时界定，主线程仍会被占用一次）。
+4. RT-05 / RT-07：启动期同步加载规则/AdBlock、HAR 在 UI 线程全量序列化。
+5. NET-02 / NET-03 / NET-05 / NET-07 ~ NET-12、DNS-04、RT-08、INT-05 / INT-06：连接数上限、Bytes 缓冲 O(n²)、SS 读路径 salt/nonce、Happy Eyeballs、MITM 上游复用/编码、LocalTLSServer 每连接 listener、FakeIP 分配 O(n)、ProfileStore 锁内 IO 等。
 
