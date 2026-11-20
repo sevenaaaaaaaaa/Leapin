@@ -82,35 +82,40 @@ private struct DashboardContent: View {
                     Spacer()
                     Text("⌘K 查找更多工具").font(.system(size: 12)).foregroundStyle(LP.textSecondary)
                 }
-                LazyVGrid(columns: columns, spacing: 16) {
-                    CompanyWidget(model: app.company)
-                    widget("开发与 Agent", icon: "curlybraces", note: "终端、App 分流与服务器") {
-                        HStack(spacing: 8) {
-                            Button("复制终端代理") { copyTerminal() }.buttonStyle(LPGhostButtonStyle())
-                            Button("App 分流") { app.go(to: .learn) }.buttonStyle(LPGhostButtonStyle())
-                        }
-                        textAction("连接服务器", icon: "terminal") { app.go(to: .ssh) }
+                VStack(alignment: .leading, spacing: 10) {
+                    VStack(spacing: 0) {
+                        dashRow("开发与 Agent", icon: "curlybraces", note: "终端、App 分流与服务器",
+                                actions: [("复制终端代理", { copyTerminal() }),
+                                          ("App 分流", { app.go(to: .learn) }),
+                                          ("连接服务器", { app.go(to: .ssh) })])
+                        Divider().overlay(LP.stroke)
+                        dashRow("HTTPS 调试通道", icon: "curlybraces.square", note: "mitmproxy 解密 · Mihomo 出站",
+                                actions: [("调试一个网站", { app.networkToolPage = 1; app.showNetworkTools = true })])
+                        Divider().overlay(LP.stroke)
+                        dashRow("网站与网络体检", icon: "stethoscope", note: "检查目标、解释分流与连接异常",
+                                actions: [("粘贴 URL 检查", { inspectClipboard() }),
+                                          ("打开排障", { app.go(to: .diagnostics) })])
+                        Divider().overlay(LP.stroke)
+                        dashRow("保护与调试", icon: "lock.shield", note: "广告过滤、抓包与隐私检查",
+                                actions: [("过滤与例外", { app.go(to: .adblock) }),
+                                          ("抓包", { app.go(to: .capture) }),
+                                          ("隐私审计", { app.go(to: .privacy) })])
                     }
-                    HomeWidget(home: app.home)
-                    widget("HTTPS 调试通道", icon: "curlybraces.square", note: "mitmproxy 解密 · Mihomo 出站") {
-                        Button("调试一个网站") { app.networkToolPage = 1; app.showNetworkTools = true }.buttonStyle(LPGhostButtonStyle())
-                        Text("独立入口，限定网站，保留证书校验。").font(.system(size: 12)).foregroundStyle(LP.textTertiary)
-                    }
-                    widget("网站与网络体检", icon: "stethoscope", note: "检查目标、解释分流与连接异常") {
-                        HStack(spacing: 8) {
-                            Button("粘贴 URL 检查") { inspectClipboard() }.buttonStyle(LPGhostButtonStyle())
-                            Button("打开排障") { app.go(to: .diagnostics) }.buttonStyle(LPGhostButtonStyle())
-                        }
-                        textAction("连接明细与流量", icon: "waveform.path") { app.go(to: .activity) }
-                    }
-                    widget("保护与调试", icon: "lock.shield", note: "广告过滤、抓包与隐私检查") {
-                        HStack(spacing: 8) {
-                            Button("过滤与例外") { app.go(to: .adblock) }.buttonStyle(LPGhostButtonStyle())
-                            Button("抓包") { app.go(to: .capture) }.buttonStyle(LPGhostButtonStyle())
-                        }
-                        textAction("隐私审计", icon: "checkmark.shield") { app.go(to: .privacy) }
-                    }
+                    .background(LP.panel, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(LP.stroke.opacity(0.5), lineWidth: 0.5))
                 }
+
+                if windowWidth >= 900 {
+                    HStack(alignment: .top, spacing: 18) {
+                        CompanyWidget(model: app.company)
+                        HomeWidget(home: app.home)
+                    }
+                } else {
+                    CompanyWidget(model: app.company)
+                    HomeWidget(home: app.home)
+                }
+
                 HStack(spacing: 12) {
                     Image(systemName: "cpu").foregroundStyle(LP.textSecondary)
                     Text("\(model.kernel.title) · \(model.profile.name)")
@@ -240,6 +245,30 @@ private struct DashboardContent: View {
         .padding(18).frame(maxWidth: .infinity, minHeight: 176, alignment: .topLeading)
         .background(LP.text.opacity(0.025), in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(LP.stroke))
+    }
+
+    /// One row of the 随手可用 list: icon, title, note and its actions.
+    private func dashRow(_ title: String, icon: String, note: String,
+                         actions: [(String, () -> Void)]) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(LP.textSecondary)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(LP.text)
+                Text(note).font(.system(size: 11)).foregroundStyle(LP.textTertiary)
+            }
+            Spacer(minLength: 8)
+            ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
+                Button(action.0) { action.1() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12))
+                    .foregroundStyle(LP.accent)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
     }
     private func textAction(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {

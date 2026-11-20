@@ -101,14 +101,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         FloatingPanelController.shared.restoreIfNeeded()
 
         #if DEBUG
-        if let path = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_SETTINGS"] {
+        if let spec = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_VIEW"],
+           let path = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_PATH"] {
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(800))
+                if ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_APPEARANCE"] == "light" {
+                    NSApp.appearance = NSAppearance(named: .aqua)
+                }
+                let model = AppModel()
+                let content: AnyView
+                switch spec {
+                case "dashboard": content = AnyView(DashboardView().environmentObject(model))
+                case "settings": content = AnyView(SettingsView().environmentObject(model))
+                default: content = AnyView(Text("unknown view: \(spec)"))
+                }
                 let host = NSHostingView(rootView:
-                    SettingsView().environmentObject(AppModel()).frame(width: 1100, height: 820))
-                host.frame = NSRect(x: 0, y: 0, width: 1100, height: 820)
+                    content.frame(width: 1160, height: 860)
+                        .background(Color(nsColor: .windowBackgroundColor)))
+                host.frame = NSRect(x: 0, y: 0, width: 1160, height: 860)
                 host.layoutSubtreeIfNeeded()
-                try? await Task.sleep(for: .milliseconds(400))
+                try? await Task.sleep(for: .milliseconds(500))
                 if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
                     host.cacheDisplay(in: host.bounds, to: rep)
                     try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
