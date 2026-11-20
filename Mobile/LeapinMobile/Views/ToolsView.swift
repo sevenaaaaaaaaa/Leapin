@@ -36,130 +36,124 @@ struct ToolsView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
-                    MacLinkCard()
+                VStack(alignment: .leading, spacing: 22) {
+                    LPSection(header: "本机", footer: localProxy.lastCheck ?? "代理在本机监听回环端口；系统接管需要付费开发者账号的 network-extension 权限。") {
+                        LPListRow(title: "代理",
+                                  subtitle: localProxy.isRunning ? "127.0.0.1:" + String(localProxy.port) : "未启动") {
+                            Toggle("", isOn: Binding(
+                                get: { localProxy.isRunning },
+                                set: { on in if on { localProxy.start() } else { localProxy.stop() } }
+                            ))
+                            .labelsHidden()
+                            .tint(LP.accent)
+                        }
 
-                    LPCard(title: "本机引擎", subtitle: "手机自己跑，不依赖 Mac") {
-                        VStack(spacing: 10) {
-                            engineRow(title: "代理",
-                                      detail: localProxy.isRunning ? "127.0.0.1:\(localProxy.port)" : "未启动",
-                                      active: localProxy.isRunning,
-                                      action: localProxy.isRunning ? "停止" : "启动") {
-                                if localProxy.isRunning { localProxy.stop() } else { localProxy.start() }
-                            }
-
-                            Divider().overlay(LP.stroke)
-
-                            engineRow(title: "系统接管",
-                                      detail: tunnel.statusText,
-                                      active: tunnel.status == .connected,
-                                      action: tunnel.status == .connected ? "停止"
-                                          : (tunnel.isInstalled ? "启动" : "安装")) {
-                                if tunnel.status == .connected {
-                                    tunnel.stop()
-                                } else {
-                                    Task { await tunnel.start() }
+                        LPListRow(title: "系统接管",
+                                  subtitle: tunnel.lastError ?? (tunnel.isInstalled ? nil : "需要 network-extension 权限"),
+                                  value: nil, isLast: true) {
+                            Toggle("", isOn: Binding(
+                                get: { tunnel.status == .connected },
+                                set: { on in
+                                    if on { Task { await tunnel.start() } } else { tunnel.stop() }
                                 }
-                            }
-
-                            if let error = localProxy.lastError ?? tunnel.lastError {
-                                Text(error)
-                                    .font(LPFont.micro)
-                                    .foregroundStyle(LP.danger)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            if let check = localProxy.lastCheck {
-                                Text(check)
-                                    .font(LPFont.micro)
-                                    .foregroundStyle(check.contains("失败") ? LP.danger : LP.textTertiary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
+                            ))
+                            .labelsHidden()
+                            .tint(LP.accent)
                         }
                     }
 
-                    LPCard(title: "本机网络", subtitle: "不需要连接 Mac") {
-                        VStack(spacing: 7) {
-                            LPRow(key: "局域网地址", value: localAddress ?? "读取中…", mono: true)
-                            LPRow(key: "公网出口", value: publicAddress ?? (loadingPublic ? "查询中…" : "未获取"),
-                                  mono: true)
-                            if let publicError {
-                                Text(publicError).font(.system(size: 11)).foregroundStyle(LP.danger)
+                    LPSection(header: "网络") {
+                        LPListRow(title: "局域网地址", value: localAddress ?? "读取中…", mono: true)
+                        LPListRow(title: "公网出口",
+                                  value: publicAddress ?? (loadingPublic ? "查询中…" : "未获取"),
+                                  mono: true, isLast: publicError == nil) {
+                            Button(loadingPublic ? "…" : "刷新") {
+                                Task { await loadPublicAddress() }
                             }
+                            .font(.system(size: 15))
+                            .foregroundStyle(LP.accent)
+                            .buttonStyle(.plain)
+                            .disabled(loadingPublic)
                         }
-                        Button {
-                            Task { await loadPublicAddress() }
-                        } label: {
-                            Text(loadingPublic ? "查询中…" : "刷新公网地址")
-                                .font(.system(size: 12, weight: .medium))
+                        if let publicError {
+                            LPListRow(title: publicError, isLast: true) { EmptyView() }
                         }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(LP.accent)
-                        .disabled(loadingPublic)
                     }
 
-                    LPCard(title: "DNS 解析", subtitle: "直接在本机解析，不经 Mac") {
-                        field(text: $host, placeholder: "example.com", keyboard: .URL)
-                        actionButton(title: "解析", busy: checkingDNS) {
-                            Task { await resolve() }
-                        }
-                        if let dnsError {
-                            Text(dnsError).font(.system(size: 11)).foregroundStyle(LP.danger)
+                    LPSection(header: "DNS 解析", footer: dnsFooter) {
+                        LPListRow(title: "域名", isLast: dnsResult.isEmpty) {
+                            TextField("example.com", text: $host)
+                                .font(.system(size: 15, design: .monospaced))
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .keyboardType(.URL)
+                                .multilineTextAlignment(.trailing)
+                            Button(checkingDNS ? "…" : "解析") { Task { await resolve() } }
+                                .font(.system(size: 15))
+                                .foregroundStyle(LP.accent)
+                                .buttonStyle(.plain)
+                                .disabled(checkingDNS)
                         }
                         if !dnsResult.isEmpty {
-                            VStack(alignment: .leading, spacing: 3) {
-                                if let dnsElapsed {
-                                    Text(String(format: "%.0f ms · %d 条", dnsElapsed * 1000, dnsResult.count))
-                                        .font(.system(size: 10))
-                                        .foregroundStyle(LP.textTertiary)
-                                }
-                                ForEach(dnsResult, id: \.self) { ip in
-                                    Text(ip).font(.system(size: 11, design: .monospaced))
-                                        .foregroundStyle(LP.textSecondary)
-                                }
+                            ForEach(Array(dnsResult.enumerated()), id: \.offset) { index, ip in
+                                LPListRow(title: ip, mono: true,
+                                          isLast: index == dnsResult.count - 1) { EmptyView() }
                             }
                         }
                     }
 
-                    LPCard(title: "HTTP 探测", subtitle: "从手机直接发请求") {
-                        field(text: $url, placeholder: "https://…", keyboard: .URL)
-                        actionButton(title: "探测", busy: probing) {
-                            Task { await probe() }
-                        }
-                        if let probeError {
-                            Text(probeError).font(.system(size: 11)).foregroundStyle(LP.danger)
+                    LPSection(header: "HTTP 探测", footer: probeFooter) {
+                        LPListRow(title: "地址", isLast: probeStatus == nil) {
+                            TextField("https://…", text: $url)
+                                .font(.system(size: 15, design: .monospaced))
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .keyboardType(.URL)
+                                .multilineTextAlignment(.trailing)
+                            Button(probing ? "…" : "探测") { Task { await probe() } }
+                                .font(.system(size: 15))
+                                .foregroundStyle(LP.accent)
+                                .buttonStyle(.plain)
+                                .disabled(probing)
                         }
                         if let probeStatus {
-                            HStack(spacing: 8) {
-                                LPPill(text: "\(probeStatus)",
-                                       tint: (200..<400).contains(probeStatus) ? LP.mint : LP.amber,
-                                       filled: true)
-                                if let probeElapsed {
-                                    Text(String(format: "%.0f ms", probeElapsed * 1000))
-                                        .font(.system(size: 11))
-                                        .foregroundStyle(LP.textTertiary)
-                                }
-                            }
+                            LPListRow(title: "结果",
+                                      value: probeElapsed.map { String(format: "%d · %.0f ms", probeStatus, $0 * 1000) }
+                                        ?? "\(probeStatus)",
+                                      mono: true, isLast: true) { EmptyView() }
                         }
                     }
 
-                    Text("需要查看 Mac 的分流、连接与抓包时，再在下方连接一次即可。工具页始终可用。")
-                        .font(.system(size: 11))
-                        .foregroundStyle(LP.textTertiary)
-                        .padding(.horizontal, 2)
+                    if store.endpoint == nil {
+                        LPSection(header: "Mac", footer: "控制台页可以从 Mac 读取分流、连接与抓包；工具不依赖它。") {
+                            LPListRow(title: "连接 Mac", showsChevron: true, isLast: true) {
+                                EmptyView()
+                            }
+                            .onTapGesture { store.pairingSheetShown = true }
+                        }
+                    }
                 }
-                .lpPage()
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
             }
-            .background(LP.canvas)
+            .background(LP.groupedBackground)
             .contentMargins(.bottom, 84, for: .scrollContent)
             .navigationTitle("工具")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .task {
                 localAddress = Self.wifiAddress()
                 if publicAddress == nil { await loadPublicAddress() }
             }
         }
     }
+
+    private var dnsFooter: String? {
+        guard let dnsElapsed else { return dnsError }
+        return String(format: "%.0f ms · %d 条", dnsElapsed * 1000, dnsResult.count)
+    }
+
+    private var probeFooter: String? { probeError }
 
     // MARK: - Pieces
 

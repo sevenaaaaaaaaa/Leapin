@@ -231,3 +231,102 @@ enum LPFormat {
         return "\(Int(seconds / 3600)) 小时前"
     }
 }
+
+// MARK: - System-native list primitives
+
+extension LP {
+    /// Grouped-list surfaces, matching iOS Settings and Safari rather than a
+    /// custom card grid: one inset rounded block per section, hairline separators,
+    /// no borders or shadows.
+    static let groupedBackground = adaptive(light: 0xF2F1EC, dark: 0x000000)
+    static let groupedRow = adaptive(light: 0xFFFFFF, dark: 0x1C1C1E)
+    static let separator = adaptive(light: 0x16150F, dark: 0xFFFFFF, lightAlpha: 0.10, darkAlpha: 0.12)
+}
+
+/// One inset group of rows with an optional header and footer.
+struct LPSection<Content: View>: View {
+    var header: String?
+    var footer: String?
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            if let header {
+                Text(header)
+                    .font(.system(size: 13))
+                    .foregroundStyle(LP.textSecondary)
+                    .padding(.horizontal, 16)
+            }
+            VStack(spacing: 0) { content }
+                .background(LP.groupedRow, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            if let footer {
+                Text(footer)
+                    .font(.system(size: 12))
+                    .foregroundStyle(LP.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16)
+            }
+        }
+    }
+}
+
+/// A single row: title, optional subtitle, optional value, optional chevron.
+/// Trailing content is a view so a row can end in a switch, a spinner or a link.
+struct LPListRow<Trailing: View>: View {
+    var title: String
+    var subtitle: String?
+    var value: String?
+    var mono = false
+    var showsChevron = false
+    var isLast = false
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 15))
+                        .foregroundStyle(LP.text)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 12))
+                            .foregroundStyle(LP.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer(minLength: 8)
+                if let value {
+                    Text(value)
+                        .font(mono ? LPFont.mono(13) : .system(size: 14))
+                        .foregroundStyle(LP.textSecondary)
+                        .lineLimit(1)
+                }
+                trailing
+                if showsChevron {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(LP.textTertiary.opacity(0.6))
+                }
+            }
+            .padding(.horizontal, 16)
+            .frame(minHeight: 46)
+            .padding(.vertical, 4)
+
+            if !isLast {
+                Rectangle()
+                    .fill(LP.separator)
+                    .frame(height: 0.5)
+                    .padding(.leading, 16)
+            }
+        }
+    }
+}
+
+extension LPListRow where Trailing == EmptyView {
+    init(title: String, subtitle: String? = nil, value: String? = nil,
+         mono: Bool = false, showsChevron: Bool = false, isLast: Bool = false) {
+        self.init(title: title, subtitle: subtitle, value: value, mono: mono,
+                  showsChevron: showsChevron, isLast: isLast) { EmptyView() }
+    }
+}
