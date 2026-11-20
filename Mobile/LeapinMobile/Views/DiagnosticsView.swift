@@ -58,6 +58,7 @@ struct DiagnosticsView: View {
                 .lpPage()
             }
             .background(LP.canvas)
+            .contentMargins(.bottom, 84, for: .scrollContent)
             .navigationTitle("诊断")
             .navigationBarTitleDisplayMode(.inline)
             .scrollDismissesKeyboard(.interactively)

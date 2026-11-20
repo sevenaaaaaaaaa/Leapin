@@ -26,6 +26,7 @@ struct PoliciesView: View {
                         .lpPage()
                     }
                     .background(LP.canvas)
+            .contentMargins(.bottom, 84, for: .scrollContent)
                 }
             }
             .navigationTitle("策略")

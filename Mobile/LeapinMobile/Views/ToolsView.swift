@@ -39,61 +39,45 @@ struct ToolsView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     MacLinkCard()
 
-                    LPCard(title: "本机代理引擎", subtitle: "在手机上直接跑 Leapin 的代理，不经过 Mac") {
-                        VStack(spacing: 8) {
-                            LPRow(key: "状态", value: localProxy.isRunning ? "运行中 · 127.0.0.1:\(localProxy.port)" : "未启动",
-                                  mono: localProxy.isRunning)
-                            if let error = localProxy.lastError {
-                                Text(error).font(.system(size: 11)).foregroundStyle(LP.danger)
-                            }
-                            if let check = localProxy.lastCheck {
-                                Text(check)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(check.contains("失败") ? LP.danger : LP.textSecondary)
-                            }
-                        }
-                        HStack(spacing: 10) {
-                            actionButton(title: localProxy.isRunning ? "停止" : "启动", busy: false) {
+                    LPCard(title: "本机引擎", subtitle: "手机自己跑，不依赖 Mac") {
+                        VStack(spacing: 10) {
+                            engineRow(title: "代理",
+                                      detail: localProxy.isRunning ? "127.0.0.1:\(localProxy.port)" : "未启动",
+                                      active: localProxy.isRunning,
+                                      action: localProxy.isRunning ? "停止" : "启动") {
                                 if localProxy.isRunning { localProxy.stop() } else { localProxy.start() }
                             }
-                            if localProxy.isRunning {
-                                actionButton(title: localProxy.isChecking ? "测试中…" : "经代理访问 example.com",
-                                             busy: localProxy.isChecking) {
-                                    Task { await localProxy.selfCheck() }
+
+                            Divider().overlay(LP.stroke)
+
+                            engineRow(title: "系统接管",
+                                      detail: tunnel.statusText,
+                                      active: tunnel.status == .connected,
+                                      action: tunnel.status == .connected ? "停止"
+                                          : (tunnel.isInstalled ? "启动" : "安装")) {
+                                if tunnel.status == .connected {
+                                    tunnel.stop()
+                                } else {
+                                    Task { await tunnel.start() }
                                 }
                             }
-                        }
-                        Text("这条路径就是未来 VPN 扩展要接进同一个引擎：现在是手机自己监听 127.0.0.1，下一步由系统把流量导进来。")
-                            .font(.system(size: 10))
-                            .foregroundStyle(LP.textTertiary)
-                    }
 
-
-                    LPCard(title: "系统接管（VPN 扩展）", subtitle: "让整机流量进入同一个引擎") {
-                        VStack(spacing: 8) {
-                            LPRow(key: "状态", value: tunnel.statusText, mono: true)
-                            if let error = tunnel.lastError {
+                            if let error = localProxy.lastError ?? tunnel.lastError {
                                 Text(error)
                                     .font(LPFont.micro)
                                     .foregroundStyle(LP.danger)
                                     .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            HStack(spacing: 10) {
-                                if tunnel.status == .connected {
-                                    actionButton(title: "停止接管", busy: false) { tunnel.stop() }
-                                } else {
-                                    actionButton(title: tunnel.isInstalled ? "启动接管" : "安装并启动",
-                                                 busy: tunnel.isBusy) {
-                                        Task { await tunnel.start() }
-                                    }
-                                }
+                            if let check = localProxy.lastCheck {
+                                Text(check)
+                                    .font(LPFont.micro)
+                                    .foregroundStyle(check.contains("失败") ? LP.danger : LP.textTertiary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            Text("这一层需要付费开发者账号的 network-extension entitlement；免费签名会在这里直接报错。包内已带 LeapinTunnel 扩展。")
-                                .font(LPFont.micro)
-                                .foregroundStyle(LP.textTertiary)
-                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
+
                     LPCard(title: "本机网络", subtitle: "不需要连接 Mac") {
                         VStack(spacing: 7) {
                             LPRow(key: "局域网地址", value: localAddress ?? "读取中…", mono: true)
@@ -167,6 +151,7 @@ struct ToolsView: View {
                 .lpPage()
             }
             .background(LP.canvas)
+            .contentMargins(.bottom, 84, for: .scrollContent)
             .navigationTitle("工具")
             .navigationBarTitleDisplayMode(.inline)
             .task {
@@ -191,6 +176,32 @@ struct ToolsView: View {
                 RoundedRectangle(cornerRadius: LP.radiusSmall, style: .continuous)
                     .strokeBorder(LP.stroke, lineWidth: 1)
             )
+    }
+
+
+    /// One capability line: state dot, name, detail, and a quiet text action.
+    /// Two big cards with two big buttons made the page feel like a control panel
+    /// with no priority; this keeps the same facts in half the space.
+    @ViewBuilder
+    private func engineRow(title: String, detail: String, active: Bool,
+                           action: String, perform: @escaping () -> Void) -> some View {
+        HStack(spacing: 9) {
+            Circle()
+                .fill(active ? LP.mint : LP.textTertiary.opacity(0.45))
+                .frame(width: 7, height: 7)
+            Text(title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(LP.text)
+            Text(detail)
+                .font(LPFont.mono(11))
+                .foregroundStyle(active ? LP.mint : LP.textTertiary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Button(action) { perform() }
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(LP.accent)
+                .buttonStyle(.plain)
+        }
     }
 
     private func actionButton(title: String, busy: Bool, action: @escaping () -> Void) -> some View {

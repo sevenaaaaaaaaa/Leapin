@@ -22,6 +22,7 @@ struct DashboardView: View {
                 .lpPage()
             }
             .background(LP.canvas)
+            .contentMargins(.bottom, 84, for: .scrollContent)
             .refreshable { await store.refresh() }
             .navigationTitle("总览")
             .navigationBarTitleDisplayMode(.inline)
