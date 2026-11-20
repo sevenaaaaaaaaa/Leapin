@@ -6,16 +6,16 @@ cd "$(dirname "$0")/.."
 CONFIG="${1:-release}"
 APP="dist/Leapin.app"
 
-# Whole-module optimization is not just a speed knob here: with one compilation
-# unit per file, release builds on some toolchains emit a cross-file specialization
-# the linker then cannot find (the 1.13.6/1.13.7 CI failures). WMO compiles the
-# module as one unit, so every specialization it needs exists.
-WMO=()
-[ "${CONFIG}" = "release" ] && WMO=(-Xswiftc -whole-module-optimization)
+# Xcode 26.6 / Swift 6.3.3 emits a function-signature specialization of
+# SOCKS5.encodeReply that its own linker then cannot find (1.13.6, 1.13.7 and
+# 1.13.8 all died on it; Xcode 27 links the same tree fine). Turning that pass off
+# costs a small constant-folding win and removes the whole class of failure.
+FSO=()
+[ "${CONFIG}" = "release" ] && FSO=(-Xswiftc -Xllvm -Xswiftc -sil-disable-pass=FunctionSignatureOpts)
 
 echo "==> swift build -c ${CONFIG}"
-swift build -c "${CONFIG}" --product LeapinApp "${WMO[@]}"
-swift build -c "${CONFIG}" --product leapin "${WMO[@]}"
+swift build -c "${CONFIG}" --product LeapinApp "${FSO[@]}"
+swift build -c "${CONFIG}" --product leapin "${FSO[@]}"
 BIN="$(swift build -c "${CONFIG}" --show-bin-path)"
 
 echo "==> assemble ${APP}"
