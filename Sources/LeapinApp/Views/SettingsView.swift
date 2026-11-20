@@ -33,32 +33,17 @@ struct SettingsView: View {
     var body: some View {
         Form {
             VStack(spacing: 16) {
-                if windowWidth >= 1000 {
-                    HStack(alignment: .top, spacing: 16) {
-                        VStack(spacing: 16) {
-                            proxySection
-                            dnsSection
-                        }
-                        VStack(spacing: 16) {
-                            pairingSection
-                            launchSection
-                            captureSection
-                            advancedSection
-                        }
-                    }
-                } else {
-                    // 窄窗（900pt 附近）单列：两列会把端口、DNS 上游挤成中间截断。
-                    VStack(spacing: 16) {
-                        proxySection
-                        dnsSection
-                        pairingSection
-                        launchSection
-                        captureSection
-                        advancedSection
-                    }
-                    .frame(maxWidth: 620)
+                VStack(spacing: 18) {
+                    proxySection
+                    dnsSection
+                    pairingSection
+                    launchSection
+                    captureSection
+                    advancedSection
+                    saveBar
                 }
-                saveBar
+                .frame(maxWidth: 720, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .center)
             }
             .frame(maxWidth: .infinity)
             .pagePadding()

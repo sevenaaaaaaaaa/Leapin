@@ -128,12 +128,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     content.frame(width: 1160, height: 860)
                         .background(Color(nsColor: .windowBackgroundColor)))
                 host.frame = NSRect(x: 0, y: 0, width: 1160, height: 860)
+                // Pages that size themselves from the window (settings' columns,
+                // activity's chart) render blank in a bare hosting view, so give
+                // the snapshot a real offscreen window to lay out inside.
+                let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 1160, height: 860),
+                                      styleMask: [.titled], backing: .buffered, defer: false)
+                window.appearance = NSAppearance(named: .aqua)
+                window.contentView = host
+                window.orderFrontRegardless()
                 host.layoutSubtreeIfNeeded()
-                try? await Task.sleep(for: .milliseconds(500))
+                try? await Task.sleep(for: .milliseconds(700))
+                host.layoutSubtreeIfNeeded()
                 if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
                     host.cacheDisplay(in: host.bounds, to: rep)
                     try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
                 }
+                window.orderOut(nil)
                 NSApp.terminate(nil)
             }
         }

@@ -222,10 +222,12 @@ extension View {
 
     /// Standard page container: generous margins, one readable measure.
     func lpPage() -> some View {
-        self.frame(maxWidth: 1180, alignment: .leading)
+        // One measure for every page: a narrower column than before (1180 read
+        // as a dashboard wall on a 1440 screen) and the insets System Settings uses.
+        self.frame(maxWidth: 1080, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .top)
-            .padding(.horizontal, 32)
-            .padding(.vertical, 24)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 22)
     }
 
     /// Hover feedback for interactive cards/rows. Subtle: 1pt lift, not a bounce.
