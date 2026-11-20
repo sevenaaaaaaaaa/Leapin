@@ -13,6 +13,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     private let log = OSLog(subsystem: "app.leapin.mobile.tunnel", category: "tunnel")
     private var relay: TunTCPRelay?
+    private var udpRelay: TunUDPRelay?
     private var engine: ProxyServer?
     private var enginePort: UInt16 = 0
     private var counters = (read: 0, written: 0)
@@ -48,6 +49,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 self?.write(packet)
             }
             self.relay = relay
+
+            let udp = TunUDPRelay()
+            udp.emit = { [weak self] packet in
+                self?.write(packet)
+            }
+            udp.start()
+            self.udpRelay = udp
             self.readPackets()
             completionHandler(nil)
         }
@@ -56,6 +64,8 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
     override func stopTunnel(with reason: NEProviderStopReason,
                              completionHandler: @escaping () -> Void) {
         relay = nil
+        udpRelay?.stop()
+        udpRelay = nil
         engine?.stop()
         engine = nil
         completionHandler()
@@ -84,7 +94,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             guard let self else { return }
             self.counters.read += packets.count
             for packet in packets {
-                self.relay?.handle(packet: packet)
+                switch packet.count > 9 ? packet[packet.startIndex + 9] : 0 {
+                case 6: self.relay?.handle(packet: packet)
+                case 17: self.udpRelay?.handle(packet: packet)
+                default: break
+                }
             }
             self.readPackets()
         }

@@ -58,6 +58,7 @@ class LeapinVpnService : VpnService() {
     private var tun: ParcelFileDescriptor? = null
     private var thread: Thread? = null
     private var relay: TunTcpRelay? = null
+    private var udpRelay: TunUdpRelay? = null
     private var output: FileOutputStream? = null
     @Volatile private var running = false
 
@@ -118,6 +119,16 @@ class LeapinVpnService : VpnService() {
                     }
             }
 
+            val udp = TunUdpRelay()
+            udp.emit = { packet ->
+                try {
+                    output?.write(packet)
+                } catch (_: Throwable) {
+                }
+            }
+            udp.start()
+            udpRelay = udp
+
             notifyForeground(fullTunnel)
             val worker = Thread { loop(descriptor) }.apply { isDaemon = true; name = "leapin-vpn" }
             thread = worker
@@ -137,7 +148,16 @@ class LeapinVpnService : VpnService() {
             try {
                 val protocol = if (length > 9) buffer[9].toInt() and 0xFF else -1
                 when (protocol) {
-                    17 -> handleDnsQuery(buffer, length)
+                    17 -> {
+                        // Port 53 keeps its own path so the card can show what it
+                        // answered; every other datagram is relayed as a flow.
+                        val destinationPort = if (length > 24) {
+                            ((buffer[headerOffset(buffer, length) + 2].toInt() and 0xFF) shl 8) or
+                                (buffer[headerOffset(buffer, length) + 3].toInt() and 0xFF)
+                        } else 0
+                        if (destinationPort == 53) handleDnsQuery(buffer, length)
+                        else udpRelay?.handle(buffer, length)
+                    }
                     6 -> relay?.handle(buffer, length)
                     else -> Unit
                 }
@@ -145,6 +165,12 @@ class LeapinVpnService : VpnService() {
                 // A malformed packet is dropped; the tunnel keeps running.
             }
         }
+    }
+
+    private fun headerOffset(packet: ByteArray, length: Int): Int {
+        if (length < 20) return 20
+        val headerLength = (packet[0].toInt() and 0x0F) * 4
+        return if (headerLength in 20..length) headerLength else 20
     }
 
     /** IPv4 + UDP only, destination port 53. Everything else is ignored. */
@@ -272,6 +298,8 @@ class LeapinVpnService : VpnService() {
         isFullTunnel = false
         thread?.interrupt()
         thread = null
+        udpRelay?.stop()
+        udpRelay = null
         relay = null
         try { output?.close() } catch (_: Throwable) {}
         output = null
