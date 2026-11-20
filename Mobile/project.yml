@@ -33,6 +33,11 @@ targets:
         INFOPLIST_FILE: LeapinTunnel/Info.plist
         CODE_SIGN_ENTITLEMENTS: LeapinTunnel/LeapinTunnel.entitlements
         SKIP_INSTALL: YES
+    dependencies:
+      - package: Leapin
+        product: LeapinCore
+      - package: Leapin
+        product: LeapinNet
 
   LeapinMobile:
     type: application

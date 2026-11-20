@@ -1,26 +1,34 @@
 import Foundation
 import NetworkExtension
 import os.log
+import LeapinCore
+import LeapinNet
 
-/// The packet tunnel that will carry the phone's traffic into the same engine the
-/// app already runs.
+/// The packet tunnel: TUN packets are terminated by TunTCPRelay and carried into the
+/// same engine the app runs, over SOCKS5 on loopback.
 ///
-/// Milestone M2: this starts, configures the virtual interface, reports status, and
-/// counts packets. Turning those packets into proxy connections needs a userspace
-/// TCP/IP stack (tun2socks), which is the next step — it is not faked here.
-/// Loading any NetworkExtension requires a paid team id with the
-/// network-extension entitlement; a free Apple ID cannot sign this bundle.
+/// Loading a NetworkExtension requires a paid team id with the network-extension
+/// entitlement; a free Apple ID cannot sign this bundle, and the app says so.
 final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     private let log = OSLog(subsystem: "app.leapin.mobile.tunnel", category: "tunnel")
+    private var relay: TunTCPRelay?
+    private var engine: ProxyServer?
+    private var enginePort: UInt16 = 0
     private var counters = (read: 0, written: 0)
-    private let queue = DispatchQueue(label: "app.leapin.tunnel.io")
 
     override func startTunnel(options: [String: NSObject]?,
                               completionHandler: @escaping (Error?) -> Void) {
+        do {
+            try startEngine()
+        } catch {
+            os_log("engine failed: %{public}@", log: log, type: .error, String(describing: error))
+            completionHandler(error)
+            return
+        }
+
         let settings = NEPacketTunnelNetworkSettings(tunnelRemoteAddress: "10.7.0.1")
         settings.mtu = 1500
-
         let ipv4 = NEIPv4Settings(addresses: ["10.7.0.2"], subnetMasks: ["255.255.255.0"])
         ipv4.includedRoutes = [NEIPv4Route.default()]
         settings.ipv4Settings = ipv4
@@ -33,6 +41,13 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 completionHandler(error)
                 return
             }
+            let relay = TunTCPRelay(localAddress: 0x0A070001) { host, port in
+                try await Socks5.connect(via: self.enginePort, host: host, port: port)
+            }
+            relay.emit = { [weak self] packet in
+                self?.write(packet)
+            }
+            self.relay = relay
             self.readPackets()
             completionHandler(nil)
         }
@@ -40,20 +55,50 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
     override func stopTunnel(with reason: NEProviderStopReason,
                              completionHandler: @escaping () -> Void) {
-        os_log("tunnel stopping: %{public}d", log: log, type: .info, reason.rawValue)
+        relay = nil
+        engine?.stop()
+        engine = nil
         completionHandler()
     }
 
-    /// Reads packets so the interface is live and the counters prove traffic arrives.
-    /// They are dropped for now: forwarding needs the stack described above.
+    // MARK: - Engine
+
+    private func startEngine() throws {
+        let resolver = DNSResolver(config: DNSConfig(mode: .system, upstreams: [], fallback: [], cacheTTL: 120))
+        let server = try ProxyServer(options: .init(port: 0, allowLAN: false),
+                                     router: TunnelDirectRouter(),
+                                     resolver: resolver,
+                                     blocker: nil,
+                                     flows: nil,
+                                     capture: nil)
+        try server.start()
+        engine = server
+        enginePort = server.listeningPort
+        os_log("tunnel engine on %{public}d", log: log, type: .info, Int(enginePort))
+    }
+
+    // MARK: - Packets
+
     private func readPackets() {
         packetFlow.readPackets { [weak self] packets, _ in
             guard let self else { return }
             self.counters.read += packets.count
-            if self.counters.read % 50 == 0 {
-                os_log("tunnel read %{public}d packets", log: self.log, type: .debug, self.counters.read)
+            for packet in packets {
+                self.relay?.handle(packet: packet)
             }
             self.readPackets()
         }
+    }
+
+    private func write(_ packet: Data) {
+        counters.written += 1
+        packetFlow.writePackets([packet], withProtocols: [NSNumber(value: AF_INET)])
+    }
+}
+
+/// Rules and outbounds live in the engine; the tunnel only needs a policy today.
+private struct TunnelDirectRouter: RouteDeciding {
+    func decide(_ meta: ConnectionMeta) -> RouteDecision {
+        RouteDecision(policy: "DIRECT", outbound: .direct)
     }
 }
