@@ -113,6 +113,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 switch spec {
                 case "dashboard": content = AnyView(DashboardView().environmentObject(model))
                 case "settings": content = AnyView(SettingsView().environmentObject(model))
+                case "rules": content = AnyView(RulesView().environmentObject(model))
+                case "profiles": content = AnyView(ProfilesView().environmentObject(model))
+                case "capture": content = AnyView(CaptureView().environmentObject(model))
+                case "adblock": content = AnyView(AdBlockView().environmentObject(model))
+                case "rewrite": content = AnyView(RewriteView().environmentObject(model))
+                case "learn": content = AnyView(LearnView().environmentObject(model))
+                case "privacy": content = AnyView(PrivacyView().environmentObject(model))
+                case "activity": content = AnyView(ObservationView().environmentObject(model))
+                case "diagnostics": content = AnyView(DiagnosticsWorkspace(assistant: model.assistant))
                 default: content = AnyView(Text("unknown view: \(spec)"))
                 }
                 let host = NSHostingView(rootView:

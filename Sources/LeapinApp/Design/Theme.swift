@@ -353,7 +353,7 @@ struct LPPrimaryButtonStyle: ButtonStyle {
     var tint: Color? = nil
     func makeBody(configuration: Configuration) -> some View {
         let fill = isEnabled ? (tint ?? LP.accentFill) : LP.stroke
-        LPButtonFocusRing(shape: Capsule()) {
+        LPButtonFocusRing(shape: RoundedRectangle(cornerRadius: 8, style: .continuous)) {
             // 主操作保持不透明实色：tint 玻璃在浅底上会把朱红洗成灰，
             // 白字对比掉到 2:1 以下——可读性优先于材质一致性。
             configuration.label
@@ -361,12 +361,11 @@ struct LPPrimaryButtonStyle: ButtonStyle {
                 .foregroundStyle(isEnabled ? .white : LP.textTertiary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(Capsule(style: .continuous).fill(fill))
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(fill))
                 .overlay(
-                    Capsule(style: .continuous)
-                        .strokeBorder(.white.opacity(0.18), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(.white.opacity(0.14), lineWidth: 0.5)
                 )
-                .shadow(color: .black.opacity(isEnabled ? 0.10 : 0), radius: 8, y: 3)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
             .opacity(configuration.isPressed ? 0.86 : 1)
             .lpAnimation(LPMotion.press, value: configuration.isPressed)
@@ -377,16 +376,16 @@ struct LPPrimaryButtonStyle: ButtonStyle {
 struct LPGhostButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     func makeBody(configuration: Configuration) -> some View {
-        LPButtonFocusRing(shape: Capsule()) {
+        LPButtonFocusRing(shape: RoundedRectangle(cornerRadius: 8, style: .continuous)) {
             configuration.label
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(LP.text)
                 .padding(.horizontal, 13)
                 .padding(.vertical, 6)
-                .lpGlass(in: Capsule(style: .continuous),
-                         interactive: true,
-                         fallbackFill: LP.panel,
-                         fallbackMaterial: .thinMaterial)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Color(nsColor: .controlBackgroundColor)))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(Color(nsColor: .separatorColor).opacity(0.7), lineWidth: 0.5))
                 .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.45)
         }
     }

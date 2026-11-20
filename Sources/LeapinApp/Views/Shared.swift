@@ -83,11 +83,11 @@ struct StatTile: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
-        .padding(.vertical, 13)
-        .lpGlass(radius: 12,
-                 fallbackFill: LP.panel,
-                 shadow: 0.04)
-        .lpHoverLift()
+        .padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor)))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 0.5))
     }
 }
 
