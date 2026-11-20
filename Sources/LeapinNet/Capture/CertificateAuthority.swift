@@ -56,6 +56,9 @@ public final class CertificateAuthority: @unchecked Sendable {
     /// openssl keeps the leaf serial in one shared file, so the signing step must
     /// not run twice at once. Key generation (the slow half) stays parallel.
     private let signingLock = NSLock()
+    /// SecPKCS12Import is not safe to run concurrently in one process: under load it
+    /// fails with OSStatus -26276 for archives that import fine on their own.
+    private static let importLock = NSLock()
     /// Leaf certificate runs this process really performed (test aid).
     private var generatedLeaves = 0
 
@@ -355,7 +358,9 @@ public final class CertificateAuthority: @unchecked Sendable {
         }
         let options: [String: Any] = [kSecImportExportPassphrase as String: p12Password]
         var rawItems: CFArray?
-        let status = SecPKCS12Import(data as CFData, options as CFDictionary, &rawItems)
+        let status: OSStatus = Self.importLock.withLock {
+            SecPKCS12Import(data as CFData, options as CFDictionary, &rawItems)
+        }
         guard status == errSecSuccess else {
             throw LeapinError.connectionFailed("SecPKCS12Import failed for \(p12.lastPathComponent) (OSStatus \(status))")
         }

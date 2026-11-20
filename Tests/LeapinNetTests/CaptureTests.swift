@@ -80,13 +80,18 @@ final class CaptureTests: XCTestCase {
         let hosts = 5
         let lock = NSLock()
         var identities: [String: Int] = [:]
+        var failures: [String] = []
         DispatchQueue.concurrentPerform(iterations: hosts * 4) { iteration in
             let host = "dedupe\(iteration % hosts).test"
-            if (try? ca.identity(for: host)) != nil {
+            do {
+                _ = try ca.identity(for: host)
                 lock.withLock { identities[host, default: 0] += 1 }
+            } catch {
+                lock.withLock { failures.append("\(host): \(error)") }
             }
         }
 
+        XCTAssertTrue(failures.isEmpty, "leaf generation failed: \(failures.prefix(3))")
         XCTAssertEqual(identities.count, hosts, "every host must get an identity")
         XCTAssertEqual(ca.leafGenerationCount, hosts,
                        "one openssl run per host, however many handshakes race for it")
