@@ -404,6 +404,10 @@ echo "总计失败项: $fails"; exit "$fails"
 | POL-02 | 已修 | Sources/LeapinPolicy/Rules/RuleIndex.swift（反转标签 Trie + Aho-Corasick + IP 前缀 Trie）、RuleEngine.match() | 后缀 Trie 其实在 2026-11-10 的改名提交里就落码了，`docs/perf.md` 的「严格 O(规则数)」是 11-05 的旧测量。本轮实测：10 万规则 decide p50 0.002 ms / p95 0.004 ms、索引构建 68.4 ms（release，`LEAPIN_PERF=1 swift test --filter RuleIndexPerf`）。「最小下标优先」由候选集升序去重保证，`useIndex:false` 仍保留线性扫描做对拍（RuleIndexDifferentialTests） |
 | DNS-02 | 已修 | Sources/LeapinNet/DNS/DNSResolver.swift `respond(to:)` + ResolverState 的 replies/inflightReplies | 本地 DNS 服务先查地址缓存与整包应答缓存（TXT/MX/CNAME 也能重放），并发同名/同类型查询走单飞；命中即不再打上游 |
 | DNS-03 | 已修 | Sources/LeapinNet/DNS/DNSUpstreamPool.swift + DNSResolver.exchange | 每个 upstream 只建一条长连接：UDP/DoT 各一个 actor，查询在该 actor 内串行化；UDP 按报文 id 丢弃超时残留应答，DoT 复用 socket、空闲 60 s 后重连，DoH 走共享 URLSession。testUpstreamUDPSocketIsReusedAcrossQueries：4 次查询只开 1 个 socket |
+| NET-05 | 已修 | Sources/LeapinNet/Outbound/ShadowsocksAEAD.swift `ShadowsocksStream` | 读方向改为独立 salt/key/nonce：首块先消费服务端 salt 派生 readKey，读写不再共用 key 与计数器。新测试在旧代码上以 "AEAD open failed" 失败，修复后通过（含 40 KB 跨 3 块） |
+| NET-03 | 已修 | Sources/LeapinNet/Support/Bytes.swift `BufferedStream` | 缓冲区改成「扁平数组 + 读游标」，消费只推进 head，死区过半数时才压缩；pushBack 在前方有空位时原地写入。重写过程中新测试抓到一个回归（readLine 只去 CR 留下 LF），已修 |
+| NET-02 | 已修 | Sources/LeapinNet/Proxy/ProxyServer.swift `Options.maxConnections`（默认 4096） | accept 处硬上限：超限直接关 socket，拒绝日志 10 秒最多一条，避免洪泛时日志放大；测试用 maxConnections=1 验证第二条连接被关且不计入 active |
+| CA-01（续） | 已修 | CertificateAuthority.importIdentity | `SecPKCS12Import` 并发调用会在负载下返回 OSStatus -26276（证书本身没问题），导致该 host 握手失败。改进程级锁后，4 路 CPU 压力下 6 次全过（修复前 6 次里失败 5 次） |
 | RT-07 | 已修 | Sources/LeapinRuntime/TouchFlowEngine.swift `exportHAR()`、CaptureView.swift | 导出改成 async：主 actor 只取 captures 快照，HAR 编码在 `Task.detached` 里跑，选完保存路径后窗口不再冻结（导出期间提示文案照旧） |
 | RT-08（部分） | 已修 | Sources/LeapinRuntime/ProfileStore.swift `list()` | 锁内只做目录扫描；逐个 profile 的读文件 + JSONDecoder 移到锁外，保存/导入不再排在 UI 列表刷新后面。上游 ProfileStore 其它 IO（save 的写盘）仍在调用线程 |
 | CA-02 | 已修 | Sources/LeapinNet/Capture/CertificateAuthority.swift `pruneLeaves(in:keep:maxAge:)` | 启动时按「最新 256 个 + 30 天寿命」裁剪 leaves/ 目录；删掉的只是可从 CA 重新签发的叶证书，下次访问该 host 多跑一次 openssl。根 CA 与私钥不受影响（测试断言 ca.pem 仍在） |
@@ -421,5 +425,5 @@ POL-02 / DNS-02 / DNS-03 / CA-01 / INT-01 已在 2026-11-19 这一轮落地（�
 2. INT-04：已修（见下表），`SSHSession`/`ManagedMihomo` 的 teardown 改由 `ProcessExit` 驱动。
 3. RT-02：部分修（3 s 总预算），仍是同步调用——退出时主线程最多再被占用 3 s，没改成 terminateLater。
 4. RT-05：启动期同步加载规则 / AdBlock 未动（启动慢时首帧会等）。
-5. NET-02 / NET-03 / NET-05 / NET-07 ~ NET-12、DNS-04、RT-08 的上游部分、INT-05 / INT-06：连接数上限、Bytes 缓冲 O(n²)、SS 读路径 salt/nonce、Happy Eyeballs、MITM 上游复用/编码、LocalTLSServer 每连接 listener、FakeIP 分配 O(n) 等。
+5. NET-07 ~ NET-12、DNS-04、RT-08 的上游部分、INT-05 / INT-06：Happy Eyeballs、MITM 上游复用/编码、LocalTLSServer 每连接 listener、FakeIP 分配 O(n) 等。NET-02（连接上限）、NET-03（缓冲 O(n²)）、NET-05（SS 读路径）已在 2026-11-20 修掉，见上表。
 
