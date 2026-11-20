@@ -101,6 +101,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         FloatingPanelController.shared.restoreIfNeeded()
 
         #if DEBUG
+        if let path = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_SETTINGS"] {
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(800))
+                let host = NSHostingView(rootView:
+                    SettingsView().environmentObject(AppModel()).frame(width: 1100, height: 820))
+                host.frame = NSRect(x: 0, y: 0, width: 1100, height: 820)
+                host.layoutSubtreeIfNeeded()
+                try? await Task.sleep(for: .milliseconds(400))
+                if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                    host.cacheDisplay(in: host.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                }
+                NSApp.terminate(nil)
+            }
+        }
+        // Debug: render the live window to a PNG without screen-recording permission.
+        // LEAPIN_SHOT=/tmp/x.png LEAPIN_SHOT_SECTION=settings
+        if let path = ProcessInfo.processInfo.environment["LEAPIN_SHOT"] {
+            let section = ProcessInfo.processInfo.environment["LEAPIN_SHOT_SECTION"]
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(600))
+                if let section { NotificationCenter.default.post(name: .lpNavigate, object: section) }
+                try? await Task.sleep(for: .seconds(2))
+                guard let window = NSApp.windows.first(where: { !($0 is NSPanel) && $0.contentView != nil }) else {
+                    NSApp.terminate(nil); return
+                }
+                let view = window.contentView!
+                if let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
+                    view.cacheDisplay(in: view.bounds, to: rep)
+                    try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))
+                }
+                NSApp.terminate(nil)
+            }
+        }
         if let path = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_REWRITE"] {
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))

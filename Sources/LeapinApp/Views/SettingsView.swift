@@ -31,7 +31,7 @@ struct SettingsView: View {
     @State private var pairing: PhonePairing?
 
     var body: some View {
-        ScrollView {
+        Form {
             VStack(spacing: 16) {
                 if windowWidth >= 1000 {
                     HStack(alignment: .top, spacing: 16) {
@@ -63,6 +63,7 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity)
             .pagePadding()
             .navigationTitle("设置")
+            .formStyle(.grouped)
         }
         .onAppear {
             load()
@@ -102,7 +103,7 @@ struct SettingsView: View {
     // MARK: Sections
 
     private var launchSection: some View {
-        Card(title: "启动与常驻", subtitle: "登录项、默认页面与常驻行为", icon: "power") {
+        FormCard(title: "启动与常驻", subtitle: "登录项、默认页面与常驻行为", icon: "power") {
             VStack(spacing: 8) {
                 ToggleRow(label: "登录时自动启动", subtitle: LaunchAtLogin.statusText,
                           isOn: Binding(get: { app.launchAtLogin },
@@ -142,7 +143,7 @@ struct SettingsView: View {
     }
 
     private var proxySection: some View {
-        Card(title: "代理端口", subtitle: "本地监听，修改后需重启代理", icon: "network") {
+        FormCard(title: "代理端口", subtitle: "本地监听，修改后需重启代理", icon: "network") {
             VStack(spacing: 8) {
                 FieldRow(label: "混合端口", hint: "HTTP + SOCKS5") {
                     NumField(text: $mixedPort, placeholder: "7890")
@@ -160,7 +161,7 @@ struct SettingsView: View {
     }
 
     private var dnsSection: some View {
-        Card(title: "DNS", subtitle: "解析策略与缓存", icon: "globe.asia.australia") {
+        FormCard(title: "DNS", subtitle: "解析策略与缓存", icon: "globe.asia.australia") {
             if engine.executionKernel == .mihomo {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("当前 DNS 使用 Mihomo 来源策略，并由运行中的内核解析。修改 nameserver-policy 等策略时，请重新导入来源配置。")
@@ -188,7 +189,7 @@ struct SettingsView: View {
     }
 
     private var captureSection: some View {
-        Card(title: "抓包与解密", subtitle: "MITM 仅对匹配主机生效", icon: "waveform.path.ecg") {
+        FormCard(title: "抓包与解密", subtitle: "MITM 仅对匹配主机生效", icon: "waveform.path.ecg") {
             VStack(spacing: 8) {
                 ToggleRow(label: "启用 HTTP 抓包", subtitle: "记录请求/响应头与可读 body", isOn: $captureEnabled)
                 FieldRow(label: "MITM 主机", hint: "* 表示全部") {
@@ -224,7 +225,7 @@ struct SettingsView: View {
     }
 
     private var advancedSection: some View {
-        Card(title: "高级", subtitle: "日志与系统代理", icon: "slider.horizontal.3") {
+        FormCard(title: "高级", subtitle: "日志与系统代理", icon: "slider.horizontal.3") {
             VStack(spacing: 8) {
                 FieldRow(label: "日志级别") {
                     LPSelectField(value: $logLevel, options: LogLevel.allCases.map { ($0, $0.rawValue) })
@@ -538,7 +539,7 @@ private struct PhonePairingCard: View {
     var onToggleLAN: (Bool) -> Void
 
     var body: some View {
-        Card(title: "手机连接", subtitle: "iOS / Android 控制台读这台 Mac 的状态与策略", icon: "qrcode") {
+        FormCard(title: "手机连接", subtitle: "iOS / Android 控制台读这台 Mac 的状态与策略", icon: "qrcode") {
             if let pairing {
                 pairedBody(pairing)
             } else {
