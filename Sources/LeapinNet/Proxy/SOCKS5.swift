@@ -104,7 +104,6 @@ public enum SOCKS5 {
         return out
     }
 
-    @inlinable
     public static func describe(replyCode: UInt8) -> String {
         switch Reply(rawValue: replyCode) {
         case .succeeded: return "succeeded"
@@ -121,7 +120,6 @@ public enum SOCKS5 {
     }
 
     /// Encodes a server reply (VER REP RSV ATYP BND.ADDR BND.PORT).
-    @inlinable
     public static func encodeReply(_ reply: Reply, boundAddress: Data? = nil) -> Data {
         var out = Data([version, reply.rawValue, 0x00])
         if let boundAddress, !boundAddress.isEmpty {
@@ -135,7 +133,6 @@ public enum SOCKS5 {
     }
 
     /// Encodes a username/password sub-negotiation request (RFC 1929).
-    @inline(never)
     public static func encodeUserPassAuth(username: String, password: String) -> Data? {
         let user = Array(utf8: username)
         let pass = Array(utf8: password)
