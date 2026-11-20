@@ -33,6 +33,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.leapin.mobile.ConsoleStore
+import app.leapin.mobile.LocalProxy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -96,6 +97,31 @@ fun ToolsScreen(store: ConsoleStore, scope: CoroutineScope, onConnect: () -> Uni
                     TextButton(onClick = onConnect) { Text("连接", color = LP.accent) }
                 }
             }
+        }
+
+
+        Panel(title = "本机代理引擎", subtitle = "在手机上直接跑代理，不经过 Mac") {
+            KeyValue("状态", if (LocalProxy.isRunning) "运行中 · 127.0.0.1:" + LocalProxy.port else "未启动", mono = LocalProxy.isRunning)
+            LocalProxy.lastError?.let { Text(it, fontSize = 11.sp, color = LP.danger) }
+            LocalProxy.lastCheck?.let {
+                Text(it, fontSize = 11.sp, color = if (it.contains("失败")) LP.danger else LP.textTertiary)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { if (LocalProxy.isRunning) LocalProxy.stop() else LocalProxy.start() },
+                    colors = ButtonDefaults.buttonColors(containerColor = LP.accent),
+                ) { Text(if (LocalProxy.isRunning) "停止" else "启动", color = Color.White, fontSize = 13.sp) }
+                if (LocalProxy.isRunning) {
+                    TextButton(
+                        onClick = { scope.launch { LocalProxy.selfCheck() } },
+                        enabled = !LocalProxy.isChecking,
+                    ) { Text(if (LocalProxy.isChecking) "测试中…" else "经代理访问 example.com", color = LP.accent, fontSize = 12.sp) }
+                }
+            }
+            Text(
+                "这一层就是 VpnService 之后要接进来的同一个引擎：现在是手机自己监听 127.0.0.1，下一步由系统把流量导进来。",
+                fontSize = 10.sp, color = LP.textTertiary,
+            )
         }
 
         Panel(title = "本机网络", subtitle = "不需要连接 Mac") {
