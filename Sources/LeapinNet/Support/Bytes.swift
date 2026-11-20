@@ -188,106 +188,61 @@ public enum HostGlob {
 public final class BufferedStream: @unchecked Sendable {
     public let stream: ByteStream
     private let lock = NSLock()
-    private var buffer = Data()
+    /// A flat byte store with a read cursor: consuming data only advances head, so
+    /// draining a 32 MB body never re-copies what is left behind it. The previous
+    /// Data.removeFirst version moved the whole remainder on every read, which made
+    /// transfer time quadratic in the body size.
+    private var storage: [UInt8] = []
+    private var head = 0
     public static let defaultReadChunk = 16384
+    /// Compact once the consumed prefix is this large and at least half the array.
+    private static let compactThreshold = 8192
 
     public init(_ stream: ByteStream) { self.stream = stream }
 
     public var underlying: ByteStream { stream }
-    public var bufferedByteCount: Int { lock.withLock { buffer.count } }
+    public var bufferedByteCount: Int { lock.withLock { availableLocked } }
 
     public func pushBack(_ data: Data) {
         guard !data.isEmpty else { return }
-        lock.lock(); buffer = data + buffer; lock.unlock()
+        lock.withLock { prependLocked(data) }
     }
 
     /// Returns currently buffered bytes, emptying the pushback buffer.
     public func drainBuffer() -> Data {
-        lock.lock(); defer { lock.unlock() }
-        let d = buffer
-        buffer.removeAll()
-        return d
+        lock.withLock { drainLocked() ?? Data() }
     }
 
     /// Reads one byte, or nil on EOF.
     public func readByte() async throws -> UInt8? {
-        if let b = lock.withLock({ takeByteLocked() }) { return b }
+        if let byte = lock.withLock({ takeByteLocked() }) { return byte }
         guard let chunk = try await stream.read(maxLength: Self.defaultReadChunk) else { return nil }
-        pushBack(chunk)
+        lock.withLock { appendLocked(chunk) }
         return lock.withLock { takeByteLocked() }
     }
 
-    private func takeByteLocked() -> UInt8? {
-        guard !buffer.isEmpty else { return nil }
-        let b = buffer[buffer.startIndex]
-        buffer.removeFirst()
-        return b
-    }
-
-    private func takeLocked(_ count: Int) -> Data? {
-        guard count >= 0, buffer.count >= count else { return nil }
-        let d = buffer.prefix(count)
-        buffer.removeFirst(count)
-        return Data(d)
-    }
-
-    private func drainLocked() -> Data? {
-        let d = buffer
-        buffer.removeAll()
-        return d.isEmpty ? nil : d
-    }
-
-    private enum Probe {
-        case value(Data)
-        case tooLong(Int)
-        case needMore
-    }
-
-    private func probeLineLocked(limit: Int) -> Probe {
-        if let idx = buffer.firstIndex(of: 0x0A) {
-            let line = buffer[buffer.startIndex..<idx]
-            buffer.removeFirst(buffer.distance(from: buffer.startIndex, to: idx) + 1)
-            var d = Data(line)
-            if d.last == 0x0D { d.removeLast() }
-            return .value(d)
-        }
-        if buffer.count > limit { return .tooLong(buffer.count) }
-        return .needMore
-    }
-
-    private func probeUntilLocked(_ terminator: Data, limit: Int) -> Probe {
-        if let range = buffer.range(of: terminator) {
-            let end = buffer.distance(from: buffer.startIndex, to: range.upperBound)
-            let d = buffer.prefix(end)
-            buffer.removeFirst(end)
-            return .value(Data(d))
-        }
-        if buffer.count > limit { return .tooLong(buffer.count) }
-        return .needMore
-    }
-
-    /// Reads up to `maxLength` bytes, draining any pushed-back data first.
+    /// Reads up to maxLength bytes, draining any pushed-back data first.
     /// Returns nil on EOF.
     public func readSome(maxLength: Int = 16 * 1024) async throws -> Data? {
         let limit = max(1, maxLength)
-        if let d = lock.withLock({ () -> Data? in
-            guard !buffer.isEmpty else { return nil }
-            return takeLocked(min(limit, buffer.count))
+        if let data = lock.withLock({ () -> Data? in
+            guard availableLocked > 0 else { return nil }
+            return takeLocked(min(limit, availableLocked))
         }) {
-            return d
+            return data
         }
         return try await stream.read(maxLength: limit)
     }
 
-    /// Reads exactly `count` bytes or throws on EOF.
+    /// Reads exactly count bytes or throws on EOF.
     public func readExactly(_ count: Int) async throws -> Data {
         guard count > 0 else { return Data() }
         while true {
-            if let d = lock.withLock({ takeLocked(count) }) { return d }
+            if let data = lock.withLock({ takeLocked(count) }) { return data }
             guard let chunk = try await stream.read(maxLength: max(count, Self.defaultReadChunk)) else {
                 throw LeapinError.protocolError("unexpected EOF while reading \(count) bytes")
             }
-            pushBack(chunk)
+            lock.withLock { appendLocked(chunk) }
         }
     }
 
@@ -295,32 +250,32 @@ public final class BufferedStream: @unchecked Sendable {
     public func readLine(limit: Int = 16384) async throws -> Data? {
         while true {
             switch lock.withLock({ probeLineLocked(limit: limit) }) {
-            case .value(let d):
-                return d
+            case .value(let data):
+                return data
             case .tooLong(let size):
                 throw LeapinError.protocolError("line exceeds \(limit) bytes (buffered \(size))")
             case .needMore:
                 guard let chunk = try await stream.read(maxLength: Self.defaultReadChunk) else {
                     return lock.withLock { drainLocked() }
                 }
-                pushBack(chunk)
+                lock.withLock { appendLocked(chunk) }
             }
         }
     }
 
-    /// Reads until `terminator` (inclusive) is found in the buffered data.
+    /// Reads until terminator (inclusive) is found in the buffered data.
     public func readUntil(_ terminator: Data, limit: Int = 65536) async throws -> Data? {
         while true {
             switch lock.withLock({ probeUntilLocked(terminator, limit: limit) }) {
-            case .value(let d):
-                return d
+            case .value(let data):
+                return data
             case .tooLong(let size):
                 throw LeapinError.protocolError("header exceeds \(limit) bytes (buffered \(size))")
             case .needMore:
                 guard let chunk = try await stream.read(maxLength: Self.defaultReadChunk) else {
                     return lock.withLock { drainLocked() }
                 }
-                pushBack(chunk)
+                lock.withLock { appendLocked(chunk) }
             }
         }
     }
@@ -328,6 +283,118 @@ public final class BufferedStream: @unchecked Sendable {
     public func write(_ data: Data) async throws { try await stream.write(data) }
 
     public func close() { stream.close() }
+
+    // MARK: - Buffer internals (lock held)
+
+    private enum Probe {
+        case value(Data)
+        case tooLong(Int)
+        case needMore
+    }
+
+    private var availableLocked: Int { storage.count - head }
+
+    private func compactLocked() {
+        if head == storage.count {
+            storage.removeAll(keepingCapacity: true)
+            head = 0
+        } else if head >= Self.compactThreshold && head * 2 >= storage.count {
+            // One move for many small reads; amortised to O(1) per byte.
+            storage.removeFirst(head)
+            head = 0
+        }
+    }
+
+    private func consumeLocked(_ count: Int) -> Data {
+        let slice = storage[head..<(head + count)]
+        head += count
+        compactLocked()
+        return Data(slice)
+    }
+
+    private func appendLocked(_ data: Data) {
+        compactLocked()
+        storage.append(contentsOf: data)
+    }
+
+    private func prependLocked(_ data: Data) {
+        let bytes = [UInt8](data)
+        if bytes.count <= head {
+            let start = head - bytes.count
+            storage.replaceSubrange(start..<head, with: bytes)
+            head = start
+        } else {
+            storage = bytes + storage[head...]
+            head = 0
+        }
+    }
+
+    private func takeByteLocked() -> UInt8? {
+        guard availableLocked > 0 else { return nil }
+        let byte = storage[head]
+        head += 1
+        compactLocked()
+        return byte
+    }
+
+    private func takeLocked(_ count: Int) -> Data? {
+        guard count >= 0, availableLocked >= count else { return nil }
+        return consumeLocked(count)
+    }
+
+    private func drainLocked() -> Data? {
+        guard availableLocked > 0 else {
+            storage.removeAll(keepingCapacity: true)
+            head = 0
+            return nil
+        }
+        let out = Data(storage[head...])
+        storage.removeAll(keepingCapacity: true)
+        head = 0
+        return out
+    }
+
+    private func probeLineLocked(limit: Int) -> Probe {
+        if let index = storage[head...].firstIndex(of: 0x0A) {
+            let count = index - head + 1
+            var data = consumeLocked(count)
+            // consumeLocked includes the LF; strip it, then the CR before it.
+            if data.last == 0x0A { data.removeLast() }
+            if data.last == 0x0D { data.removeLast() }
+            return .value(data)
+        }
+        if availableLocked > limit { return .tooLong(availableLocked) }
+        return .needMore
+    }
+
+    private func probeUntilLocked(_ terminator: Data, limit: Int) -> Probe {
+        if let start = firstIndexLocked(of: [UInt8](terminator)) {
+            let count = start - head + terminator.count
+            return .value(consumeLocked(count))
+        }
+        if availableLocked > limit { return .tooLong(availableLocked) }
+        return .needMore
+    }
+
+    /// First occurrence of needle at or after the cursor. Terminators are a few
+    /// bytes, so the naive scan costs nothing next to the copy it replaces.
+    private func firstIndexLocked(of needle: [UInt8]) -> Int? {
+        guard !needle.isEmpty, availableLocked >= needle.count else { return nil }
+        let last = storage.count - needle.count
+        var index = head
+        while index <= last {
+            if storage[index] == needle[0] {
+                var matched = true
+                for offset in 1..<needle.count where storage[index + offset] != needle[offset] {
+                    matched = false
+                    break
+                }
+                if matched { return index }
+            }
+            index += 1
+        }
+        return nil
+    }
 }
 
 // MARK: - Small utilities
