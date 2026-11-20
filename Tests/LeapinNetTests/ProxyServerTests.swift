@@ -29,13 +29,15 @@ final class ProxyServerTests: XCTestCase {
 
     private func makeProxy(port: UInt16 = 0,
                            allowLAN: Bool = false,
+                           maxConnections: Int = 4096,
                            router: RouteDeciding,
                            resolver: NameResolving,
                            blocker: DomainBlocking? = nil,
                            flows: FlowRecording? = nil,
                            capture: CaptureSink? = nil,
                            ca: CertificateAuthority? = nil) throws -> ProxyServer {
-        let options = ProxyServer.Options(port: port, allowLAN: allowLAN)
+        let options = ProxyServer.Options(port: port, allowLAN: allowLAN,
+                                          maxConnections: maxConnections)
         let server = ProxyServer(options: options,
                                  router: router,
                                  resolver: resolver,
@@ -46,6 +48,24 @@ final class ProxyServerTests: XCTestCase {
         try server.start()
         proxy = server
         return server
+    }
+
+    /// NET-02: the listener has a hard ceiling on concurrent clients.
+    func testRefusesConnectionsBeyondTheLimit() async throws {
+        let server = try makeProxy(maxConnections: 1,
+                                   router: StaticRouter(),
+                                   resolver: MapResolver([:]))
+        let first = try await NetSocket.connect(host: "127.0.0.1", port: server.listeningPort, timeout: 3)
+        defer { first.close() }
+        // Let the accept loop register the first client before the second arrives.
+        try await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(server.activeConnections, 1)
+
+        let second = try await NetSocket.connect(host: "127.0.0.1", port: server.listeningPort, timeout: 3)
+        defer { second.close() }
+        let chunk = try await second.read(maxLength: 16)
+        XCTAssertNil(chunk, "a connection past the ceiling is closed at accept")
+        XCTAssertEqual(server.activeConnections, 1, "a refused connection never counts as active")
     }
 
     // MARK: - HTTP through the proxy (URLSession, connectionProxyDictionary)

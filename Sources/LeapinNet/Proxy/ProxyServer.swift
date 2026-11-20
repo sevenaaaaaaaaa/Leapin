@@ -20,13 +20,17 @@ public final class ProxyServer: @unchecked Sendable {
         public var mitm: Bool
         public var mitmHosts: [String]
         public var socksUDPUpstreamPort: UInt16?
+        /// Hard ceiling on concurrent client connections. A runaway client (or a
+        /// routing loop) must not be able to spawn unbounded tasks and sockets.
+        public var maxConnections: Int
 
         public init(port: UInt16,
                     allowLAN: Bool = false,
                     enableSOCKS5: Bool = true,
                     enableHTTP: Bool = true,
                     mitm: Bool = false,
-                    mitmHosts: [String] = ["*"], socksUDPUpstreamPort: UInt16? = nil) {
+                    mitmHosts: [String] = ["*"], socksUDPUpstreamPort: UInt16? = nil,
+                    maxConnections: Int = 4096) {
             self.port = port
             self.allowLAN = allowLAN
             self.enableSOCKS5 = enableSOCKS5
@@ -34,6 +38,7 @@ public final class ProxyServer: @unchecked Sendable {
             self.mitm = mitm
             self.mitmHosts = mitmHosts
             self.socksUDPUpstreamPort = socksUDPUpstreamPort
+            self.maxConnections = max(1, maxConnections)
         }
     }
 
@@ -65,6 +70,8 @@ public final class ProxyServer: @unchecked Sendable {
     /// them; without this a stopped proxy keeps upstream FDs (and the pump blocked on
     /// them) alive until the 300 s idle timeout fires.
     private var clientUpstreams: [UUID: ByteStream] = [:]
+    private var refusedConnections = 0
+    private var lastRefusalLog = Date.distantPast
 
     public init(options: Options,
                 router: RouteDeciding,
@@ -215,9 +222,18 @@ public final class ProxyServer: @unchecked Sendable {
                                   })
         let socket = NetSocket(connection: connection,
                                description: "client \(remote ?? "unknown")")
-        lock.withLock {
+        let admitted = lock.withLock { () -> Bool in
+            guard activeCount < options.maxConnections else { return false }
             clientSockets[id] = socket
             activeCount += 1
+            return true
+        }
+        guard admitted else {
+            // Past the ceiling the honest answer is a closed socket, not a task that
+            // competes with everything already connected.
+            socket.close()
+            logRefusal()
+            return
         }
         let task = Task { [weak self] in
             guard let self else {
@@ -227,6 +243,22 @@ public final class ProxyServer: @unchecked Sendable {
             await self.handleClient(id: id, socket: socket, remote: remote, origin: origin)
         }
         lock.withLock { clientTasks[id] = task }
+    }
+
+    /// Logs the first refusal and then at most one every ten seconds: a runaway
+    /// client can refuse thousands of connections and the log must not amplify it.
+    private func logRefusal() {
+        let report: (Int, Bool) = lock.withLock {
+            refusedConnections += 1
+            guard Date().timeIntervalSince(lastRefusalLog) > 10 else {
+                return (refusedConnections, false)
+            }
+            lastRefusalLog = Date()
+            return (refusedConnections, true)
+        }
+        guard report.1 else { return }
+        LPLog.shared.warn("net.proxy",
+            "refusing connections: \(options.maxConnections) active, \(report.0) refused so far")
     }
 
     private func release(id: UUID) {
