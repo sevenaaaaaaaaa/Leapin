@@ -30,11 +30,42 @@ struct ToolsView: View {
     @State private var probeError: String?
     @State private var probing = false
 
+    @State private var localProxy = LocalProxyEngine()
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     MacLinkCard()
+
+                    LPCard(title: "本机代理引擎", subtitle: "在手机上直接跑 Leapin 的代理，不经过 Mac") {
+                        VStack(spacing: 8) {
+                            LPRow(key: "状态", value: localProxy.isRunning ? "运行中 · 127.0.0.1:\(localProxy.port)" : "未启动",
+                                  mono: localProxy.isRunning)
+                            if let error = localProxy.lastError {
+                                Text(error).font(.system(size: 11)).foregroundStyle(LP.danger)
+                            }
+                            if let check = localProxy.lastCheck {
+                                Text(check)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(check.contains("失败") ? LP.danger : LP.textSecondary)
+                            }
+                        }
+                        HStack(spacing: 10) {
+                            actionButton(title: localProxy.isRunning ? "停止" : "启动", busy: false) {
+                                if localProxy.isRunning { localProxy.stop() } else { localProxy.start() }
+                            }
+                            if localProxy.isRunning {
+                                actionButton(title: localProxy.isChecking ? "测试中…" : "经代理访问 example.com",
+                                             busy: localProxy.isChecking) {
+                                    Task { await localProxy.selfCheck() }
+                                }
+                            }
+                        }
+                        Text("这条路径就是未来 VPN 扩展要接进同一个引擎：现在是手机自己监听 127.0.0.1，下一步由系统把流量导进来。")
+                            .font(.system(size: 10))
+                            .foregroundStyle(LP.textTertiary)
+                    }
 
                     LPCard(title: "本机网络", subtitle: "不需要连接 Mac") {
                         VStack(spacing: 7) {

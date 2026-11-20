@@ -41,4 +41,9 @@
 
 ## 移动端定位
 
-iOS 与 Android 都是**控制台**，不是 VPN：连到 Mac 的控制面读状态、执行动作，不代理手机流量。系统级接管分别需要 NetworkExtension 与 `VpnService`，目前都不包含。
+iOS 与 Android **必须能独立运行**：手机自己跑代理引擎、自己按规则分流，Mac 只是一个可选的配置源与联动对象，不是运行前提。
+
+- 共享引擎（LeapinNet / LeapinPolicy）已经能编译并在 iOS 真机/模拟器上运行：App 内可直接监听 127.0.0.1 并按 SIP004 / HTTP / SOCKS5 转发，工具页有自检（经本机代理取 example.com 得到 HTTP 200）。
+- 系统级接管：Android 走 `VpnService`（无额外签名门槛）；iOS 走 NetworkExtension 的 Packet Tunnel Provider，**需要付费开发者账号的 network-extension entitlement**，免费签名装不上——这是苹果的签名限制，不是工程判断。
+- 配置同步与联动：Mac 的配置 / 规则 / 出口可以下发到手机，手机上改的分组也能回传；连不上 Mac 时手机用自己的本地配置继续跑。
+- 「控制台」只是手机的一个页面集合，不再是它的定位。
