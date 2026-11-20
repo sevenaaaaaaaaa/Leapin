@@ -3,6 +3,7 @@ import LeapinControl
 
 struct DashboardView: View {
     @Environment(ConsoleStore.self) private var store
+    private var local: LocalProxyEngine { .shared }
     @State private var showSettings = false
     @State private var reloadSummary: String?
     @State private var isReloading = false
@@ -11,6 +12,7 @@ struct DashboardView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    localCard
                     stateCard
                     metricsGrid
                     portsCard
@@ -33,6 +35,63 @@ struct DashboardView: View {
             .sheet(isPresented: $showSettings) {
                 SettingsView()
             }
+        }
+    }
+
+    /// The phone's own engine, not the Mac's. This is the data source that survives
+    /// with no Mac in reach at all.
+    private var localCard: some View {
+        LPCard(title: "本机引擎", subtitle: "手机上直接跑，不经过 Mac") {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(local.isRunning ? LP.mint : LP.textTertiary.opacity(0.5))
+                        .frame(width: 8, height: 8)
+                    Text(local.isRunning ? "运行中" : "未启动")
+                        .font(LPFont.display(14, weight: .semibold))
+                        .foregroundStyle(LP.text)
+                    Spacer(minLength: 4)
+                    if local.isRunning {
+                        Text("127.0.0.1:")
+                            .font(LPFont.mono(11))
+                            .foregroundStyle(LP.textTertiary)
+                        + Text(String(local.port))
+                            .font(LPFont.mono(11))
+                            .foregroundStyle(LP.accent)
+                    }
+                }
+                if let error = local.lastError {
+                    Text(error).font(LPFont.micro).foregroundStyle(LP.danger)
+                }
+                HStack(spacing: 12) {
+                    localMetric("连接", String(local.activeConnections))
+                    localMetric("下行", LPFormat.bytes(Int64(local.totalBytesIn)))
+                    localMetric("上行", LPFormat.bytes(Int64(local.totalBytesOut)))
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 8) {
+                    Button(local.isRunning ? "停止" : "启动") {
+                        if local.isRunning { local.stop() } else { local.start() }
+                    }
+                    .buttonStyle(LPButtonStyle())
+                    .frame(width: 120)
+                    if local.isRunning {
+                        Button(local.isChecking ? "测试中…" : "自检") {
+                            Task { await local.selfCheck() }
+                        }
+                        .font(LPFont.caption)
+                        .foregroundStyle(LP.accent)
+                        .disabled(local.isChecking)
+                    }
+                }
+            }
+        }
+    }
+
+    private func localMetric(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label).font(LPFont.micro).foregroundStyle(LP.textTertiary)
+            Text(value).font(LPFont.mono(12)).foregroundStyle(LP.text)
         }
     }
 
@@ -72,8 +131,9 @@ struct DashboardView: View {
         VStack(spacing: 12) {
             HStack(spacing: 12) {
                 LPCard {
-                    LPStat(label: "活动连接", value: "\(store.status?.activeConnections ?? 0)",
-                           tint: store.status?.activeConnections == 0 ? LP.text : LP.accent)
+                    LPStat(label: local.isRunning ? "本机连接" : "活动连接",
+                           value: "\(local.isRunning ? local.activeConnections : (store.status?.activeConnections ?? 0))",
+                           tint: (local.isRunning ? local.activeConnections : (store.status?.activeConnections ?? 0)) == 0 ? LP.text : LP.accent)
                 }
                 LPCard {
                     LPStat(label: "规则", value: "\(store.status?.ruleCount ?? 0)")

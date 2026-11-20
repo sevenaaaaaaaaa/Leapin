@@ -3,12 +3,18 @@ import LeapinControl
 
 struct ConnectionsView: View {
     @Environment(ConsoleStore.self) private var store
+    private var local: LocalProxyEngine { .shared }
     @State private var query = ""
 
+    /// The phone's own traffic when its engine runs, the Mac's list otherwise.
+    private var source: [ControlConnection] {
+        local.isRunning && !local.localConnections.isEmpty ? local.localConnections : store.connections
+    }
+
     private var filtered: [ControlConnection] {
-        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return store.connections }
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return source }
         let needle = query.lowercased()
-        return store.connections.filter {
+        return source.filter {
             $0.host.lowercased().contains(needle)
                 || $0.sourceApp.lowercased().contains(needle)
                 || $0.policy.lowercased().contains(needle)
@@ -19,7 +25,7 @@ struct ConnectionsView: View {
     var body: some View {
         NavigationStack {
             Group {
-                if store.connections.isEmpty {
+                if source.isEmpty {
                     emptyState
                 } else {
                     ScrollView {
@@ -54,7 +60,9 @@ struct ConnectionsView: View {
             Text("还没有连接记录")
                 .font(LPFont.section)
                 .foregroundStyle(LP.text)
-            Text("在 Mac 上访问任意网站，这里会实时出现")
+            Text(local.isRunning
+                 ? "本机引擎正在运行，但还没有流量经过它"
+                 : "启动「本机引擎」，或连接 Mac 后访问网站")
                 .font(LPFont.caption)
                 .foregroundStyle(LP.textTertiary)
         }
