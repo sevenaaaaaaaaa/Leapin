@@ -31,6 +31,7 @@ struct ToolsView: View {
     @State private var probing = false
 
     @State private var localProxy = LocalProxyEngine()
+    private var tunnel: TunnelManager { .shared }
 
     var body: some View {
         NavigationStack {
@@ -67,6 +68,32 @@ struct ToolsView: View {
                             .foregroundStyle(LP.textTertiary)
                     }
 
+
+                    LPCard(title: "系统接管（VPN 扩展）", subtitle: "让整机流量进入同一个引擎") {
+                        VStack(spacing: 8) {
+                            LPRow(key: "状态", value: tunnel.statusText, mono: true)
+                            if let error = tunnel.lastError {
+                                Text(error)
+                                    .font(LPFont.micro)
+                                    .foregroundStyle(LP.danger)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            HStack(spacing: 10) {
+                                if tunnel.status == .connected {
+                                    actionButton(title: "停止接管", busy: false) { tunnel.stop() }
+                                } else {
+                                    actionButton(title: tunnel.isInstalled ? "启动接管" : "安装并启动",
+                                                 busy: tunnel.isBusy) {
+                                        Task { await tunnel.start() }
+                                    }
+                                }
+                            }
+                            Text("这一层需要付费开发者账号的 network-extension entitlement；免费签名会在这里直接报错。包内已带 LeapinTunnel 扩展。")
+                                .font(LPFont.micro)
+                                .foregroundStyle(LP.textTertiary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                     LPCard(title: "本机网络", subtitle: "不需要连接 Mac") {
                         VStack(spacing: 7) {
                             LPRow(key: "局域网地址", value: localAddress ?? "读取中…", mono: true)

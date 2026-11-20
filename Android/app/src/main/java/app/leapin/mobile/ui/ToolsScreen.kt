@@ -32,8 +32,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
 import app.leapin.mobile.ConsoleStore
 import app.leapin.mobile.LocalProxy
+import app.leapin.mobile.vpn.LeapinVpnService
+import app.leapin.mobile.vpn.VpnController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -120,6 +126,41 @@ fun ToolsScreen(store: ConsoleStore, scope: CoroutineScope, onConnect: () -> Uni
             }
             Text(
                 "这一层就是 VpnService 之后要接进来的同一个引擎：现在是手机自己监听 127.0.0.1，下一步由系统把流量导进来。",
+                fontSize = 10.sp, color = LP.textTertiary,
+            )
+        }
+
+        val context = LocalContext.current
+        val consentLauncher = rememberLauncherForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ) { result ->
+            if (result.resultCode == Activity.RESULT_OK) VpnController.start(context)
+        }
+
+        Panel(title = "系统接管（VPN）", subtitle = "让整机流量经过 Leapin，先从 DNS 开始") {
+            KeyValue(
+                "状态",
+                if (LeapinVpnService.isRunning) "接管中 · 仅 DNS" else "未接管",
+                mono = LeapinVpnService.isRunning,
+            )
+            if (LeapinVpnService.isRunning) {
+                KeyValue("已处理查询", LeapinVpnService.queriesHandled.toString(), mono = true)
+                LeapinVpnService.lastQuery?.let { KeyValue("最近域名", it, mono = true) }
+            }
+            LeapinVpnService.lastError?.let { Text(it, fontSize = 11.sp, color = LP.danger) }
+            Button(
+                onClick = {
+                    if (LeapinVpnService.isRunning) {
+                        VpnController.stop(context)
+                    } else {
+                        val consent = VpnController.prepare(context)
+                        if (consent != null) consentLauncher.launch(consent) else VpnController.start(context)
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = LP.accent),
+            ) { Text(if (LeapinVpnService.isRunning) "停止接管" else "开始接管", color = Color.White, fontSize = 13.sp) }
+            Text(
+                "当前只接管 53 端口（DNS），TCP 直通不受影响；TCP 接管需要 tun2socks，是下一步。",
                 fontSize = 10.sp, color = LP.textTertiary,
             )
         }

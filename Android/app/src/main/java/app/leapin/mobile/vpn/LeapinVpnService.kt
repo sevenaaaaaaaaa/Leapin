@@ -1,0 +1,256 @@
+package app.leapin.mobile.vpn
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
+import android.net.VpnService
+import android.os.Build
+import android.os.ParcelFileDescriptor
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.InetAddress
+
+/**
+ * System-level capture, step one: DNS.
+ *
+ * A full tunnel needs a userspace TCP/IP stack (tun2socks), which is the next
+ * milestone. This service captures only UDP/53 through a tiny virtual interface and
+ * answers it from the phone, so nothing about normal traffic breaks while the
+ * plumbing — permission, foreground service, packet loop, write-back — is real and
+ * proven. TCP is deliberately not routed yet.
+ */
+class LeapinVpnService : VpnService() {
+
+    companion object {
+        const val ACTION_START = "app.leapin.mobile.vpn.START"
+        const val ACTION_STOP = "app.leapin.mobile.vpn.STOP"
+        private const val CHANNEL = "leapin-vpn"
+        private const val NOTIFICATION_ID = 41
+        private const val TUN_ADDRESS = "10.111.0.2"
+        private const val DNS_SERVER = "10.111.0.1"
+
+        var isRunning by mutableStateOf(false)
+            private set
+        var queriesHandled by mutableStateOf(0)
+            private set
+        var lastQuery by mutableStateOf<String?>(null)
+            private set
+        var lastError by mutableStateOf<String?>(null)
+            private set
+    }
+
+    private var tun: ParcelFileDescriptor? = null
+    private var thread: Thread? = null
+    @Volatile private var running = false
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_STOP -> {
+                stopTunnel()
+                return START_NOT_STICKY
+            }
+            else -> startTunnel()
+        }
+        return START_STICKY
+    }
+
+    private fun startTunnel() {
+        if (running) return
+        try {
+            val builder = Builder()
+                .setSession("Leapin")
+                .setMtu(1500)
+                .addAddress(TUN_ADDRESS, 32)
+                .addDnsServer(DNS_SERVER)
+                .addRoute(DNS_SERVER, 32)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                builder.setMetered(false)
+            }
+            val descriptor = builder.establish()
+            if (descriptor == null) {
+                lastError = "系统拒绝了 VPN 授权"
+                stopSelf()
+                return
+            }
+            tun = descriptor
+            running = true
+            isRunning = true
+            lastError = null
+            notifyForeground()
+            val worker = Thread { loop(descriptor) }.apply {
+                isDaemon = true
+                name = "leapin-vpn"
+            }
+            thread = worker
+            worker.start()
+        } catch (error: Throwable) {
+            lastError = error.message ?: "无法建立 VPN"
+            stopTunnel()
+        }
+    }
+
+    private fun loop(descriptor: ParcelFileDescriptor) {
+        val input = FileInputStream(descriptor.fileDescriptor)
+        val output = FileOutputStream(descriptor.fileDescriptor)
+        val buffer = ByteArray(32_767)
+        while (running) {
+            val length = try { input.read(buffer) } catch (_: Throwable) { break }
+            if (length <= 0) continue
+            try {
+                handleDnsQuery(buffer, length, output)
+            } catch (_: Throwable) {
+                // A malformed packet is dropped; the tunnel keeps running.
+            }
+        }
+    }
+
+    /** IPv4 + UDP only, destination port 53. Everything else is ignored. */
+    private fun handleDnsQuery(packet: ByteArray, length: Int, output: FileOutputStream) {
+        if (length < 28) return
+        val version = (packet[0].toInt() shr 4) and 0x0F
+        if (version != 4) return
+        val headerLength = (packet[0].toInt() and 0x0F) * 4
+        if (headerLength < 20 || length < headerLength + 8) return
+        val protocol = packet[9].toInt() and 0xFF
+        if (protocol != 17) return
+
+        val sourceIp = packet.copyOfRange(12, 16)
+        val destIp = packet.copyOfRange(16, 20)
+        val sourcePort = ((packet[headerLength].toInt() and 0xFF) shl 8) or (packet[headerLength + 1].toInt() and 0xFF)
+        val destPort = ((packet[headerLength + 2].toInt() and 0xFF) shl 8) or (packet[headerLength + 3].toInt() and 0xFF)
+        if (destPort != 53) return
+
+        val udpLength = ((packet[headerLength + 4].toInt() and 0xFF) shl 8) or (packet[headerLength + 5].toInt() and 0xFF)
+        val payloadOffset = headerLength + 8
+        val payloadLength = minOf(udpLength - 8, length - payloadOffset)
+        if (payloadLength <= 0) return
+        val query = packet.copyOfRange(payloadOffset, payloadOffset + payloadLength)
+
+        lastQuery = dnsQuestionName(query) ?: lastQuery
+        val answer = forward(query) ?: return
+        queriesHandled += 1
+
+        val reply = buildReply(sourceIp, destIp, sourcePort, destPort, answer)
+        try { output.write(reply) } catch (_: Throwable) {}
+    }
+
+    private fun forward(query: ByteArray): ByteArray? {
+        return try {
+            DatagramSocket().use { socket ->
+                socket.soTimeout = 4_000
+                val upstream = InetAddress.getByName("1.1.1.1")
+                socket.send(DatagramPacket(query, query.size, upstream, 53))
+                val buffer = ByteArray(4_096)
+                val response = DatagramPacket(buffer, buffer.size)
+                socket.receive(response)
+                buffer.copyOf(response.length)
+            }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun buildReply(sourceIp: ByteArray, destIp: ByteArray, sourcePort: Int, destPort: Int, payload: ByteArray): ByteArray {
+        val udpLength = 8 + payload.size
+        val total = 20 + udpLength
+        val packet = ByteArray(total)
+        packet[0] = 0x45
+        packet[2] = ((total shr 8) and 0xFF).toByte()
+        packet[3] = (total and 0xFF).toByte()
+        packet[4] = 0x00; packet[5] = 0x00
+        packet[6] = 0x40; packet[7] = 0x00 // don't fragment
+        packet[8] = 64 // ttl
+        packet[9] = 17 // udp
+        // swap: reply goes back to whoever asked
+        System.arraycopy(destIp, 0, packet, 12, 4)
+        System.arraycopy(sourceIp, 0, packet, 16, 4)
+        packet[20] = ((destPort shr 8) and 0xFF).toByte()
+        packet[21] = (destPort and 0xFF).toByte()
+        packet[22] = ((sourcePort shr 8) and 0xFF).toByte()
+        packet[23] = (sourcePort and 0xFF).toByte()
+        packet[24] = ((udpLength shr 8) and 0xFF).toByte()
+        packet[25] = (udpLength and 0xFF).toByte()
+        // IPv4 allows a zero UDP checksum.
+        packet[26] = 0; packet[27] = 0
+        System.arraycopy(payload, 0, packet, 28, payload.size)
+        val checksum = ipChecksum(packet, 20)
+        packet[10] = ((checksum shr 8) and 0xFF).toByte()
+        packet[11] = (checksum and 0xFF).toByte()
+        return packet
+    }
+
+    private fun ipChecksum(packet: ByteArray, headerLength: Int): Int {
+        var sum = 0
+        var index = 0
+        while (index + 1 < headerLength) {
+            sum += ((packet[index].toInt() and 0xFF) shl 8) or (packet[index + 1].toInt() and 0xFF)
+            index += 2
+        }
+        while (sum shr 16 != 0) sum = (sum and 0xFFFF) + (sum shr 16)
+        return sum.inv() and 0xFFFF
+    }
+
+    /** Best-effort QNAME for the UI; the bytes are never altered. */
+    private fun dnsQuestionName(query: ByteArray): String? {
+        if (query.size < 13) return null
+        var index = 12
+        val labels = mutableListOf<String>()
+        while (index < query.size) {
+            val length = query[index].toInt() and 0xFF
+            if (length == 0) break
+            if (length > 63 || index + 1 + length > query.size) return null
+            labels.add(String(query, index + 1, length))
+            index += 1 + length
+        }
+        return if (labels.isEmpty()) null else labels.joinToString(".")
+    }
+
+    private fun notifyForeground() {
+        val manager = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(CHANNEL, "Leapin VPN", NotificationManager.IMPORTANCE_LOW)
+            )
+        }
+        val stop = PendingIntent.getService(
+            this, 1, Intent(this, LeapinVpnService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val notification: Notification = Notification.Builder(this, CHANNEL)
+            .setContentTitle("Leapin 正在接管 DNS")
+            .setContentText("TCP 接管是下一步；当前只处理 53 端口")
+            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setOngoing(true)
+            .addAction(Notification.Action.Builder(null, "停止", stop).build())
+            .build()
+        startForeground(NOTIFICATION_ID, notification)
+    }
+
+    private fun stopTunnel() {
+        running = false
+        isRunning = false
+        thread?.interrupt()
+        thread = null
+        try { tun?.close() } catch (_: Throwable) {}
+        tun = null
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    override fun onRevoke() {
+        stopTunnel()
+        super.onRevoke()
+    }
+
+    override fun onDestroy() {
+        stopTunnel()
+        super.onDestroy()
+    }
+}
