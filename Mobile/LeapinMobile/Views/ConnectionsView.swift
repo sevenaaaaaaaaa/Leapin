@@ -1,6 +1,8 @@
 import SwiftUI
 import LeapinControl
 
+/// 连接 in the system-native shape: one searchable list of rows, policy as the
+/// right-aligned value, no card chrome.
 struct ConnectionsView: View {
     @Environment(ConsoleStore.self) private var store
     private var local: LocalProxyEngine { .shared }
@@ -24,116 +26,62 @@ struct ConnectionsView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if source.isEmpty {
+            ScrollView {
+                if filtered.isEmpty {
                     emptyState
                 } else {
-                    ScrollView {
-                        LazyVStack(spacing: 8) {
-                            ForEach(filtered, id: \.id) { connection in
-                                ConnectionRow(connection: connection)
-                            }
-                            if filtered.isEmpty {
-                                Text("没有匹配「\(query)」的连接")
-                                    .font(LPFont.caption)
-                                    .foregroundStyle(LP.textTertiary)
-                                    .padding(.top, 24)
-                            }
+                    LPSection(header: local.isRunning ? "本机 \(filtered.count) 条" : "来自 Mac") {
+                        ForEach(Array(filtered.enumerated()), id: \.element.id) { index, connection in
+                            row(connection, isLast: index == filtered.count - 1)
                         }
-                        .lpPage()
                     }
-                    .background(LP.canvas)
-            .contentMargins(.bottom, 84, for: .scrollContent)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
                 }
             }
+            .background(LP.groupedBackground)
+            .contentMargins(.bottom, 84, for: .scrollContent)
             .navigationTitle("连接")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .searchable(text: $query, prompt: "搜索域名、App 或策略")
             .refreshable { await store.refresh() }
         }
     }
 
+    private func row(_ connection: ControlConnection, isLast: Bool) -> some View {
+        LPListRow(title: connection.host,
+                  subtitle: subtitle(connection),
+                  value: connection.policy, mono: false, isLast: isLast) {
+            Text(LPFormat.bytes(connection.bytesIn) + " ↓")
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(LP.textTertiary)
+        }
+    }
+
+    private func subtitle(_ connection: ControlConnection) -> String {
+        var parts: [String] = []
+        if connection.port != 443 { parts.append(":\(connection.port)") }
+        if !connection.sourceApp.isEmpty { parts.append(connection.sourceApp) }
+        if !connection.outbound.isEmpty { parts.append(connection.outbound) }
+        return parts.joined(separator: " · ")
+    }
+
     private var emptyState: some View {
         VStack(spacing: 10) {
-            Image(systemName: "arrow.left.arrow.right.circle")
-                .font(.system(size: 34, weight: .light))
+            Image(systemName: "arrow.left.arrow.right")
+                .font(.system(size: 30, weight: .light))
                 .foregroundStyle(LP.textTertiary)
             Text("还没有连接记录")
-                .font(LPFont.section)
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(LP.text)
             Text(local.isRunning
                  ? "本机引擎正在运行，但还没有流量经过它"
-                 : "启动「本机引擎」，或连接 Mac 后访问网站")
-                .font(LPFont.caption)
+                 : "启动「代理」，或连接 Mac 后访问网站")
+                .font(.system(size: 13))
                 .foregroundStyle(LP.textTertiary)
+                .multilineTextAlignment(.center)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(LP.canvas)
-    }
-}
-
-struct ConnectionRow: View {
-    let connection: ControlConnection
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 8) {
-                Text(connection.host)
-                    .font(LPFont.display(14, weight: .medium))
-                    .foregroundStyle(LP.text)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if connection.port != 443 {
-                    Text(":\(connection.port)")
-                        .font(LPFont.mono(11))
-                        .foregroundStyle(LP.textTertiary)
-                }
-                Spacer(minLength: 4)
-                LPPill(text: connection.policy, tint: policyTint(connection.policy))
-            }
-
-            HStack(spacing: 10) {
-                Label(connection.sourceApp.isEmpty ? "未知来源" : connection.sourceApp,
-                      systemImage: "app.dashed")
-                    .font(LPFont.micro)
-                    .foregroundStyle(LP.textSecondary)
-                    .lineLimit(1)
-
-                Label(connection.outbound.isEmpty ? connection.chainSummary : connection.outbound,
-                      systemImage: "arrow.triangle.branch")
-                    .font(LPFont.micro)
-                    .foregroundStyle(LP.textTertiary)
-                    .lineLimit(1)
-
-                Spacer(minLength: 0)
-
-                Text("\(LPFormat.bytes(connection.bytesIn)) ↓ / \(LPFormat.bytes(connection.bytesOut)) ↑")
-                    .font(LPFont.mono(10))
-                    .foregroundStyle(LP.textTertiary)
-            }
-
-            if !connection.matchedRule.isEmpty {
-                Text(connection.matchedRule)
-                    .font(LPFont.mono(10))
-                    .foregroundStyle(LP.textTertiary)
-                    .lineLimit(1)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LP.panel, in: RoundedRectangle(cornerRadius: LP.radiusSmall + 2, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: LP.radiusSmall + 2, style: .continuous)
-                .strokeBorder(LP.stroke, lineWidth: 1)
-        )
-    }
-
-    private func policyTint(_ policy: String) -> Color {
-        switch policy.lowercased() {
-        case "proxy", "global", "proxy-group": return LP.accent
-        case "direct": return LP.mint
-        case "reject", "block": return LP.danger
-        default: return LP.violet
-        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 120)
     }
 }

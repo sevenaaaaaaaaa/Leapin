@@ -68,19 +68,18 @@ struct ConsoleTabs: View {
                 .tabItem { Label("诊断", systemImage: "stethoscope") }
                 .tag(4)
         }
-        .overlay(alignment: .top) {
+        .safeAreaInset(edge: .top, spacing: 0) {
             VStack(spacing: 8) {
                 if let error = store.lastError {
                     ErrorBanner(message: error) { store.clearError() }
-                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
                 if store.endpoint == nil, selection != 0 {
                     UnpairedBanner()
-                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
             .padding(.horizontal, LP.gutter)
-            .padding(.top, 4)
+            .padding(.top, 2)
+            .padding(.bottom, 6)
         }
         .animation(.easeInOut(duration: 0.18), value: store.lastError)
         // One sheet for the whole app: any page can ask to pair without owning a

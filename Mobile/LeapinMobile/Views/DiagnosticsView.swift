@@ -46,7 +46,7 @@ struct DiagnosticsView: View {
                     .disabled(isRunning)
 
                     if let failure {
-                        LPCard {
+                        LPPanel {
                             Text(failure)
                                 .font(LPFont.caption)
                                 .foregroundStyle(LP.danger)
@@ -55,18 +55,20 @@ struct DiagnosticsView: View {
 
                     resultSection
                 }
-                .lpPage()
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 24)
             }
-            .background(LP.canvas)
+            .background(LP.groupedBackground)
             .contentMargins(.bottom, 84, for: .scrollContent)
             .navigationTitle("诊断")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarTitleDisplayMode(.large)
             .scrollDismissesKeyboard(.interactively)
         }
     }
 
     private var inputCard: some View {
-        LPCard(title: tool.rawValue, subtitle: subtitleForTool) {
+        LPPanel(header: tool.rawValue, subtitle: subtitleForTool) {
             VStack(spacing: 10) {
                 switch tool {
                 case .ruleMatch, .dns:
@@ -129,7 +131,7 @@ struct DiagnosticsView: View {
     }
 
     private func explainCard(_ result: ControlExplainResult) -> some View {
-        LPCard(title: "判定结果", subtitle: "\(result.host):\(result.port)") {
+        LPPanel(header: "判定结果", subtitle: "\(result.host):\(result.port)") {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     LPPill(text: result.policy.isEmpty ? "未知" : result.policy,
@@ -179,7 +181,7 @@ struct DiagnosticsView: View {
     }
 
     private func traceCard(_ result: DNSTrace) -> some View {
-        LPCard(title: "DNS 解析", subtitle: result.host) {
+        LPPanel(header: "DNS 解析", subtitle: result.host) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     LPPill(text: sourceLabel(result.source.rawValue), tint: LP.violet)
@@ -222,7 +224,7 @@ struct DiagnosticsView: View {
     }
 
     private func probeCard(_ result: HTTPProbeResult) -> some View {
-        LPCard(title: "HTTP 探测", subtitle: result.url) {
+        LPPanel(header: "HTTP 探测", subtitle: result.url) {
             VStack(spacing: 8) {
                 HStack(spacing: 8) {
                     if let code = result.statusCode {

@@ -330,3 +330,32 @@ extension LPListRow where Trailing == EmptyView {
                   showsChevron: showsChevron, isLast: isLast) { EmptyView() }
     }
 }
+
+/// A grouped block with arbitrary content (results, forms) rather than rows.
+struct LPPanel<Content: View>: View {
+    var header: String?
+    var subtitle: String?
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            if let header {
+                Text(header)
+                    .font(.system(size: 13))
+                    .foregroundStyle(LP.textSecondary)
+                    .padding(.horizontal, 16)
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                if let subtitle, !subtitle.isEmpty {
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(LP.textTertiary)
+                }
+                content
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(LP.groupedRow, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+}
