@@ -73,6 +73,7 @@ fun ToolsScreen(store: ConsoleStore, scope: CoroutineScope, onConnect: () -> Uni
     var probeStatus by remember { mutableStateOf<Int?>(null) }
     var probeError by remember { mutableStateOf<String?>(null) }
     var probeBusy by remember { mutableStateOf(false) }
+    var fullTunnel by remember { mutableStateOf(false) }
 
     androidx.compose.runtime.LaunchedEffect(Unit) {
         localAddress = withContext(Dispatchers.IO) { wifiAddress() }
@@ -134,7 +135,7 @@ fun ToolsScreen(store: ConsoleStore, scope: CoroutineScope, onConnect: () -> Uni
         val consentLauncher = rememberLauncherForActivityResult(
             ActivityResultContracts.StartActivityForResult()
         ) { result ->
-            if (result.resultCode == Activity.RESULT_OK) VpnController.start(context)
+            if (result.resultCode == Activity.RESULT_OK) VpnController.start(context, fullTunnel)
         }
 
         Panel(title = "系统接管（VPN）", subtitle = "让整机流量经过 Leapin，先从 DNS 开始") {
@@ -154,13 +155,13 @@ fun ToolsScreen(store: ConsoleStore, scope: CoroutineScope, onConnect: () -> Uni
                         VpnController.stop(context)
                     } else {
                         val consent = VpnController.prepare(context)
-                        if (consent != null) consentLauncher.launch(consent) else VpnController.start(context)
+                        if (consent != null) consentLauncher.launch(consent) else VpnController.start(context, fullTunnel)
                     }
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = LP.accent),
             ) { Text(if (LeapinVpnService.isRunning) "停止接管" else "开始接管", color = Color.White, fontSize = 13.sp) }
             Text(
-                "当前只接管 53 端口（DNS），TCP 直通不受影响；TCP 接管需要 tun2socks，是下一步。",
+                "默认只接管 53 端口（DNS）。打开「完整接管」后 TCP 经本机引擎转发；非 53 的 UDP 暂不透传，应用会回退到 TCP。",
                 fontSize = 10.sp, color = LP.textTertiary,
             )
         }

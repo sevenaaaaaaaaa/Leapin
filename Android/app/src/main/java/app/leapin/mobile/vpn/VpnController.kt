@@ -9,9 +9,10 @@ object VpnController {
     /** Null when permission is already granted; otherwise the consent intent. */
     fun prepare(context: Context): Intent? = VpnService.prepare(context)
 
-    fun start(context: Context) {
+    fun start(context: Context, fullTunnel: Boolean = false) {
         val intent = Intent(context, LeapinVpnService::class.java)
             .setAction(LeapinVpnService.ACTION_START)
+            .putExtra(LeapinVpnService.EXTRA_FULL_TUNNEL, fullTunnel)
         context.startForegroundService(intent)
     }
 
