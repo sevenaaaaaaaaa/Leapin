@@ -437,28 +437,4 @@ extension View {
     func pagePadding() -> some View { lpPage() }
 }
 
-/// A section in the macOS System-Settings sense: a header, grouped rows and the
-/// platform's own insets. Same call shape as Card so pages convert by name.
-struct FormCard<Content: View>: View {
-    var title: String
-    var subtitle: String? = nil
-    var icon: String? = nil
-    @ViewBuilder var content: Content
 
-    var body: some View {
-        Section {
-            content
-        } header: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                if let subtitle, !subtitle.isEmpty {
-                    Text(subtitle)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.bottom, 2)
-        }
-    }
-}
