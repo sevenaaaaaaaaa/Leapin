@@ -79,7 +79,10 @@ private fun ConsoleScaffold(store: ConsoleStore) {
         Tab("策略", Icons.Filled.Layers),
         Tab("诊断", Icons.Filled.MonitorHeart),
     )
-    var showSetup by remember { mutableStateOf(store.endpoint == null) }
+    // Never open on pairing: the tabs are readable without a Mac, and the tools
+    // page carries the "connect" entry. Starting on the setup screen is what made
+    // the app feel like a dead end on first launch.
+    var showSetup by remember { mutableStateOf(false) }
     var selected by remember { mutableIntStateOf(0) }
     var showSettings by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()

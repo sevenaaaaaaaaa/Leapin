@@ -52,28 +52,35 @@ struct ConsoleTabs: View {
                 .tabItem { Label("工具", systemImage: "wrench.and.screwdriver") }
                 .tag(0)
 
-            paired { DashboardView() }
+            DashboardView()
                 .tabItem { Label("状态", systemImage: "gauge.with.dots.needle.50percent") }
                 .tag(1)
 
-            paired { ConnectionsView() }
+            ConnectionsView()
                 .tabItem { Label("连接", systemImage: "arrow.left.arrow.right") }
                 .tag(2)
 
-            paired { PoliciesView() }
+            PoliciesView()
                 .tabItem { Label("策略", systemImage: "square.stack.3d.up") }
                 .tag(3)
 
-            paired { DiagnosticsView() }
+            DiagnosticsView()
                 .tabItem { Label("诊断", systemImage: "stethoscope") }
                 .tag(4)
         }
         .overlay(alignment: .top) {
-            if let error = store.lastError {
-                ErrorBanner(message: error) { store.clearError() }
-                    .padding(.horizontal, LP.gutter)
-                    .transition(.move(edge: .top).combined(with: .opacity))
+            VStack(spacing: 8) {
+                if let error = store.lastError {
+                    ErrorBanner(message: error) { store.clearError() }
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                if store.endpoint == nil, selection != 0 {
+                    UnpairedBanner()
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
             }
+            .padding(.horizontal, LP.gutter)
+            .padding(.top, 4)
         }
         .animation(.easeInOut(duration: 0.18), value: store.lastError)
         // One sheet for the whole app: any page can ask to pair without owning a
@@ -84,58 +91,33 @@ struct ConsoleTabs: View {
         }
     }
 
-    /// Console pages need a paired Mac; until then they explain that instead of
-    /// showing an empty screen, and point back at the tools that do work.
-    @ViewBuilder
-    private func paired<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        if store.endpoint == nil {
-            UnpairedPage()
-        } else {
-            content()
-        }
-    }
 }
 
-private struct UnpairedPage: View {
+/// Thin strip above a console page while no Mac is paired: the page still shows
+/// its real structure, this only explains why the numbers are empty.
+private struct UnpairedBanner: View {
     @Environment(ConsoleStore.self) private var store
-    @State private var showSetup = false
 
     var body: some View {
-        VStack(spacing: 12) {
+        HStack(spacing: 8) {
             Image(systemName: "desktopcomputer")
-                .font(.system(size: 30, weight: .light))
+                .font(.system(size: 11))
                 .foregroundStyle(LP.textTertiary)
-            Text("这个页面需要连接 Mac")
-                .font(LPFont.section)
-                .foregroundStyle(LP.text)
-            Text("「工具」页的 DNS、HTTP 探测和本机网络不需要连接，随时可用。")
-                .font(LPFont.caption)
-                .foregroundStyle(LP.textTertiary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 300)
+            Text("未连接 Mac，下面是本机与空数据")
+                .font(LPFont.micro)
+                .foregroundStyle(LP.textSecondary)
+            Spacer(minLength: 4)
             Button("扫码配对") { store.pairingSheetShown = true }
-                .buttonStyle(LPButtonStyle())
-                .frame(width: 180)
-                .padding(.top, 4)
-            Button("手动输入地址和令牌") { showSetup = true }
-                .font(LPFont.caption)
-                .foregroundStyle(LP.textTertiary)
+                .font(LPFont.micro.weight(.semibold))
+                .foregroundStyle(LP.accent)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(LP.canvas)
-        .sheet(isPresented: $showSetup) {
-            NavigationStack {
-                SetupView()
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("关闭") { showSetup = false }
-                        }
-                    }
-            }
-            .onChange(of: store.endpoint) { _, value in
-                if value != nil { showSetup = false }
-            }
-        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(LP.panelRaised, in: RoundedRectangle(cornerRadius: LP.radiusSmall, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: LP.radiusSmall, style: .continuous)
+                .strokeBorder(LP.stroke, lineWidth: 1)
+        )
     }
 }
 
