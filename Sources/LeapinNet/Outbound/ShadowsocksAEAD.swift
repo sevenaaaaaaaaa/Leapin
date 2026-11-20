@@ -193,20 +193,27 @@ public enum ShadowsocksAEAD {
 public final class ShadowsocksStream: ByteStream, WriteHalfClosable, @unchecked Sendable {
     public let cipher: ShadowsocksCipher
     private let base: ByteStream
-    private let key: SymmetricKey
-    private let salt: Data
-    private var nonce = Data(repeating: 0, count: 12)
+    private let password: String
+    /// One direction, one salt, one key, one nonce counter: SIP004 derives the
+    /// client-to-server and server-to-client keys from different salts, so the
+    /// two directions must never share key material.
+    private let writeKey: SymmetricKey
+    private let writeSalt: Data
+    private var writeNonce = Data(repeating: 0, count: 12)
     private var saltWritten = false
+    private var readKey: SymmetricKey?
+    private var readNonce = Data(repeating: 0, count: 12)
     private var rawBuffer = Data()
     private var plainBuffer = Data()
     private let lock = NSLock()
 
     public init(base: ByteStream, password: String, cipher: ShadowsocksCipher) {
         self.base = base
+        self.password = password
         self.cipher = cipher
-        self.salt = DataUtil.randomBytes(cipher.saltLength)
-        let keyData = ShadowsocksAEAD.sessionKey(password: password, salt: salt, cipher: cipher)
-        self.key = SymmetricKey(data: keyData)
+        self.writeSalt = DataUtil.randomBytes(cipher.saltLength)
+        let keyData = ShadowsocksAEAD.sessionKey(password: password, salt: writeSalt, cipher: cipher)
+        self.writeKey = SymmetricKey(data: keyData)
     }
 
     public var remoteDescription: String { "shadowsocks(\(cipher.rawValue))->\(base.remoteDescription)" }
@@ -217,17 +224,17 @@ public final class ShadowsocksStream: ByteStream, WriteHalfClosable, @unchecked 
         guard !data.isEmpty else { return }
         if !saltWritten {
             saltWritten = true
-            try await base.write(salt)
+            try await base.write(writeSalt)
         }
         var offset = 0
         while offset < data.count {
             let size = min(ShadowsocksCipher.maxChunk, data.count - offset)
             let chunk = data.subdata(in: offset..<(offset + size))
             let length = Data([UInt8((size >> 8) & 0xFF), UInt8(size & 0xFF)])
-            let sealedLength = try cipher.seal(length, key: key, nonce: nonce)
-            ShadowsocksAEAD.incrementNonce(&nonce)
-            let sealedChunk = try cipher.seal(chunk, key: key, nonce: nonce)
-            ShadowsocksAEAD.incrementNonce(&nonce)
+            let sealedLength = try cipher.seal(length, key: writeKey, nonce: writeNonce)
+            ShadowsocksAEAD.incrementNonce(&writeNonce)
+            let sealedChunk = try cipher.seal(chunk, key: writeKey, nonce: writeNonce)
+            ShadowsocksAEAD.incrementNonce(&writeNonce)
             var frame = sealedLength
             frame.append(sealedChunk)
             try await base.write(frame)
@@ -277,8 +284,25 @@ public final class ShadowsocksStream: ByteStream, WriteHalfClosable, @unchecked 
         return true
     }
 
+    /// The server picks its own salt as the first bytes of the reply stream, and the
+    /// client derives the read key from it. Skipping this step decrypts the first
+    /// response block with the write key, which can only fail.
+    private func ensureReadKey() async throws -> SymmetricKey {
+        if let readKey { return readKey }
+        guard try await fillRaw(cipher.saltLength) else {
+            throw LeapinError.protocolError("shadowsocks: truncated server salt")
+        }
+        let salt = Data(rawBuffer.prefix(cipher.saltLength))
+        rawBuffer.removeFirst(cipher.saltLength)
+        let keyData = ShadowsocksAEAD.sessionKey(password: password, salt: salt, cipher: cipher)
+        let key = SymmetricKey(data: keyData)
+        readKey = key
+        return key
+    }
+
     private func readOneChunk() async throws {
         let tag = cipher.tagLength
+        let key = try await ensureReadKey()
         guard try await fillRaw(2 + tag) else {
             if !rawBuffer.isEmpty {
                 throw LeapinError.protocolError("shadowsocks: truncated length block at EOF")
@@ -287,8 +311,8 @@ public final class ShadowsocksStream: ByteStream, WriteHalfClosable, @unchecked 
         }
         let lengthBlock = rawBuffer.prefix(2 + tag)
         rawBuffer.removeFirst(2 + tag)
-        let lengthData = try cipher.open(Data(lengthBlock), key: key, nonce: nonce)
-        ShadowsocksAEAD.incrementNonce(&nonce)
+        let lengthData = try cipher.open(Data(lengthBlock), key: key, nonce: readNonce)
+        ShadowsocksAEAD.incrementNonce(&readNonce)
         guard lengthData.count == 2 else {
             throw LeapinError.protocolError("shadowsocks: malformed length block")
         }
@@ -302,8 +326,8 @@ public final class ShadowsocksStream: ByteStream, WriteHalfClosable, @unchecked 
         }
         let payloadBlock = rawBuffer.prefix(length + tag)
         rawBuffer.removeFirst(length + tag)
-        let payload = try cipher.open(Data(payloadBlock), key: key, nonce: nonce)
-        ShadowsocksAEAD.incrementNonce(&nonce)
+        let payload = try cipher.open(Data(payloadBlock), key: key, nonce: readNonce)
+        ShadowsocksAEAD.incrementNonce(&readNonce)
         plainBuffer.append(payload)
     }
 }

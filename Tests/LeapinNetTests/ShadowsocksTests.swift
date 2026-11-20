@@ -134,6 +134,44 @@ final class ShadowsocksTests: XCTestCase {
         }
     }
 
+    /// NET-05: the server's reply begins with its own salt and is encrypted with a
+    /// key derived from it. A client that reuses its write key cannot read a byte.
+    func testStreamReadsServerSaltAndFrames() async throws {
+        let client = ScriptedStream()
+        let stream = ShadowsocksStream(base: client, password: "test-password", cipher: .aes256gcm)
+
+        try await stream.write(Data("ping".utf8))
+        let sent = client.sentBytes
+        let decoded = try ShadowsocksAEAD.decryptStream(sent, password: "test-password", cipher: .aes256gcm)
+        XCTAssertEqual(String(decoding: decoded, as: UTF8.self), "ping")
+
+        // A real server answers with a fresh salt and a key derived from it.
+        let reply = try ShadowsocksAEAD.encryptStream(Data("pong".utf8),
+                                                     password: "test-password",
+                                                     cipher: .aes256gcm)
+        client.feed(reply)
+        let read = try await stream.read(maxLength: 64)
+        XCTAssertEqual(read.map { String(decoding: $0, as: UTF8.self) }, "pong")
+    }
+
+    /// A reply larger than one SIP004 chunk must keep advancing the read nonce.
+    func testStreamDecryptsMultipleServerChunks() async throws {
+        let client = ScriptedStream()
+        let stream = ShadowsocksStream(base: client, password: "test-password", cipher: .chacha20IetfPoly1305)
+        _ = try await stream.write(Data("go".utf8))
+
+        let payload = Data((0..<40_000).map { UInt8($0 % 251) })
+        client.feed(try ShadowsocksAEAD.encryptStream(payload, password: "test-password",
+                                                      cipher: .chacha20IetfPoly1305))
+
+        var collected = Data()
+        while collected.count < payload.count {
+            guard let chunk = try await stream.read(maxLength: 32_768) else { break }
+            collected.append(chunk)
+        }
+        XCTAssertEqual(collected, payload, "three chunked blocks must decrypt in order")
+    }
+
     func testDecryptRejectsTruncatedStream() throws {
         let payload = Data(repeating: 0x01, count: 64)
         let salt = Data(repeating: 0x33, count: 32)
@@ -151,4 +189,41 @@ final class ShadowsocksTests: XCTestCase {
                                                        salt: salt)
         XCTAssertThrowsError(try ShadowsocksAEAD.decryptStream(framed, password: "wrong", cipher: .aes256gcm))
     }
+}
+
+/// In-memory ByteStream for the framing tests: writes land in sentBytes and reads
+/// are served from bytes the test feeds in.
+final class ScriptedStream: ByteStream, @unchecked Sendable {
+    private let lock = NSLock()
+    private var sent = Data()
+    private var incoming = Data()
+    private var closed = false
+
+    var sentBytes: Data { lock.withLock { sent } }
+
+    func feed(_ data: Data) { lock.withLock { incoming.append(data) } }
+
+    func write(_ data: Data) async throws { lock.withLock { sent.append(data) } }
+
+    func read(maxLength: Int) async throws -> Data? {
+        while true {
+            let outcome: Data? = lock.withLock {
+                if !incoming.isEmpty {
+                    let size = min(max(maxLength, 1), incoming.count)
+                    let piece = incoming.prefix(size)
+                    incoming.removeFirst(size)
+                    return Data(piece)
+                }
+                return closed ? Data() : nil
+            }
+            if let outcome { return outcome.isEmpty ? nil : outcome }
+            try await Task.sleep(nanoseconds: 2_000_000)
+        }
+    }
+
+    func close() { lock.withLock { closed = true } }
+
+    var remoteDescription: String { "scripted" }
+    var bytesRead: Int { 0 }
+    var bytesWritten: Int { lock.withLock { sent.count } }
 }
