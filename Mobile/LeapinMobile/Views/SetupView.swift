@@ -26,11 +26,11 @@ struct SetupView: View {
                     }
                 }
 
-                LPCard(title: "怎么拿到这些信息", subtitle: "在 Mac 上执行一次") {
+                LPCard(title: "怎么拿到这些信息", subtitle: "在 Mac 上操作") {
                     VStack(alignment: .leading, spacing: 10) {
-                        instruction(1, "让控制面监听局域网", "leapin control --lan")
-                        instruction(2, "读取令牌", "cat ~/Library/Application\\ Support/Leapin/control-token")
-                        instruction(3, "把 IP 和令牌填到这里", "IP 就是 Mac 在 Wi-Fi 里的地址")
+                        instruction(1, "打开「设置 → 手机连接」", "并开启允许局域网访问")
+                        instruction(2, "看那张配对二维码", "地址与令牌都印在上面")
+                        instruction(3, "扫码即可", "扫码失败时再把地址和令牌抄过来")
                     }
                 }
 

@@ -76,6 +76,12 @@ struct ConsoleTabs: View {
             }
         }
         .animation(.easeInOut(duration: 0.18), value: store.lastError)
+        // One sheet for the whole app: any page can ask to pair without owning a
+        // presentation of its own.
+        .sheet(isPresented: Binding(get: { store.pairingSheetShown },
+                                    set: { store.pairingSheetShown = $0 })) {
+            PairingScannerView()
+        }
     }
 
     /// Console pages need a paired Mac; until then they explain that instead of
@@ -107,10 +113,13 @@ private struct UnpairedPage: View {
                 .foregroundStyle(LP.textTertiary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 300)
-            Button("连接 Mac") { showSetup = true }
+            Button("扫码配对") { store.pairingSheetShown = true }
                 .buttonStyle(LPButtonStyle())
                 .frame(width: 180)
                 .padding(.top, 4)
+            Button("手动输入地址和令牌") { showSetup = true }
+                .font(LPFont.caption)
+                .foregroundStyle(LP.textTertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(LP.canvas)

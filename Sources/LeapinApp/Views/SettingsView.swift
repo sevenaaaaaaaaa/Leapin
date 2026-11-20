@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CoreImage
 import LeapinCore
 import LeapinRuntime
 import LeapinIntegrations
@@ -27,6 +28,7 @@ struct SettingsView: View {
     @State private var dnsHijack = true
     @State private var loaded = false
     @State private var showResetConfirm = false
+    @State private var pairing: PhonePairing?
 
     var body: some View {
         ScrollView {
@@ -38,6 +40,7 @@ struct SettingsView: View {
                             dnsSection
                         }
                         VStack(spacing: 16) {
+                            pairingSection
                             launchSection
                             captureSection
                             advancedSection
@@ -48,6 +51,7 @@ struct SettingsView: View {
                     VStack(spacing: 16) {
                         proxySection
                         dnsSection
+                        pairingSection
                         launchSection
                         captureSection
                         advancedSection
@@ -60,7 +64,10 @@ struct SettingsView: View {
             .pagePadding()
             .navigationTitle("设置")
         }
-        .onAppear(perform: load)
+        .onAppear {
+            load()
+            pairing = engine.phonePairing()
+        }
         .onChange(of: engine.profile.id) { _, _ in
             // 配置在别处被切换/导入：未修改时直接同步，已修改时保留草稿并提示。
             if isDirty {
@@ -245,6 +252,15 @@ struct SettingsView: View {
                     .textSelection(.enabled)
             }
         }
+    }
+
+    private var pairingSection: some View {
+        PhonePairingCard(pairing: pairing,
+                         lanEnabled: engine.profile.general.controlAllowLAN,
+                         onToggleLAN: { enabled in
+                             engine.setControlLAN(enabled)
+                             pairing = engine.phonePairing()
+                         })
     }
 
     private var saveBar: some View {
@@ -478,5 +494,141 @@ private struct PlainField: View {
                     .frame(height: focused ? 1.5 : 1)
                     .lpAnimation(LPMotion.quick, value: focused)
             }
+    }
+}
+
+/// One label/value row with an optional copy button, used by the pairing card.
+private struct LabeledLine: View {
+    var label: String
+    var value: String
+    var copy: String?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(LP.textTertiary)
+                .frame(width: 30, alignment: .leading)
+            Text(value)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(LP.text)
+                .textSelection(.enabled)
+            if let copy {
+                Button {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(copy, forType: .string)
+                } label: {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 9))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(LP.textTertiary)
+                .help("复制完整令牌")
+            }
+        }
+    }
+}
+
+/// Pairing card: a QR the phone can scan, the token, and the toggle that decides
+/// whether the phone can reach this Mac at all. Kept as its own view so the
+/// settings body stays a plain list of sections.
+private struct PhonePairingCard: View {
+    var pairing: PhonePairing?
+    var lanEnabled: Bool
+    var onToggleLAN: (Bool) -> Void
+
+    var body: some View {
+        Card(title: "手机连接", subtitle: "iOS / Android 控制台读这台 Mac 的状态与策略", icon: "qrcode") {
+            if let pairing {
+                pairedBody(pairing)
+            } else {
+                Text("控制面还没有生成令牌。先在设置里保持控制面开启，再回到这里。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(LP.textTertiary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func pairedBody(_ pairing: PhonePairing) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            QRCodeImage(text: pairing.pairingURL)
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(spacing: 6) {
+                    Text("地址")
+                        .font(.system(size: 10))
+                        .foregroundStyle(LP.textTertiary)
+                        .frame(width: 30, alignment: .leading)
+                    Text("\(pairing.host):\(pairing.port)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(LP.text)
+                        .textSelection(.enabled)
+                }
+                HStack(spacing: 6) {
+                    Text("令牌")
+                        .font(.system(size: 10))
+                        .foregroundStyle(LP.textTertiary)
+                        .frame(width: 30, alignment: .leading)
+                    Text(String(pairing.token.prefix(12)) + "…")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(LP.text)
+                    Button("复制") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(pairing.token, forType: .string)
+                    }
+                    .buttonStyle(LPGhostButtonStyle())
+                }
+                Toggle("允许局域网访问", isOn: Binding(get: { lanEnabled }, set: onToggleLAN))
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+            }
+        }
+        if pairing.blockers.isEmpty {
+            Text("手机上打开 Leapin →「工具」→ 扫码配对，状态 / 连接 / 策略 / 诊断四个页面立刻可用。")
+                .font(.system(size: 10))
+                .foregroundStyle(LP.textTertiary)
+        } else {
+            VStack(alignment: .leading, spacing: 3) {
+                ForEach(pairing.blockers, id: \.self) { reason in
+                    Label(reason, systemImage: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(LP.amber)
+                }
+            }
+        }
+    }
+}
+
+/// Renders a pairing payload as a crisp QR image.
+private struct QRCodeImage: View {
+    var text: String
+
+    var body: some View {
+        Group {
+            if let image = Self.make(text) {
+                Image(nsImage: image)
+                    .interpolation(.none)
+                    .resizable()
+                    .frame(width: 128, height: 128)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .accessibilityLabel("手机配对二维码")
+            } else {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(LP.panelRaised)
+                    .frame(width: 128, height: 128)
+            }
+        }
+    }
+
+    private static func make(_ text: String) -> NSImage? {
+        guard let filter = CIFilter(name: "CIQRCodeGenerator") else { return nil }
+        filter.setValue(Data(text.utf8), forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let output = filter.outputImage else { return nil }
+        let scaled = output.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
+        let rep = NSCIImageRep(ciImage: scaled)
+        let image = NSImage(size: rep.size)
+        image.addRepresentation(rep)
+        return image
     }
 }

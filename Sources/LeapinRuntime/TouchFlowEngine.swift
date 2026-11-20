@@ -407,6 +407,49 @@ public final class LeapinEngine: ObservableObject {
     }
 
     @discardableResult
+    // MARK: - Phone pairing
+
+    /// What the phone needs to pair, and why it cannot right now.
+    public func phonePairing() -> PhonePairing? {
+        let tokenFile = store.root.appendingPathComponent("control-token")
+        guard let raw = try? String(contentsOf: tokenFile, encoding: .utf8) else { return nil }
+        let token = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return nil }
+
+        let host = PhonePairing.lanAddress() ?? "127.0.0.1"
+        let running = controlServer?.isRunning == true
+        var blockers: [String] = []
+        if !profile.general.controlEnabled {
+            blockers.append("控制面已在设置里关闭")
+        } else if !running {
+            blockers.append("控制面没有启动")
+        }
+        if !profile.general.controlAllowLAN {
+            blockers.append("只允许本机访问，手机连不上")
+        }
+        if PhonePairing.lanAddress() == nil {
+            blockers.append("这台 Mac 现在没有局域网 IPv4 地址")
+        }
+        return PhonePairing(host: host, port: Int(profile.general.controlPort), token: token,
+                            lanEnabled: profile.general.controlAllowLAN,
+                            controlRunning: running, blockers: blockers)
+    }
+
+    /// Turns LAN access on or off and rebinds the control plane, so the QR code the
+    /// phone just scanned either works immediately or never appears to work.
+    public func setControlLAN(_ enabled: Bool) {
+        guard profile.general.controlAllowLAN != enabled else { return }
+        var next = profile
+        next.general.controlAllowLAN = enabled
+        profile = next
+        _ = saveProfile()
+        controlServer?.stop()
+        controlServer = nil
+        controlStartedAt = nil
+        startControlPlane()
+        LPLog.shared.info("system", "控制面局域网访问：\(enabled ? "开" : "关")")
+    }
+
     public func saveProfile() -> Bool {
         do {
             _ = try store.save(profile)
