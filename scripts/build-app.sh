@@ -6,9 +6,16 @@ cd "$(dirname "$0")/.."
 CONFIG="${1:-release}"
 APP="dist/Leapin.app"
 
+# Whole-module optimization is not just a speed knob here: with one compilation
+# unit per file, release builds on some toolchains emit a cross-file specialization
+# the linker then cannot find (the 1.13.6/1.13.7 CI failures). WMO compiles the
+# module as one unit, so every specialization it needs exists.
+WMO=()
+[ "${CONFIG}" = "release" ] && WMO=(-Xswiftc -whole-module-optimization)
+
 echo "==> swift build -c ${CONFIG}"
-swift build -c "${CONFIG}" --product LeapinApp
-swift build -c "${CONFIG}" --product leapin
+swift build -c "${CONFIG}" --product LeapinApp "${WMO[@]}"
+swift build -c "${CONFIG}" --product leapin "${WMO[@]}"
 BIN="$(swift build -c "${CONFIG}" --show-bin-path)"
 
 echo "==> assemble ${APP}"
