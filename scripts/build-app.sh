@@ -14,8 +14,8 @@ FSO=()
 [ "${CONFIG}" = "release" ] && FSO=(-Xswiftc -Xllvm -Xswiftc -sil-disable-pass=FunctionSignatureOpts)
 
 echo "==> swift build -c ${CONFIG}"
-swift build -c "${CONFIG}" --product LeapinApp "${FSO[@]}"
-swift build -c "${CONFIG}" --product leapin "${FSO[@]}"
+swift build -c "${CONFIG}" --product LeapinApp ${FSO[@]+"${FSO[@]}"}
+swift build -c "${CONFIG}" --product leapin ${FSO[@]+"${FSO[@]}"}
 BIN="$(swift build -c "${CONFIG}" --show-bin-path)"
 
 echo "==> assemble ${APP}"

@@ -198,13 +198,20 @@ struct LEAPIN_PanelModifier: ViewModifier {
     var raised: Bool = false
 
     func body(content: Content) -> some View {
+        // System-native surfaces: a flat, subtly raised card on the window
+        // background, the way macOS System Settings groups content. No glass, no
+        // border, no shadow — the glass panel read as a widget dashboard rather
+        // than part of the system.
         content
             .padding(padding)
-            .lpGlass(radius: max(LPGlass.panelRadius, radius + 6),
-                     tint: LP.cardTint,
-                     clear: true,
-                     fallbackFill: raised ? LP.panelRaised : LP.panel,
-                     shadow: raised ? 0.10 : 0.07)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color(nsColor: raised ? .controlBackgroundColor : .controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 0.5)
+            )
     }
 }
 
