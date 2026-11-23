@@ -509,6 +509,108 @@ W2/W3 的任务行等 W1 评审通过后再写。现在只有 T-15。
 
 ---
 
+### T-16 RouteLine：一条路与焦点带组件
+
+- **Verdicts**：code: not run — 本会话无独立代码评审角色，等 W2 评审 · security: skipped — 纯视图组件，无网络与权限 · qa: pass — qa/T-16 6/6 · doc: pass — 任务行经 PM 于 2026-11-24 核对
+- **Shape**: solo
+- **Milestone**: M2.5
+
+**这个任务做什么**
+1. 新增 `Design/RouteLine.swift`：全产品唯一的装饰几何。三节点（你 → 判据 → 出口），节点三态（普通 / 当前 / 异常），当前节点用朱红并带 4pt 光圈；支持 `.horizontal`（首屏）与 `.vertical`（trace）两轴。
+2. 新增 `Design/FocusBand.swift`：ink 焦点带容器，圆角 12、内缩 26/28，槽位固定为「眉标 + 一条路 + 事实行 + 一个主操作」；配 `RouteFact`（11 标签 + 20 mono 数值）。
+3. 只建组件，不改任何页面的现有布局——页面改造在 T-17…T-19。
+
+**这个任务不做**
+- 不接引擎、不读全局状态（组件只吃传入数据，便于预览与单测）。
+- 不动菜单栏与浮窗的「路」缩略（W3 / T-20）。
+
+**文件所有权**
+- 新增 `Sources/LeapinApp/Design/RouteLine.swift`
+- 新增 `Sources/LeapinApp/Design/FocusBand.swift`
+- 新增 `qa/T-16/run.sh`
+
+**DoD**
+1. `RouteLine` 支持横向与纵向两轴、节点三态；当前节点用 `LP.accent`，非当前节点不用强调色。
+2. `FocusBand` 用 `LP.ink` 底 + `LPRadius.panel`，内缩 26/28，只有一个主操作槽。
+3. 两个组件都不引用 `LeapinEngine` / `ResidentStatusStore` / `@EnvironmentObject`。
+4. `swift build` exit 0 零新增 warning；`qa/T-16/run.sh` 全 PASS。
+
+---
+
+### T-17 走哪：三段式重排
+
+- **Verdicts**：code: not run — 未开工 · security: skipped — 只改摆法 · qa: not run — 用例待写 · doc: pass — 任务行经 PM 于 2026-11-24 编写
+- **Shape**: solo
+- **Milestone**: M2.5
+- **依赖**：T-16 之后（shares nothing；组件须先存在）
+
+**这个任务做什么**
+1. 首屏改三段式：页头 / 焦点带（一条路 + 四个事实 + 「切到 X」一个主操作）/ 证据区两栏（最近决策 7 : 场景 5）。
+2. 六个场景卡收成 chips，放进证据区右栏；删掉「线路与订阅」残留块与重复计数行。
+3. 四事实仍来自 `ResidentStatusStore.shared`，接线不动。
+
+**文件所有权**
+- 修改 `Sources/LeapinApp/Views/GoWherePage.swift`
+- 修改 `Sources/LeapinApp/Views/DashboardView.swift`
+- 新增 `qa/T-17/run.sh`
+
+**DoD**
+1. 首屏一级模块 ≤5（页头 / 焦点带 / 证据区两块），焦点带只有一个。
+2. 四事实与菜单栏面板同源（沿用 T-08 的快照 + 1 Hz store 纪律，不新增定时器）。
+3. 场景 chips 可切换配置或出口，行为与改造前一致。
+4. `swift build` exit 0；`qa/T-17/run.sh` 全 PASS；qa/T-08 仍全绿（回归）。
+
+---
+
+### T-18 怎么判 + 改成什么：表为主
+
+- **Verdicts**：code: not run — 未开工 · security: skipped — 只改摆法 · qa: not run — 用例待写 · doc: pass — 任务行经 PM 于 2026-11-24 编写
+- **Shape**: solo
+- **Milestone**: M2.5
+- **依赖**：T-16 之后
+
+**这个任务做什么**
+1. `RulesView`：表为主，页头下方左对齐过滤条（全部 / 策略组 / 规则），策略组右栏可折叠，行 hover 才出动作。
+2. `RewriteView`：页头下方左对齐过滤条（重写 / Mock / 脚本 / 去广告）+ 单一「新建」主按钮 + 列表；编辑器仍是 sheet，不跳页。
+3. 居中悬浮 tab 全部去掉（§12 第 5 条）。
+
+**文件所有权**
+- 修改 `Sources/LeapinApp/Views/RulesView.swift`
+- 修改 `Sources/LeapinApp/Views/RewriteView.swift`
+- 新增 `qa/T-18/run.sh`
+
+**DoD**
+1. 两页都没有居中悬浮的 tab；过滤条在页头下方左对齐。
+2. 每页填充主按钮 ≤1。
+3. `RewriteView` 的保存/应用入口仍只有一个（沿用 T-09 的 `applyRewrite` 约束）。
+4. `swift build` exit 0；`qa/T-18/run.sh` 全 PASS；qa/T-09、qa/T-10 仍全绿。
+
+---
+
+### T-19 为什么：查询条 + 垂直 trace
+
+- **Verdicts**：code: not run — 未开工 · security: skipped — 只改摆法 · qa: not run — 用例待写 · doc: pass — 任务行经 PM 于 2026-11-24 编写
+- **Shape**: solo
+- **Milestone**: M2.5
+- **依赖**：T-16 之后；与 T-17/T-18 不共享文件，可并行
+
+**这个任务做什么**
+1. `WhyPage` 改成「查询条 + 垂直 trace + 右侧详情」：trace 用 `RouteLine(.vertical)` 表达命中链。
+2. 空态改一句事实 + 示例 chips + 一个动作，去掉空态里的大号橙色按钮（§8）。
+3. 四个 tab 的既有能力不丢：指标 / 诊断 / 连接 / 规则。
+
+**文件所有权**
+- 修改 `Sources/LeapinApp/Views/WhyPage.swift`
+- 新增 `qa/T-19/run.sh`
+
+**DoD**
+1. 查询条在页头下方，输入 host 后 trace 原地更新，不跳页。
+2. 空态只有一个动作，且不是大号主按钮。
+3. 四个 tab 全部可达，指标与诊断的既有断言（qa/T-11、qa/T-12）仍绿。
+4. `swift build` exit 0；`qa/T-19/run.sh` 全 PASS。
+
+---
+
 ## M3 · iOS 语义（暂缓，2026-11-24 用户决定）
 
 用户 2026-11-24 裁定：**先走 v5 路线（M2.5 的 W1 → W2 → W3），M3 之后再判断要不要做、要不要提前。**
