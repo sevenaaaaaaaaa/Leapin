@@ -76,6 +76,8 @@ private struct DashboardContent: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.lpWindowWidth) private var windowWidth
     @StateObject private var model = OverviewModel()
+    /// 首屏只留 ≤5 个一级块（DESIGN-v5 §12.1）：书签、随手可用、常用工具、公司与回家、页脚都收在这里。
+    @State private var showMore = false
     /// 五个事实的唯一数据源：与菜单栏面板、实时浮窗是同一个对象。
     ///
     /// 这里**只读** `status`，不采样、不持有定时器。store 的帧由三处低频驱动：
@@ -100,17 +102,20 @@ private struct DashboardContent: View {
             VStack(alignment: .leading, spacing: 22) {
                 focusBand
                 verbGrid
-                HStack(spacing: 10) {
-                    Button { app.networkToolPage = 0; app.showNetworkTools = true } label: { Label("分享本地服务", systemImage: "link") }.buttonStyle(LPGhostButtonStyle())
-                    Button { app.networkToolPage = 2; app.showNetworkTools = true } label: { Label("工具与致谢", systemImage: "heart") }.buttonStyle(LPGhostButtonStyle())
-                    Button { app.showCompany = true } label: { Label("公司内网", systemImage: "building.2") }.buttonStyle(LPGhostButtonStyle())
-                    // 删掉「线路与订阅」统计块时一并丢掉的两个快捷动作（T-08 评审 optional）：
-                    // 它们是操作，不是统计，属于任务书第 3 条「保留……快捷操作」。
-                    Button { app.beginImport() } label: { Label("导入与转换订阅", systemImage: "square.and.arrow.down") }.buttonStyle(LPGhostButtonStyle())
-                    Button { app.go(to: .profiles) } label: { Label("管理线路", systemImage: "slider.horizontal.3") }.buttonStyle(LPGhostButtonStyle())
-                    Spacer(minLength: 0)
-                }
                 sceneRail
+                moreToggle
+                if showMore {
+                    HStack(spacing: 10) {
+                        Button { app.networkToolPage = 0; app.showNetworkTools = true } label: { Label("分享本地服务", systemImage: "link") }.buttonStyle(LPGhostButtonStyle())
+                        Button { app.networkToolPage = 2; app.showNetworkTools = true } label: { Label("工具与致谢", systemImage: "heart") }.buttonStyle(LPGhostButtonStyle())
+                        Button { app.showCompany = true } label: { Label("公司内网", systemImage: "building.2") }.buttonStyle(LPGhostButtonStyle())
+                        // 删掉「线路与订阅」统计块时一并丢掉的两个快捷动作（T-08 评审 optional）：
+                        // 它们是操作，不是统计，属于任务书第 3 条「保留……快捷操作」。
+                        Button { app.beginImport() } label: { Label("导入与转换订阅", systemImage: "square.and.arrow.down") }.buttonStyle(LPGhostButtonStyle())
+                        Button { app.go(to: .profiles) } label: { Label("管理线路", systemImage: "slider.horizontal.3") }.buttonStyle(LPGhostButtonStyle())
+                        Spacer(minLength: 0)
+                    }
+                    VStack(alignment: .leading, spacing: 22) {
                 bookmarksWidget
                 HStack {
                     Text("随手可用").font(.system(size: 15, weight: .semibold))
@@ -164,6 +169,8 @@ private struct DashboardContent: View {
                     Button("设置") { app.go(to: .settings) }.buttonStyle(.plain)
                         .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                 }.padding(.top, 4)
+                    }
+                }
             }.pagePadding()
         }
         .foregroundStyle(LP.text)
@@ -197,6 +204,24 @@ private struct DashboardContent: View {
     private func refreshResidentExit() async {
         let latest = await engine.menuBarSnapshot()
         resident.update(from: engine, snapshot: latest)
+    }
+
+    private var moreToggle: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.18)) { showMore.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Text(showMore ? "收起" : "更多工具与设置")
+                Image(systemName: showMore ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(LP.textSecondary)
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(showMore ? "收起更多" : "展开更多")
     }
 
     // MARK: 焦点带（v5 §7）
