@@ -539,10 +539,11 @@ W2/W3 的任务行等 W1 评审通过后再写。现在只有 T-15。
 
 ### T-17 走哪：三段式重排
 
-- **Verdicts**：code: not run — 未开工 · security: skipped — 只改摆法 · qa: not run — 用例待写 · doc: pass — 任务行经 PM 于 2026-11-24 编写
+- **Verdicts**：code: not run — 无独立评审 · security: skipped — 只改摆法 · qa: pass — qa/T-08 7/7（C2 断言从 `factCell` 改为 `RouteFact`）· doc: pass — 任务行经 PM 于 2026-11-24 核对
 - **Shape**: solo
 - **Milestone**: M2.5
 - **依赖**：T-16 之后（shares nothing；组件须先存在）
+- **进度**：2026-11-24 第一步完成——焦点带（一条路 + 四事实 + 主操作）已上首屏；**DoD 1 的「一级模块 ≤5」未达成**（现 8 块），余下把快捷按钮 / 书签 / 随手可用 / 公司内网 / 页脚收进「更多」折叠区。
 
 **这个任务做什么**
 1. 首屏改三段式：页头 / 焦点带（一条路 + 四个事实 + 「切到 X」一个主操作）/ 证据区两栏（最近决策 7 : 场景 5）。

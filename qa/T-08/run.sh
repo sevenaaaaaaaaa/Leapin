@@ -58,13 +58,13 @@ coverage=$(grep -cF 'status.coverage.declaration' "$DASH" || true)
 blocked=$(grep -cF 'status.blocked' "$DASH" || true)
 exit_read=$(grep -cF 'status.exit' "$DASH" || true)
 profile_read=$(grep -cF 'status.profileName' "$DASH" || true)
-fact_labels=$(grep -cE 'factCell\("(当前配置|当前出口|速率|拦截数)"' "$DASH" || true)
+fact_labels=$(grep -cE 'RouteFact\("(当前配置|当前出口|速率|拦截数)"' "$DASH" || true)
 if [ "$store_reads" -ge 1 ] && [ "$store_observed" -eq 1 ] && [ "$status_read" -eq 1 ] \
    && [ "$rates_summary" -ge 1 ] && [ "$coverage" -ge 1 ] && [ "$blocked" -ge 1 ] \
    && [ "$exit_read" -ge 1 ] && [ "$profile_read" -ge 1 ] && [ "$fact_labels" -eq 4 ]; then
-    pass C2 "五事实全部来自 ResidentStatusStore.shared.status（命中 ${store_reads} 次，@ObservedObject ${store_observed} 处，取值口只有一个 status 计算属性）：rates.summary ${rates_summary}、coverage.declaration ${coverage}、blocked ${blocked}、exit ${exit_read}、profileName ${profile_read}；四个 factCell 标签（当前配置/当前出口/速率/拦截数）${fact_labels} 个 + 接管范围一行（采样纪律另见 C6）"
+    pass C2 "五事实全部来自 ResidentStatusStore.shared.status（命中 ${store_reads} 次，@ObservedObject ${store_observed} 处，取值口只有一个 status 计算属性）：rates.summary ${rates_summary}、coverage.declaration ${coverage}、blocked ${blocked}、exit ${exit_read}、profileName ${profile_read}；焦点带四个事实标签（当前配置/当前出口/速率/拦截数）${fact_labels} 个 + 接管范围一行（采样纪律另见 C6）"
 else
-    fail C2 "五事实不符：store ${store_reads}（≥1）、@ObservedObject store ${store_observed}（1）、resident.status ${status_read}（1）、rates.summary ${rates_summary}（≥1）、coverage.declaration ${coverage}（≥1）、blocked ${blocked}（≥1）、exit ${exit_read}（≥1）、profileName ${profile_read}（≥1）、factCell 标签 ${fact_labels}（4）"
+    fail C2 "五事实不符：store ${store_reads}（≥1）、@ObservedObject store ${store_observed}（1）、resident.status ${status_read}（1）、rates.summary ${rates_summary}（≥1）、coverage.declaration ${coverage}（≥1）、blocked ${blocked}（≥1）、exit ${exit_read}（≥1）、profileName ${profile_read}（≥1）、事实标签 ${fact_labels}（4）"
 fi
 
 # ---------------------------------------------------------------- C3 四个动词入口 + dispatch

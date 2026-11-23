@@ -98,8 +98,7 @@ private struct DashboardContent: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                statusBar
-                factStrip
+                focusBand
                 verbGrid
                 HStack(spacing: 10) {
                     Button { app.networkToolPage = 0; app.showNetworkTools = true } label: { Label("分享本地服务", systemImage: "link") }.buttonStyle(LPGhostButtonStyle())
@@ -198,6 +197,78 @@ private struct DashboardContent: View {
     private func refreshResidentExit() async {
         let latest = await engine.menuBarSnapshot()
         resident.update(from: engine, snapshot: latest)
+    }
+
+    // MARK: 焦点带（v5 §7）
+
+    /// 一屏唯一的墨色焦点带：一条路 + 四个事实 + 一个主操作。
+    /// 形状变了，取值没变——仍然全部来自 `ResidentStatusStore.shared.status`。
+    private var focusBand: some View {
+        FocusBand("现在走") {
+            VStack(alignment: .leading, spacing: 22) {
+                RouteLine(nodes: [
+                    .init("你", subtitle: "这台 Mac"),
+                    .init(judgeTitle, subtitle: "判据"),
+                    .init(exitNodeTitle, subtitle: exitNodeSubtitle, state: .current),
+                ])
+                HStack(alignment: .bottom, spacing: 28) {
+                    RouteFact("当前配置", profileText)
+                    RouteFact("当前出口", exitText)
+                    RouteFact("速率", status.rates.summary)
+                    RouteFact("拦截数", "\(status.blocked)")
+                    Spacer(minLength: 12)
+                    connectButton
+                }
+                HStack(spacing: 6) {
+                    Image(systemName: status.coverage.isCoveringTraffic ? "checkmark.shield" : "exclamationmark.shield")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(status.coverage.isCoveringTraffic ? LP.mint : LP.amber)
+                    Text(status.coverage.declaration)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.white.opacity(0.6))
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .help(status.coverage.declaration)
+                if let message = app.networkMessage {
+                    Text(message)
+                        .font(.system(size: 13))
+                        .foregroundStyle(app.networkFailed ? Color(red: 1, green: 0.55, blue: 0.5) : .white.opacity(0.62))
+                }
+            }
+        }
+    }
+
+    private var judgeTitle: String {
+        activeScene?.title ?? (model.state == .running ? "规则模式" : "尚未接管")
+    }
+
+    private var exitNodeTitle: String {
+        guard model.state == .running, let exit = status.exit else { return "—" }
+        return exit
+    }
+
+    private var exitNodeSubtitle: String {
+        guard model.state == .running else { return "配置未接管" }
+        if let group = status.exitGroup { return "\(group) › \(status.exit ?? "")" }
+        return status.rates.summary
+    }
+
+    private var connectButton: some View {
+        Button(connected ? "暂停接管" : app.networkBusy ? "准备中…" : "连接网络") {
+            if connected { Task { await app.pauseNetwork() } } else { app.connectNetwork() }
+        }
+        .buttonStyle(.plain)
+        .font(.system(size: 13, weight: .semibold))
+        .foregroundStyle(.white)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: LPRadius.control, style: .continuous)
+                .fill(LP.accent.opacity(app.networkBusy ? 0.55 : 1))
+        )
+        .disabled(app.networkBusy || app.engine.configurationBusy || model.state == .starting)
+        .accessibilityLabel(connected ? "暂停接管" : "连接网络")
     }
 
     private var statusBar: some View {
