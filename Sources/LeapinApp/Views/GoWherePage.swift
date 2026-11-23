@@ -46,23 +46,44 @@ struct GoWherePage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
+    /// v5 §6.3 与 §12 第 5 条：tab 是页头下方**左对齐的过滤条**，不是悬浮控件；
+    /// 选中用 2px 朱红下划线，不用系统 segmented 的填充底。
     private var tabBar: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(WorkbenchVerb.goWhere.question)
-                .font(.system(size: 13))
+                .font(LPType.body)
                 .foregroundStyle(LP.textTertiary)
-            Picker("视图", selection: $tab) {
+            HStack(spacing: 20) {
                 ForEach(Tab.allCases) { item in
-                    Text(item.title).tag(item)
+                    tabButton(item)
                 }
+                Spacer(minLength: 0)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: 420)
         }
-        .padding(.horizontal, 32)
+        .padding(.horizontal, LPSpace.page)
         .padding(.top, 16)
         .padding(.bottom, 12)
+    }
+
+    private func tabButton(_ item: Tab) -> some View {
+        let active = tab == item
+        return Button {
+            tab = item
+        } label: {
+            VStack(spacing: 6) {
+                Text(item.title)
+                    .font(.system(size: 13, weight: active ? .semibold : .regular))
+                    .foregroundStyle(active ? LP.text : LP.textSecondary)
+                Rectangle()
+                    .fill(active ? LP.accent : Color.clear)
+                    .frame(height: 2)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(item.title)
+        .accessibilityLabel(item.title)
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 
     @ViewBuilder private var content: some View {
