@@ -38,11 +38,22 @@ else
     fail C2 "焦点带 $fb 个（要 1）、RouteLine $rl 条（要 1）、RouteFact $rf 个（要 4）"
 fi
 
-top=$(awk '/var body: some View \{/,/\.pagePadding\(\)/' "$DASH" | grep -cE '^\s{16}(focusBand|verbGrid|sceneRail|moreToggle)$' || true)
-if [ "$top" -ge 3 ] && [ "$top" -le 5 ]; then
-    pass C3 "首屏顶层块 $top 个（focusBand / verbGrid / sceneRail / moreToggle），加页头不超过 5"
+# 顶层块数不能靠「数已知名字」——把已知名字写进正则，改造前数出来也是 3，
+# 于是 8 块的首屏照样 PASS。判据改成结构：折叠开关之前只能有 4 个裸标识符行，
+# 且折叠项必须全都落在 "if showMore {" 之后。对 03a90aa（8 块）是红的。
+body_seg=$(awk '/var body: some View \{/,/\.pagePadding\(\)/' "$DASH")
+pre_fold=$(printf '%s\n' "$body_seg" | sed -n '1,/if showMore {/p' | sed '$d')
+after_fold=$(printf '%s\n' "$body_seg" | sed -n '/if showMore {/,$p')
+top=$(printf '%s\n' "$pre_fold" | grep -cE '^ {16}[A-Za-z][A-Za-z0-9]*$' || true)
+top_names=$(printf '%s\n' "$pre_fold" | grep -oE '^ {16}[A-Za-z][A-Za-z0-9]*$' | tr -d ' ' | sort | uniq | tr '\n' ',')
+leaked=""
+for marker in 'bookmarksWidget' 'CompanyWidget' 'HomeWidget' 'dashRow(' '分享本地服务' '内核：'; do
+    printf '%s\n' "$after_fold" | grep -qF -- "$marker" || leaked="$leaked $marker"
+done
+if [ "$top" -eq 4 ] && [ "$top_names" = "focusBand,moreToggle,sceneRail,verbGrid," ] && [ -z "$leaked" ]; then
+    pass C3 "折叠开关前只有 4 个顶层块（${top_names%,}），加页头共 5；书签 / 公司 / 回家 / 常用工具 / 快捷动作 / 页脚 6 类折叠项全部落在 if showMore 之后"
 else
-    fail C3 "首屏顶层块 $top 个，超出预算"
+    fail C3 "首屏结构不符：折叠前顶层块 ${top} 个（要 4）名称 [${top_names%,}]；未进折叠区或提前出现的项 [${leaked:-无}]"
 fi
 
 if grep -q 'if showMore {' "$DASH" && grep -q 'private var moreToggle' "$DASH"; then
