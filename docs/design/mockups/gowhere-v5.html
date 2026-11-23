@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Leapin · 走哪 v5</title>
+<style>
+  :root {
+    --paper:#F4EFE6; --sheet:#FBF8F2; --ink:#19191B;
+    --text:#17160F; --secondary:#5F5C52; --tertiary:#8A857A;
+    --line:rgba(23,22,15,.10); --line-strong:rgba(23,22,15,.18);
+    --accent:#C63A12; --mint:#0C7A55; --amber:#8F5E07;
+    --r:12px; --r-sm:8px;
+    --sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
+    --mono:"SF Mono",ui-monospace,Menlo,monospace;
+    --serif:"New York",Georgia,serif;
+  }
+  * { box-sizing:border-box; }
+  html,body { margin:0; width:100%; min-width:1000px; height:900px; overflow:hidden; }
+  body { background:var(--paper); color:var(--text); font:13px/1.45 var(--sans);
+         -webkit-font-smoothing:antialiased; display:flex; }
+  .sidebar { width:240px; height:900px; background:var(--sheet); border-right:1px solid var(--line);
+             padding:26px 14px 14px; display:flex; flex-direction:column; }
+  .brand { display:flex; align-items:center; gap:10px; padding:0 8px 22px; }
+  .mark { width:26px; height:26px; border-radius:7px; background:var(--accent); position:relative; }
+  .mark:after { content:""; position:absolute; right:4px; top:4px; width:5px; height:5px; border-radius:50%; background:var(--paper); }
+  .brand h1 { font-size:15px; font-weight:600; margin:0; letter-spacing:-.2px; }
+  .brand p { margin:1px 0 0; font-size:11px; color:var(--tertiary); }
+  .search { height:30px; border:1px solid var(--line); border-radius:var(--r-sm); display:flex;
+            align-items:center; gap:8px; padding:0 9px; color:var(--tertiary); font-size:12px; margin-bottom:20px; }
+  .search .k { margin-left:auto; font:11px var(--mono); color:var(--tertiary); }
+  .group { margin-bottom:18px; }
+  .group-label { font:11px var(--mono); letter-spacing:.8px; color:var(--tertiary);
+                 text-transform:uppercase; padding:0 8px 6px; }
+  .row { display:flex; align-items:center; gap:9px; height:30px; padding:0 8px; border-radius:7px;
+         color:var(--secondary); position:relative; }
+  .row .ico { width:15px; text-align:center; font-size:12px; opacity:.85; }
+  .row.sel { background:rgba(23,22,15,.06); color:var(--text); font-weight:600; }
+  .row.sel:before { content:""; position:absolute; left:-14px; top:6px; width:2px; height:18px;
+                    border-radius:1px; background:var(--accent); }
+  .row.sel .ico { color:var(--accent); opacity:1; }
+  .row .hint { margin-left:auto; font:11px var(--mono); color:var(--tertiary); font-weight:400; }
+  .spacer { flex:1; }
+  .status { border-top:1px solid var(--line); padding:12px 8px 4px; font-size:11px; color:var(--secondary); }
+  .status .dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--tertiary); margin-right:6px; }
+  .status .kv { display:flex; justify-content:space-between; margin-top:5px; color:var(--tertiary); }
+  .status .kv b { font:11px var(--mono); font-weight:500; color:var(--secondary); }
+  .main { flex:1; padding:34px 40px 24px; display:flex; flex-direction:column; min-width:0; overflow:hidden; }
+  .head { display:flex; align-items:flex-start; gap:24px; margin-bottom:22px; }
+  .head h2 { font-size:28px; line-height:1.1; letter-spacing:-.4px; margin:0; font-weight:600; }
+  .head .lede { margin:7px 0 0; font-size:13px; color:var(--secondary); }
+  .head .serif { margin:6px 0 0; font:italic 15px var(--serif); color:var(--secondary); }
+  .head .actions { margin-left:auto; display:flex; align-items:center; gap:10px; padding-top:4px; }
+  .pill { display:flex; align-items:center; gap:7px; height:30px; padding:0 11px; border:1px solid var(--line);
+          border-radius:999px; font-size:12px; color:var(--secondary); background:var(--sheet); }
+  .pill .dot { width:6px; height:6px; border-radius:50%; background:var(--mint); }
+  .btn { height:32px; padding:0 14px; border-radius:var(--r-sm); border:1px solid var(--line-strong);
+         background:transparent; color:var(--text); font-size:13px; font-weight:500; }
+  .btn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .focus { background:var(--ink); border-radius:var(--r); padding:26px 28px 22px; color:#F3F1EA;
+           display:flex; flex-direction:column; gap:22px; }
+  .eyebrow { font:11px var(--mono); letter-spacing:1.1px; text-transform:uppercase; color:rgba(243,241,234,.55); }
+  .route { display:flex; align-items:center; gap:0; }
+  .node { display:flex; align-items:center; gap:10px; flex:0 0 auto; max-width:320px; }
+  .node .dot { width:8px; height:8px; border-radius:50%; background:rgba(243,241,234,.35); }
+  .node .label { font-size:14px; font-weight:600; line-height:1.2; }
+  .node .sub { font-size:11px; color:rgba(243,241,234,.55); margin-top:2px; }
+  .node.active .dot { background:var(--accent); box-shadow:0 0 0 4px rgba(198,58,18,.18); }
+  .node.active .label { color:#FF8A5C; }
+  .link { flex:1 1 40px; min-width:32px; height:1px; background:rgba(243,241,234,.18); margin:0 14px; position:relative; }
+  .link:after { content:""; position:absolute; right:0; top:-2px; width:5px; height:5px;
+                border-radius:50%; background:rgba(243,241,234,.30); }
+  .facts { display:flex; flex-wrap:wrap; gap:24px 28px; align-items:flex-end; min-width:0; }
+  .fact .k { font-size:11px; color:rgba(243,241,234,.50); margin-bottom:3px; }
+  .fact .v { font:20px var(--mono); font-weight:600; letter-spacing:-.3px; }
+  .fact .v small { font-size:12px; font-weight:500; color:rgba(243,241,234,.65); margin-left:2px; }
+  .focus .cta { margin-left:auto; flex:0 0 auto; }
+  .focus .cta .btn { border-color:rgba(243,241,234,.25); color:#F3F1EA; }
+  .focus .cta .btn.primary { border-color:var(--accent); }
+  .lower { display:grid; grid-template-columns:minmax(0,1.45fr) minmax(0,1fr); gap:24px; margin-top:24px; flex:1; min-height:0; min-width:0; }
+  .module { background:var(--sheet); border:1px solid var(--line); border-radius:var(--r); padding:18px 20px;
+            display:flex; flex-direction:column; min-height:0; min-width:0; overflow:hidden; }
+  .module h3 { font-size:15px; font-weight:600; margin:0; }
+  .module .hint { font-size:11px; color:var(--tertiary); margin-top:3px; }
+  .module .more { margin-left:auto; font-size:12px; color:var(--accent); }
+  .mhead { display:flex; align-items:flex-start; margin-bottom:12px; }
+  .list { display:flex; flex-direction:column; }
+  .item { display:grid; grid-template-columns:1fr 90px 70px; gap:12px; align-items:center;
+          padding:10px 0; border-top:1px solid var(--line); }
+  .item:first-child { border-top:0; }
+  .item .host { font:12px var(--mono); color:var(--text); }
+  .item .rule { font-size:11px; color:var(--tertiary); margin-top:2px; }
+  .tag { display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 8px; border-radius:999px;
+         border:1px solid var(--line); font-size:11px; color:var(--secondary); }
+  .tag .dot { width:5px; height:5px; border-radius:50%; background:var(--mint); }
+  .tag.warn .dot { background:var(--amber); }
+  .ms { text-align:right; font:12px var(--mono); color:var(--secondary); }
+  .coverage { margin-top:auto; padding-top:14px; border-top:1px solid var(--line);
+              font-size:11px; color:var(--tertiary); display:flex; align-items:center; gap:6px; }
+  .coverage b { color:var(--secondary); font-weight:500; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:2px; }
+  .chip { height:26px; padding:0 10px; border-radius:999px; border:1px solid var(--line);
+          font-size:12px; color:var(--secondary); display:flex; align-items:center; gap:6px; }
+  .chip.on { border-color:var(--accent); color:var(--accent); background:rgba(198,58,18,.05); }
+  .scenes { margin-top:12px; }
+</style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="mark"></div>
+      <div><h1>Leapin</h1><p>One leap. No detour.</p></div>
+    </div>
+    <div class="search"><span>⌕</span><span>任务或工具</span><span class="k">⌘K</span></div>
+
+    <div class="group">
+      <div class="group-label">工作</div>
+      <div class="row sel"><span class="ico">◉</span><span>走哪</span><span class="hint">⌘1</span></div>
+      <div class="row"><span class="ico">⑂</span><span>怎么判</span><span class="hint">⌘2</span></div>
+      <div class="row"><span class="ico">⇄</span><span>改成什么</span><span class="hint">⌘3</span></div>
+      <div class="row"><span class="ico">◎</span><span>为什么</span><span class="hint">⌘4</span></div>
+    </div>
+    <div class="group">
+      <div class="group-label">工具</div>
+      <div class="row"><span class="ico">›_</span><span>SSH</span></div>
+      <div class="row"><span class="ico">▤</span><span>NAS</span></div>
+      <div class="row"><span class="ico">⌂</span><span>回家</span></div>
+      <div class="row"><span class="ico">▥</span><span>公司内网</span></div>
+      <div class="row"><span class="ico">↗</span><span>分享与调试</span></div>
+    </div>
+    <div class="group">
+      <div class="group-label">收纳</div>
+      <div class="row"><span class="ico">↓</span><span>导入</span></div>
+      <div class="row"><span class="ico">⚙</span><span>设置</span></div>
+    </div>
+
+    <div class="spacer"></div>
+    <div class="status">
+      <div><span class="dot"></span>代理已停止</div>
+      <div class="kv"><span>混合</span><b>7890</b></div>
+      <div class="kv"><span>DNS</span><b>5354</b></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="head">
+      <div>
+        <h2>走哪</h2>
+        <p class="lede">现在走：公司 · HK 01 · 规则模式</p>
+        <p class="serif">把公司内网放进日常，不用再记端口。</p>
+      </div>
+      <div class="actions">
+        <span class="pill"><span class="dot"></span>已接管 · 部分进程</span>
+        <button class="btn">查看线路</button>
+        <button class="btn">切换配置</button>
+      </div>
+    </header>
+
+    <section class="focus">
+      <div class="eyebrow">现在走</div>
+      <div class="route">
+        <div class="node"><span class="dot"></span><div><div class="label">你</div><div class="sub">这台 Mac</div></div></div>
+        <div class="link"></div>
+        <div class="node"><span class="dot"></span><div><div class="label">规则 3</div><div class="sub">COMPANY → 公司</div></div></div>
+        <div class="link"></div>
+        <div class="node active"><span class="dot"></span><div><div class="label">公司 · HK 01</div><div class="sub">42 ms · 规则模式</div></div></div>
+      </div>
+      <div class="facts">
+        <div class="fact"><div class="k">配置</div><div class="v">海外</div></div>
+        <div class="fact"><div class="k">出口</div><div class="v">HK 01</div></div>
+        <div class="fact"><div class="k">速率</div><div class="v">1.2<small>MB/s</small></div></div>
+        <div class="fact"><div class="k">拦截</div><div class="v">12</div></div>
+        <div class="cta"><button class="btn primary">切到 家里</button></div>
+      </div>
+    </section>
+
+    <section class="lower">
+      <div class="module">
+        <div class="mhead">
+          <div><h3>最近决策</h3><div class="hint">过去 2 分钟里，三条最值得看的</div></div>
+          <span class="more">查看全部</span>
+        </div>
+        <div class="list">
+          <div class="item">
+            <div><div class="host">git.company.com</div><div class="rule">第 3 条 · DOMAIN-SUFFIX</div></div>
+            <span class="tag"><span class="dot"></span>公司</span>
+            <div class="ms">42 ms</div>
+          </div>
+          <div class="item">
+            <div><div class="host">api.stripe.com</div><div class="rule">第 17 条 · DOMAIN</div></div>
+            <span class="tag"><span class="dot"></span>海外</span>
+            <div class="ms">180 ms</div>
+          </div>
+          <div class="item">
+            <div><div class="host">ads.doubleclick.net</div><div class="rule">去广告 · REJECT</div></div>
+            <span class="tag warn"><span class="dot"></span>拦截</span>
+            <div class="ms">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="module">
+        <div class="mhead">
+          <div><h3>场景</h3><div class="hint">一键换掉配置与出口</div></div>
+        </div>
+        <div class="chips">
+          <span class="chip on">公司</span>
+          <span class="chip">家里</span>
+          <span class="chip">机场</span>
+          <span class="chip">直连</span>
+        </div>
+        <div class="scenes"></div>
+        <div class="coverage">
+          <span>接管范围</span><b>系统代理 · 2 个进程未覆盖</b>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
