@@ -641,15 +641,51 @@ public final class LeapinEngine: ObservableObject {
         do {
             if enabled {
                 try await enableSystemProxy()
-                systemProxyActive = true
             } else {
                 try await SystemProxy.disableAsync()
-                systemProxyActive = false
             }
+            // A zero exit code is not the fact: read the system back, let the flag
+            // follow what the OS reports, and say why when it is not ours. A
+            // command that did work still clears the previous attempt's error.
+            await refreshSystemProxyStatus()
+            lastError = Self.systemProxyReadbackMessage(enabled: enabled,
+                                                        nowOurs: systemProxyActive,
+                                                        ourPort: systemProxyExpectedPort)
         } catch {
             lastError = error.localizedDescription
             LPLog.shared.error("system", "系统代理设置失败：\(error.localizedDescription)")
         }
+    }
+
+    /// Whether the proxy the OS reports is the one this engine bound.
+    ///
+    /// `SystemProxy.statusAsync()` answers "the service's first enabled proxy", not
+    /// "ours": a corporate proxy already in place, or a `networksetup` that exited 0
+    /// without taking effect, both look enabled. Coverage is only true when we are
+    /// running, it is on, it points at loopback, and it points at our own port.
+    /// Pure, so the matrix is testable without running `networksetup`.
+    static func systemProxyIsOurs(running: Bool, enabled: Bool,
+                                  host: String, port: Int, ourPort: Int) -> Bool {
+        running && enabled
+            && ["127.0.0.1", "localhost"].contains(host)
+            && port == ourPort
+    }
+
+    /// What the panel should say after a command that exited 0 but did not take
+    /// effect; nil means "nothing to report". Turning the proxy off needs no
+    /// explanation, and a readback that agrees with us needs none either.
+    static func systemProxyReadbackMessage(enabled: Bool, nowOurs: Bool, ourPort: Int) -> String? {
+        guard enabled, !nowOurs else { return nil }
+        return "系统代理已指向其他地址，未接管（期望 127.0.0.1:\(ourPort)）"
+    }
+
+    /// Test seam only: `toggleSystemProxy` no longer writes the flag from its own
+    /// parameter — a zero exit code is not the fact. Kept so `SystemProxyErrorTests`
+    /// can still pin "a success clears the previous failure" without running
+    /// `networksetup`. Nothing in the engine calls it.
+    func applySystemProxySuccess(_ active: Bool) {
+        systemProxyActive = active
+        lastError = nil
     }
 
     /// Points the system proxy at the mixed listener that is actually bound.
@@ -674,10 +710,16 @@ public final class LeapinEngine: ObservableObject {
 
     public func refreshSystemProxyStatus() async {
         let status = await SystemProxy.statusAsync()
-        let port = Int(proxy?.listeningPort ?? profile.general.mixedPort)
-        systemProxyActive = state == .running && status.enabled
-            && ["127.0.0.1", "localhost"].contains(status.host) && status.port == port
+        systemProxyActive = Self.systemProxyIsOurs(running: state == .running,
+                                                   enabled: status.enabled,
+                                                   host: status.host,
+                                                   port: status.port,
+                                                   ourPort: systemProxyExpectedPort)
     }
+
+    /// The port the system proxy has to point at to count as ours: the mixed
+    /// listener that is actually bound, or the configured one before it is up.
+    private var systemProxyExpectedPort: Int { Int(proxy?.listeningPort ?? profile.general.mixedPort) }
 
     // MARK: - Capture
 
