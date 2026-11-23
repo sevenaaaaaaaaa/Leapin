@@ -5,6 +5,12 @@ import LeapinPolicy
 import LeapinNet
 import LeapinIntegrations
 
+/// 观测：实时速率、连接数、命中统计与最近的连接。
+///
+/// M2 之后它同时是「为什么」页的指标 tab（docs/tasks/product-v4.md T-11）：
+/// 视图不分叉——同一个 ObservationView 既能被 WhyPage 内嵌（embedded），也仍然能被
+/// 旧的 activity 入口单独打开。内嵌时只去掉页面级页头（hero：配置名大标题 + 启停 + 开关）
+/// 与导航标题，指标本体、采样逻辑和数据源一行没改。
 struct ObservationView: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var engine = LeapinEngine.shared
@@ -19,10 +25,28 @@ struct ObservationView: View {
     @State private var rateCeiling: Double = 0
     @FocusState private var probeFocused: Bool
 
-    var body: some View {
+    /// 内嵌时不写页面级标题，也不画 hero 页头 —— 标题归外层的动词页。
+    let embedded: Bool
+
+    init(embedded: Bool = false) {
+        self.embedded = embedded
+    }
+
+    @ViewBuilder var body: some View {
+        if embedded {
+            page
+        } else {
+            page.navigationTitle("观测")
+        }
+    }
+
+    private var page: some View {
         ScrollView {
             VStack(spacing: 24) {
-                hero.lpAppear(0)
+                // hero 是页面级页头：配置名大标题 + 启停 + 两个开关。内嵌时让位给外层页头。
+                if !embedded {
+                    hero.lpAppear(0)
+                }
                 // 首屏只留「现在在发生什么」：状态 + 计数 + 最近的连接。
                 // 引导条仅在 hero 推断不出下一步时出现（启动失败 / 已启动但系统代理未接管）。
                 if let step = nextStep, step.id != "start" && step.id != "verify" {
@@ -37,7 +61,6 @@ struct ObservationView: View {
                 .lpAppear(0.16)
             }
             .pagePadding()
-            .navigationTitle("观测")
         }
         .onChange(of: app.searchFocusRequest) { _, _ in
             probeFocused = true

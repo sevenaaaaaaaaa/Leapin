@@ -1,20 +1,21 @@
 import SwiftUI
+import Combine
 import LeapinCore
 import LeapinRuntime
 
-/// Live traffic while the main window is closed: speed, recent connections and a
-/// one-click stop. Deliberately small — it sits on top of whatever you are doing.
+/// 常驻层的第三级信息（PRODUCT-v4 §2.1）：明细。
+///
+/// 它读 `ResidentStatusStore`，和菜单栏面板是同一个对象、同一份速率——
+/// 这里不再持有任何字节基准，也不再自己差分。视图里剩下的 `ticker` 只负责
+/// 「什么时候取一帧」，不再负责「一帧是多少」。
 struct FloatingStatusView: View {
     @ObservedObject var engine: LeapinEngine
     @ObservedObject var controller: FloatingPanelController
-
-    @State private var downRate: Double = 0
-    @State private var upRate: Double = 0
-    @State private var lastBytesIn: Int = 0
-    @State private var lastBytesOut: Int = 0
-    @State private var lastSample = Date()
+    @ObservedObject private var resident = ResidentStatusStore.shared
 
     private let ticker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    private var status: ResidentStatus { resident.status }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -34,15 +35,8 @@ struct FloatingStatusView: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(LP.strokeStrong, lineWidth: 1)
         )
-        .onReceive(ticker) { now in
-            sample(now)
-        }
-        .onAppear {
-            let live = engine.liveTraffic
-            lastBytesIn = live.bytesIn
-            lastBytesOut = live.bytesOut
-            lastSample = Date()
-        }
+        .onAppear { resident.update(from: engine) }
+        .onReceive(ticker) { now in resident.update(from: engine, at: now) }
     }
 
     // MARK: - Pieces
@@ -63,11 +57,12 @@ struct FloatingStatusView: View {
 
             HStack(spacing: 4) {
                 Circle()
-                    .fill(stateColor)
+                    .fill(status.tone.ink)
                     .frame(width: 5, height: 5)
-                Text(engine.state.label)
+                Text(status.title)
                     .font(.system(size: 9))
                     .foregroundStyle(LP.textTertiary)
+                    .lineLimit(1)
             }
 
             Spacer(minLength: 0)
@@ -88,11 +83,11 @@ struct FloatingStatusView: View {
 
     private var speedRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            rate(label: "下载", value: downRate, symbol: "arrow.down")
-            rate(label: "上传", value: upRate, symbol: "arrow.up")
+            rate(label: "下载", value: status.rates.downText, symbol: "arrow.down")
+            rate(label: "上传", value: status.rates.upText, symbol: "arrow.up")
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 1) {
-                Text("\(engine.activeConnections)")
+                Text("\(status.connections)")
                     .font(LPFont.num(13, weight: .semibold))
                     .foregroundStyle(LP.text)
                 Text("连接")
@@ -102,13 +97,13 @@ struct FloatingStatusView: View {
         }
     }
 
-    private func rate(label: String, value: Double, symbol: String) -> some View {
+    private func rate(label: String, value: String, symbol: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 3) {
                 Image(systemName: symbol)
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(LP.accent)
-                Text(Fmt.rate(value))
+                Text(value)
                     .font(LPFont.num(12.5, weight: .semibold))
                     .foregroundStyle(LP.text)
                     .monospacedDigit()
@@ -121,7 +116,7 @@ struct FloatingStatusView: View {
 
     private var recentList: some View {
         VStack(alignment: .leading, spacing: 3) {
-            let recent = engine.flows.suffix(3).reversed()
+            let recent = status.recent
             if recent.isEmpty {
                 Text("还没有连接")
                     .font(.system(size: 10))
@@ -129,7 +124,7 @@ struct FloatingStatusView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 4)
             } else {
-                ForEach(Array(recent)) { flow in
+                ForEach(recent) { flow in
                     HStack(spacing: 5) {
                         Text(flow.host)
                             .font(LPFont.mono(9.5))
@@ -137,9 +132,9 @@ struct FloatingStatusView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Spacer(minLength: 4)
-                        Text(policyLabel(flow))
+                        Text(flow.label)
                             .font(.system(size: 8.5, weight: .medium))
-                            .foregroundStyle(policyColor(flow))
+                            .foregroundStyle(policyColor(flow.kind))
                     }
                 }
             }
@@ -179,40 +174,13 @@ struct FloatingStatusView: View {
 
     // MARK: - Helpers
 
-    private var stateColor: Color {
-        switch engine.state {
-        case .running: return LP.mint
-        case .starting: return LP.amber
-        case .failed: return LP.danger
-        case .stopped: return LP.textTertiary
+    private func policyColor(_ kind: ResidentFlowKind) -> Color {
+        switch kind {
+        case .blocked: return LP.danger
+        case .direct: return LP.mint
+        case .proxy: return LP.accent
+        case .other: return LP.textTertiary
         }
-    }
-
-    private func policyLabel(_ flow: FlowEvent) -> String {
-        if flow.blockedBy != nil { return "拦截" }
-        return flow.policy.isEmpty ? "—" : flow.policy
-    }
-
-    private func policyColor(_ flow: FlowEvent) -> Color {
-        if flow.blockedBy != nil { return LP.danger }
-        switch flow.policy.lowercased() {
-        case "direct": return LP.mint
-        case "proxy", "global": return LP.accent
-        default: return LP.textTertiary
-        }
-    }
-
-    private func sample(_ now: Date) {
-        let live = engine.liveTraffic
-        let elapsed = max(now.timeIntervalSince(lastSample), 0.2)
-        // bytesIn is client -> remote (upload); bytesOut is remote -> client (download).
-        let downDelta = max(live.bytesOut - lastBytesOut, 0)
-        let upDelta = max(live.bytesIn - lastBytesIn, 0)
-        downRate = Double(downDelta) / elapsed
-        upRate = Double(upDelta) / elapsed
-        lastBytesIn = live.bytesIn
-        lastBytesOut = live.bytesOut
-        lastSample = now
     }
 
     private func openMainWindow() {
@@ -220,21 +188,5 @@ struct FloatingStatusView: View {
         if let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "main" }) {
             window.makeKeyAndOrderFront(nil)
         }
-    }
-}
-
-extension Fmt {
-    /// Bytes per second, one decimal below 10 so idle traffic does not read as "0 KB/s".
-    static func rate(_ bytesPerSecond: Double) -> String {
-        if bytesPerSecond < 1 { return "0 B/s" }
-        let units = ["B/s", "KB/s", "MB/s", "GB/s"]
-        var value = bytesPerSecond
-        var index = 0
-        while value >= 1024, index < units.count - 1 {
-            value /= 1024
-            index += 1
-        }
-        return value < 10 ? String(format: "%.1f %@", value, units[index])
-                          : String(format: "%.0f %@", value, units[index])
     }
 }

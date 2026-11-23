@@ -5,200 +5,202 @@ import LeapinControl
 import LeapinRuntime
 import LeapinIntegrations
 
-/// The menu bar is where the daily switching happens, so it carries the two
-/// things Surge/ClashX users reach for: a latency test and a node/airport switch.
-/// In Mihomo mode both go through the kernel's own API — the app's dialer cannot
-/// speak clash protocols, and a greyed-out test is the bug this replaces.
+/// 常驻层的主体（PRODUCT-v4 §2.1）。
+///
+/// 三块 + footer，只允许三种动作：**看**（现在走哪条路）、**切**（配置 / 场景 /
+/// 节点）、**跳**（窗口里的对应页面）。常驻面一旦能装下四个动词，它就退化成第二个
+/// 窗口（§6 风险 3），所以完整节点表、端口编辑、页面导航都不在这里：节点只留当前
+/// 策略组的那几项，端口与导航各留一行入口；系统代理与浮窗本来就是**开关**，就地
+/// 切换才叫一步到达（DoD 4）。
+///
+/// 所有数字来自 `ResidentStatusStore`，与实时浮窗读同一份；这个视图不再自己
+/// 采样字节、也不再自己算速率。
 @MainActor
 struct MenuBarPanel: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.openWindow) private var openWindow
     @ObservedObject private var floating = FloatingPanelController.shared
-    @ObservedObject private var status = MenuBarStatus.shared
+    @ObservedObject private var resident = ResidentStatusStore.shared
 
     @State private var snapshot: MenuBarSnapshot?
     @State private var report: PortReport?
-    @State private var quick: MenuBarTestOutcome?
-    @State private var summary: MenuBarTestSummary?
-    @State private var testingOne = false
-    @State private var testingAll = false
-    @State private var progress = (done: 0, total: 0)
-    @State private var query = ""
     @State private var actionError: String?
+    /// 系统代理正在切：双击会并发两次 networksetup，所以动作期间把 chip 禁用。
+    @State private var togglingProxy = false
 
     private var engine: LeapinEngine { app.engine }
-    private var totalMembers: Int { snapshot?.nodeMenuGroups.reduce(0) { $0 + $1.members.count } ?? 0 }
+    private var status: ResidentStatus { resident.status }
     private var profiles: [MenuBarProfile] { snapshot?.profiles ?? [] }
-    private var switchable: [MenuBarGroup] { snapshot?.nodeMenuGroups ?? [] }
+    /// 面板自己能切的策略组；url-test / fallback 自己选，不列进来。
+    private var nodeGroups: [MenuBarGroup] { snapshot?.nodeMenuGroups ?? [] }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            header
-            startStop
-            speedCard
+        VStack(alignment: .leading, spacing: 10) {
+            nowCard
             switchCard
-            toggles
-            metrics
-            address
-            issues
-            LPDivider()
-            navigation
-            LPDivider()
+            if showsIssues { issueCard }
             footer
         }
         .padding(14)
-        .frame(width: 262)
-        .task { await refresh() }
+        .frame(width: 276)
+        .task { await liveLoop() }
         .onChange(of: engine.state.label) { _, _ in Task { await refresh() } }
-        .onChange(of: app.engine.profile.id) { _, _ in Task { await refresh() } }
+        .onChange(of: engine.profile.id) { _, _ in Task { await refresh() } }
     }
 
-    // MARK: Header
+    // MARK: 现在
 
-    private var header: some View {
-        HStack(spacing: 9) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(LP.accentFill)
-                Image(systemName: "shield.lefthalf.filled")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
-            }
-            .frame(width: 24, height: 24)
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Leapin").font(LPFont.display(12.5, weight: .bold))
-                Text(subtitle).font(.system(size: 9)).foregroundStyle(LP.textTertiary).lineLimit(1)
-            }
-            Spacer()
-            StatusDot(color: engine.state == .running ? LP.mint : LP.textTertiary,
-                      pulsing: engine.state == .running)
-        }
-    }
+    private var nowCard: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            LPEyebrow("现在")
 
-    private var subtitle: String {
-        guard engine.state == .running else { return engine.state.label }
-        return snapshot.map { MenuBarKit.modeTitle($0.mode) } ?? engine.state.label
-    }
-
-    // MARK: Start / stop
-
-    private var startStop: some View {
-        Button {
-            app.toggle()
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
-                    .font(.system(size: 9, weight: .bold))
-                Text(engine.state == .running ? "停止代理" : "启动代理")
-                    .font(.system(size: 12, weight: .semibold))
-            }
-            .frame(maxWidth: .infinity)
-        }
-        .buttonStyle(LPPrimaryButtonStyle(tint: engine.state == .running ? LP.dangerFill : nil))
-    }
-
-    // MARK: M3 — quick test
-
-    private var speedCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 7) {
-                Circle().fill(currentToneColor).frame(width: 6, height: 6)
-                Text(currentLabel)
-                    .font(.system(size: 11.5, weight: .medium))
+            HStack(spacing: 6) {
+                StatusDot(color: status.tone.ink, pulsing: engine.state == .running)
+                Text(status.title)
+                    .font(.system(size: 12.5, weight: .semibold))
                     .foregroundStyle(LP.text)
                     .lineLimit(1)
-                    .truncationMode(.middle)
                 Spacer(minLength: 6)
-                Text(MenuBarKit.latencyText(currentLatency, failed: quick?.error != nil && currentLatency == nil))
-                    .font(LPFont.mono(11, weight: .semibold))
-                    .foregroundStyle(currentToneColor)
+                Text(latencyText)
+                    .font(LPFont.mono(10.5, weight: .semibold))
+                    .foregroundStyle(latencyColor)
             }
-            HStack(spacing: 6) {
-                Button {
-                    quickTest()
-                } label: {
-                    HStack(spacing: 4) {
-                        if testingOne { ProgressView().controlSize(.mini) }
-                        else { Image(systemName: "bolt.fill").font(.system(size: 9, weight: .bold)) }
-                        Text("快速测速").font(.system(size: 11, weight: .semibold))
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(LPGhostButtonStyle())
-                .disabled(testingOne || testingAll || engine.state != .running)
-                .help("测试当前节点的延迟")
 
-                Button {
-                    testAll()
-                } label: {
-                    HStack(spacing: 4) {
-                        if testingAll { ProgressView().controlSize(.mini) }
-                        else { Image(systemName: "list.bullet").font(.system(size: 9, weight: .semibold)) }
-                        Text("全部测速").font(.system(size: 11, weight: .semibold))
-                    }
-                    .frame(maxWidth: .infinity)
+            factRow("配置", status.profileName.isEmpty ? "—" : status.profileName)
+            factRow("出口", exitText)
+
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                rate("arrow.down", status.rates.downText)
+                rate("arrow.up", status.rates.upText)
+                Spacer(minLength: 6)
+                Text("拦截 \(status.blocked)")
+                    .font(LPFont.num(10, weight: .medium))
+                    .foregroundStyle(status.blocked > 0 ? LP.text : LP.textTertiary)
+            }
+
+            // §2.5 的一行事实：撞上去之前就知道，不写在免责声明里。
+            Text(status.coverage.declaration)
+                .font(.system(size: 9.5))
+                .foregroundStyle(LP.textTertiary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Button {
+                app.toggle()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
+                        .font(.system(size: 9, weight: .bold))
+                    Text(engine.state == .running ? "停止代理" : "启动代理")
+                        .font(.system(size: 12, weight: .semibold))
                 }
-                .buttonStyle(LPGhostButtonStyle())
-                .disabled(testingOne || testingAll || engine.state != .running)
-                .help("测试全部节点并找出最快的一个")
+                .frame(maxWidth: .infinity)
             }
-            if testingAll, progress.total > 0 {
-                ProgressView(value: Double(progress.done), total: Double(progress.total))
-                    .controlSize(.mini)
-                Text("已测 \(progress.done)/\(progress.total)")
-                    .font(.system(size: 9.5)).foregroundStyle(LP.textTertiary)
-            }
-            if let line = resultLine {
-                Text(line)
-                    .font(.system(size: 10))
-                    .foregroundStyle(failureLine ? LP.danger : LP.textSecondary)
-                    .lineLimit(2)
-                    .textSelection(.enabled)
-            }
+            .buttonStyle(LPPrimaryButtonStyle(tint: engine.state == .running ? LP.dangerFill : nil))
+            .help(engine.state == .running ? "断开本地服务并恢复系统代理" : "启动本地服务并接入系统代理")
+
+            entries
         }
         .padding(10)
         .background(LP.text.opacity(0.04), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
-    private var failureLine: Bool { quick?.error != nil || summary?.error != nil }
-
-    private var engineFailure: String? {
-        guard case .failed = engine.state else { return nil }
-        return engine.lastError ?? engine.state.label
-    }
-
-    private var currentLabel: String {
-        guard engine.state == .running else { return "代理未运行" }
-        if let name = snapshot?.current { return name }
-        return snapshot?.note ?? "没有可用的节点"
-    }
-
-    private var currentLatency: Int? {
-        quick?.latencyMs ?? snapshot?.currentLatencyMs ?? status.best?.latencyMs
-    }
-
-    private var currentToneColor: Color {
-        switch LatencyTone.of(currentLatency, failed: quick?.error != nil) {
-        case .fast: return LP.mint
-        case .ok: return LP.amber
-        case .slow, .failed: return LP.danger
-        case .unknown: return LP.textTertiary
+    private func factRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label)
+                .font(.system(size: 10))
+                .foregroundStyle(LP.textTertiary)
+                .frame(width: 26, alignment: .leading)
+            Text(value)
+                .font(.system(size: 11.5))
+                .foregroundStyle(LP.text)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer(minLength: 0)
         }
     }
 
-    private var resultLine: String? {
-        if let error = quick?.error { return "测速失败：\(error)" }
-        if let error = summary?.error { return "全部测速失败：\(error)" }
-        guard let summary, summary.tested > 0 else { return nil }
-        var parts = ["测完 \(summary.tested) 个节点"]
-        if summary.failed > 0 { parts.append("\(summary.failed) 个失败") }
-        if let best = summary.best { parts.append("最快 \(best.name) · \(best.latencyMs) ms") }
-        return parts.joined(separator: " · ")
+    private func rate(_ symbol: String, _ text: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: symbol)
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(engine.state == .running ? LP.accent : LP.textTertiary)
+            Text(text)
+                .font(LPFont.num(10.5, weight: .semibold))
+                .foregroundStyle(LP.text)
+                .monospacedDigit()
+        }
     }
 
-    // MARK: M4 — switch airport / node
+    /// 被收掉的能力各留一行入口：一步到达窗口里做这件事的地方。
+    private var entries: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 5) {
+                chip("端口 \(engine.profile.general.mixedPort)", help: "在设置里改监听端口") { open(.settings) }
+                // 测速还在线路与订阅页：常驻面不留测速按钮，但必须留一步到得了的入口。
+                chip("线路与订阅", help: "在线路与订阅里测速、换订阅") { open(.profiles) }
+                // 系统代理是开关，不是导航：点一下就地切，别把人送去总览再自己找。
+                // 引擎没跑时开启必失败（enableSystemProxy 要求 running），所以先禁用。
+                chip(engine.systemProxyActive ? "接管 开" : "接管 关",
+                     help: takeoverHelp,
+                     disabled: takeoverDisabled) {
+                    togglingProxy = true
+                    Task {
+                        defer { togglingProxy = false }
+                        await engine.toggleSystemProxy(!engine.systemProxyActive)
+                        await refresh()
+                    }
+                }
+                chip(floating.isVisible ? "浮窗 开" : "浮窗 关",
+                     help: floating.isVisible ? "隐藏实时浮窗" : "显示实时浮窗") {
+                    toggleFloating()
+                }
+            }
+            HStack(spacing: 5) {
+                ForEach([AppModel.Section.dashboard, .rules, .capture, .settings]) { section in
+                    chip(section.title, help: "打开\(section.title)") { open(section) }
+                }
+            }
+        }
+        .padding(.top, 1)
+    }
+
+    /// 引擎没跑时开不了系统代理（enableSystemProxy 要求 state == .running），
+    /// 切换配置期间也不该动它：两种情况下 chip 直接禁用，别让人点了必失败。
+    private var takeoverDisabled: Bool {
+        togglingProxy || engine.configurationBusy
+            || (!engine.systemProxyActive && engine.state != .running)
+    }
+
+    private var takeoverHelp: String {
+        if !engine.systemProxyActive && engine.state != .running { return "先启动代理" }
+        return engine.systemProxyActive ? "点一下关闭系统代理" : "点一下开启系统代理"
+    }
+
+    private func chip(_ title: String, help: String, disabled: Bool = false,
+                      action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 9.5, weight: .medium))
+                .foregroundStyle(LP.textSecondary)
+                .lineLimit(1)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 3)
+                .background(LP.text.opacity(0.05), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .help(help)
+        .accessibilityLabel("\(title)，\(help)")
+    }
+
+    // MARK: 切换
 
     private var switchCard: some View {
         VStack(alignment: .leading, spacing: 7) {
+            LPEyebrow("切换")
+
             Menu {
                 ForEach(profiles) { item in
                     Button {
@@ -209,24 +211,34 @@ struct MenuBarPanel: View {
                 }
                 if profiles.isEmpty { Text("还没有导入订阅") }
             } label: {
-                menuRow(icon: "tray.full", title: "机场", value: activeProfileName)
+                MenuBarRowLabel(icon: "tray.full", title: "配置", value: activeProfileName)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .disabled(profiles.count <= 1 || engine.configurationBusy)
-
-            if totalMembers > 15 {
-                TextField("搜索节点", text: $query)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 11))
-                    .padding(.horizontal, 7).padding(.vertical, 5)
-                    .background(LP.text.opacity(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-            }
+            .help("切换到另一份配置；失败会留在原配置")
 
             Menu {
-                ForEach(switchable) { group in
+                ForEach(NetworkScene.allCases) { scene in
+                    Button {
+                        app.switchScene(scene)
+                    } label: {
+                        Text(sceneLabel(scene))
+                    }
+                }
+            } label: {
+                MenuBarRowLabel(icon: "square.grid.2x2", title: "场景", value: activeSceneName)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .disabled(app.networkBusy || engine.configurationBusy)
+            .help("切换场景会同时换掉它绑定的配置")
+
+            // 节点切换只能在这里做：线路页只负责看和测速，原生内核下切节点等于没入口。
+            Menu {
+                ForEach(nodeGroups) { group in
                     Menu {
-                        ForEach(MenuBarKit.filtered(group, query: query).members) { member in
+                        ForEach(group.members) { member in
                             Button {
                                 select(group: group.name, member: member.name)
                             } label: {
@@ -237,13 +249,14 @@ struct MenuBarPanel: View {
                         Text("\(group.name) · \(group.selected)")
                     }
                 }
-                if switchable.isEmpty { Text("这份配置没有可切换的策略组") }
+                if nodeGroups.isEmpty { Text("这份配置没有可切换的策略组") }
             } label: {
-                menuRow(icon: "point.3.connected.trianglepath.dotted", title: "节点", value: nodeMenuValue)
+                MenuBarRowLabel(icon: "point.3.connected.trianglepath.dotted", title: "节点", value: nodeMenuValue)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .disabled(switchable.isEmpty || engine.configurationBusy)
+            .disabled(nodeGroups.isEmpty || engine.configurationBusy)
+            .help("切换策略组里的节点；失败会留在原节点")
         }
         .padding(10)
         .background(LP.text.opacity(0.04), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -253,224 +266,218 @@ struct MenuBarPanel: View {
         profiles.first { $0.id == snapshot?.activeProfile }?.name ?? engine.profile.name
     }
 
+    private var activeSceneName: String {
+        guard let active = app.scenes.active else { return "未选择" }
+        return active.title
+    }
+
+    private func sceneLabel(_ scene: NetworkScene) -> String {
+        guard let id = app.scenes.profileID(for: scene) else { return "\(scene.title) · 未绑定" }
+        let name = profiles.first { $0.id == id }?.name ?? "已绑定配置"
+        let mark = app.scenes.active == scene ? "✓ " : ""
+        return "\(mark)\(scene.title) · \(name)"
+    }
+
+    /// 没跑起来时没有「当前节点」可讲，说未运行比说破折号诚实。
     private var nodeMenuValue: String {
         guard engine.state == .running else { return "未运行" }
         return snapshot?.current ?? "—"
     }
 
-    private func menuRow(icon: String, title: String, value: String) -> some View {
-        HStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 9)).frame(width: 13)
-                .foregroundStyle(LP.textTertiary)
-            Text(title).font(.system(size: 11.5))
-            Spacer(minLength: 6)
-            Text(value).font(.system(size: 11))
-                .foregroundStyle(LP.textSecondary)
-                .lineLimit(1).truncationMode(.middle)
-            Image(systemName: "chevron.up.chevron.down").font(.system(size: 8))
-                .foregroundStyle(LP.textTertiary)
-        }
-        .foregroundStyle(LP.text)
-        .contentShape(Rectangle())
-    }
-
+    /// 菜单里的一行节点：勾 + 名字 + 延迟；不可拨的节点不报延迟。
     private func nodeLabel(_ node: MenuBarNode, selected: Bool) -> String {
         let mark = selected ? "✓ " : ""
         let latency = node.dialable ? " · \(MenuBarKit.latencyText(node.latencyMs, failed: node.failed))" : ""
         return mark + node.name + latency
     }
 
-    // MARK: Toggles / metrics / address
+    // MARK: 异常（没有错误、没有降级时不渲染）
 
-    private var toggles: some View {
-        VStack(spacing: 7) {
-            HStack(spacing: 8) {
-                Text("系统代理").font(.system(size: 12))
-                Spacer()
-                LPSwitch(isOn: Binding(
-                    get: { engine.systemProxyActive },
-                    set: { on in Task { await engine.toggleSystemProxy(on) } }
-                ), width: 30)
-            }
-            HStack(spacing: 8) {
-                Text("实时浮窗").font(.system(size: 12))
-                Spacer()
-                LPSwitch(isOn: Binding(
-                    get: { floating.isVisible },
-                    set: { $0 ? floating.show() : floating.hide() }
-                ), width: 30)
-            }
-        }
+    private var showsIssues: Bool {
+        !status.issues.isEmpty || !portIssues.isEmpty || !actionIssues.isEmpty
     }
 
-    private var metrics: some View {
-        HStack(spacing: 10) {
-            metric("连接", "\(engine.activeConnections)")
-            metric("请求", "\(engine.stats.requests)")
-            metric("拦截", "\(engine.stats.blocked)")
-            Spacer()
-            metric("流量", Fmt.bytes(engine.stats.bytesIn + engine.stats.bytesOut))
-        }
-    }
-
-    private func metric(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(value).font(LPFont.num(11, weight: .semibold)).foregroundStyle(LP.text)
-            Text(label).font(.system(size: 9)).foregroundStyle(LP.textTertiary)
-        }
-    }
-
-    private var address: some View {
-        Button {
-            LPClipboard.copy("127.0.0.1:\(engine.profile.general.mixedPort)")
-            app.showToast("已复制代理地址")
-        } label: {
-            HStack(spacing: 5) {
-                Text("127.0.0.1:\(engine.profile.general.mixedPort)")
-                    .font(LPFont.mono(10, weight: .medium))
-                Image(systemName: "doc.on.doc").font(.system(size: 9))
+    private var issueCard: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            LPEyebrow("异常", tint: LP.danger)
+            ForEach(status.issues) { issue in
+                issueRow(issue)
             }
-            .foregroundStyle(LP.textTertiary)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            ForEach(portIssues) { issue in
+                issueRow(issue)
+            }
+            ForEach(actionIssues) { issue in
+                // 动作失败是「上一次点了什么」的结果，只有它能被用户关掉；
+                // 引擎/端口那些状态项不给 ×，否则等于让用户把故障藏起来。
+                issueRow(issue, dismissible: true)
+            }
         }
-        .buttonStyle(.plain)
-        .help("复制代理地址")
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LP.danger.opacity(0.07), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
-    // MARK: Issues — why a start did not work
-
-    @ViewBuilder
-    private var issues: some View {
-        if let error = actionError ?? engineFailure {
-            issueRow(icon: "exclamationmark.triangle.fill", text: error, tint: LP.danger)
+    /// 端口占用、别的内核在抢流量、lsof 不可用：都是面板自己取得到、常驻状态里不该有的东西。
+    private var portIssues: [ResidentIssue] {
+        var issues: [ResidentIssue] = []
+        for conflict in report?.conflicts ?? [] {
+            issues.append(.init(severity: .degraded, text: conflict.summary))
         }
-        if let conflicts = report?.conflicts, !conflicts.isEmpty {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(conflicts, id: \.port) { conflict in
-                    Text("· " + conflict.summary)
-                }
-            }
-            .font(.system(size: 9.5))
-            .foregroundStyle(LP.danger)
-            .lineLimit(3)
-        }
-        // Only worth saying in Mihomo mode: that is the mode where a second kernel
-        // fights ours for the same traffic.
+        // 只有 Mihomo 模式才值得提：那是第二个内核和我们在抢同一份流量。
         if engine.executionKernel == .mihomo, let note = report?.foreignKernelNote {
-            issueRow(icon: "cpu", text: note, tint: LP.amber)
+            issues.append(.init(severity: .degraded, text: note))
         }
         if report?.auditFailed == true {
-            issueRow(icon: "questionmark.circle", text: "端口检查不可用（lsof 未返回结果），占用情况未知", tint: LP.textTertiary)
+            issues.append(.init(severity: .degraded, text: "端口检查不可用（lsof 未返回结果），占用情况未知"))
         }
+        return issues
     }
 
-    private func issueRow(icon: String, text: String, tint: Color) -> some View {
+    /// 面板自己发起的动作失败（切节点）：错误得留在面板上，否则点完没反应。
+    private var actionIssues: [ResidentIssue] {
+        guard let actionError else { return [] }
+        return [.init(severity: .degraded, text: actionError)]
+    }
+
+    private func issueRow(_ issue: ResidentIssue, dismissible: Bool = false) -> some View {
         HStack(alignment: .top, spacing: 5) {
-            Image(systemName: icon).font(.system(size: 9)).padding(.top, 1)
-            Text(text).lineLimit(3).textSelection(.enabled)
+            Image(systemName: issue.severity == .failure
+                  ? "exclamationmark.triangle.fill" : "exclamationmark.circle")
+                .font(.system(size: 9))
+                .padding(.top, 1)
+            Text(issue.text)
+                .lineLimit(3)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            if dismissible {
+                Button {
+                    actionError = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .padding(.top, 1)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("关掉这条提示")
+                .accessibilityLabel("关掉这条提示")
+            }
         }
         .font(.system(size: 9.5))
-        .foregroundStyle(tint)
+        .foregroundStyle(issue.severity == .failure ? LP.danger : LP.amber)
     }
 
-    // MARK: Navigation / footer
+    // MARK: footer
 
-    private var navigation: some View {
-        VStack(spacing: 1) {
-            ForEach([AppModel.Section.dashboard, .rules, .capture, .settings]) { section in
+    private var footer: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 6) {
                 Button {
-                    app.go(to: section)
+                    app.showPalette = true
                     openWindow(id: "main")
                     NSApp.activate(ignoringOtherApps: true)
                 } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: section.icon).font(.system(size: 9)).frame(width: 14)
-                        Text(section.title).font(.system(size: 12))
-                        Spacer()
+                    HStack(spacing: 5) {
+                        Text("命令面板").font(.system(size: 11.5))
+                        Spacer(minLength: 0)
+                        LPKeyCap(keys: "⌘K")
                     }
-                    .foregroundStyle(LP.textSecondary)
-                    .padding(.vertical, 3)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-            }
-        }
-    }
 
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button {
-                app.showPalette = true
-                openWindow(id: "main")
-                NSApp.activate(ignoringOtherApps: true)
-            } label: {
-                HStack(spacing: 5) {
-                    Text("命令面板").font(.system(size: 12))
-                    Spacer()
-                    LPKeyCap(keys: "⌘K")
+                Button {
+                    toggleFloating()
+                } label: {
+                    Text(floating.isVisible ? "收起浮窗" : "实时浮窗")
+                        .font(.system(size: 11.5))
                 }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Button("打开主窗口") {
-                openWindow(id: "main")
-                NSApp.activate(ignoringOtherApps: true)
-            }
-            .buttonStyle(.plain)
-            .font(.system(size: 12))
-
-            Button("退出 Leapin") { NSApp.terminate(nil) }
                 .buttonStyle(.plain)
-                .font(.system(size: 12))
                 .foregroundStyle(LP.textSecondary)
+            }
+
+            HStack(spacing: 6) {
+                Button("打开主窗口") {
+                    openWindow(id: "main")
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11.5))
+                Spacer(minLength: 0)
+                Button("退出 Leapin") { NSApp.terminate(nil) }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(LP.textSecondary)
+            }
         }
     }
 
-    // MARK: Actions
+    // MARK: 取值
+
+    private var exitText: String {
+        guard engine.state == .running else { return "—" }
+        guard let exit = status.exit else { return "没有可切换的节点" }
+        let group = status.exitGroup.map { "\($0) › " } ?? ""
+        return group + exit
+    }
+
+    private var latencyText: String {
+        guard engine.state == .running else { return "—" }
+        return MenuBarKit.latencyText(snapshot?.currentLatencyMs)
+    }
+
+    private var latencyColor: Color {
+        switch LatencyTone.of(snapshot?.currentLatencyMs) {
+        case .fast: return LP.mint
+        case .ok: return LP.amber
+        case .slow, .failed: return LP.danger
+        case .unknown: return LP.textTertiary
+        }
+    }
+
+    // MARK: 动作
+
+    /// 面板打开期间按 1 Hz 喂帧；视图消失（面板收起）循环就结束。
+    /// 采样驱动放在视图里，`ResidentStatusStore` 自己不持有任何定时器。
+    ///
+    /// 只喂帧，不再顺带 refresh()：快照（mihomo 要打内核 HTTP）和端口审计
+    /// （每次真起 lsof / pgrep / ps，lsof 超时 4s）都不是 1 Hz 该做的事，
+    /// 它们只在打开、状态 / 配置变化、动作成功后各取一次。
+    private func liveLoop() async {
+        await refresh()
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .seconds(1))
+            if Task.isCancelled { return }
+            resident.update(from: engine, at: Date())
+        }
+    }
 
     private func refresh() async {
-        actionError = nil
-        snapshot = await engine.menuBarSnapshot()
+        let latest = await engine.menuBarSnapshot()
+        snapshot = latest
         report = await engine.portReport()
-        if let current = snapshot?.current, let latency = snapshot?.currentLatencyMs,
-           quick?.name != current || quick?.latencyMs == nil {
-            quick = MenuBarTestOutcome(name: current, latencyMs: latency)
+        resident.update(from: engine, snapshot: latest)
+        // 图标上的延迟数字继续吃探针的结果：面板不再自带测速按钮，徽标不能因此失声。
+        if let current = latest.current, let latency = latest.currentLatencyMs {
+            MenuBarStatus.shared.current = MenuBarTestOutcome(name: current, latencyMs: latency)
         }
-        status.current = quick
-        status.best = summary?.best
+        // 这里不清 actionError：切配置失败会回滚 profile.id，那次变更正好触发一次
+        // refresh，把刚设上的错误立刻抹掉。错误只由「下一次动作开始」「动作成功」
+        // 和「用户点 ×」三处清。
     }
 
-    private func quickTest() {
-        guard !testingOne else { return }
-        testingOne = true
-        Task {
-            let outcome = await engine.menuBarQuickTest()
-            quick = outcome
-            status.current = outcome
-            testingOne = false
-            await refresh()
-        }
+    private func toggleFloating() {
+        if floating.isVisible { floating.hide() } else { floating.show() }
     }
 
-    private func testAll() {
-        guard !testingAll else { return }
-        testingAll = true
-        progress = (0, 0)
-        status.pending = 1
-        Task {
-            let outcome = await engine.menuBarTestAll { done, total in
-                progress = (done, total)
-                status.pending = max(1, total - done)
-            }
-            summary = outcome
-            status.best = outcome.best
-            status.pending = 0
-            testingAll = false
-            await refresh()
-        }
+    private func open(_ section: AppModel.Section) {
+        app.go(to: section)
+        openWindow(id: "main")
+        NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// 切一个策略组的成员。失败留在面板上（进「异常」块），不往控制台丢。
     private func select(group: String, member: String) {
         actionError = nil
         Task {
@@ -487,10 +494,53 @@ struct MenuBarPanel: View {
         actionError = nil
         Task {
             await engine.menuBarSwitch(profile: id)
-            quick = nil
-            summary = nil
-            status.reset()
+            // activate 失败会回滚到原配置、只写 lastError：先确认真的切过去了再改场景，
+            // 否则「配置」说 A、「场景」说 B，两个菜单互相打脸。
+            guard engine.profile.id == id else {
+                actionError = Redactor.redact(engine.lastError ?? "切换配置失败")
+                return
+            }
+            // 配置换了，场景也要跟着改口：否则「现在」说 A，场景菜单还说 B。
+            if let scene = NetworkScene.allCases.first(where: { app.scenes.profileID(for: $0) == id }) {
+                try? app.scenes.markActive(scene)
+            }
             await refresh()
         }
+    }
+}
+
+/// 常驻面的 ink：墨（正常）/ 半红（降级）/ 红（异常）。面板与浮窗共用这一份，
+/// 因此同一个 tone 在两个面上不会画出两种颜色。
+extension ResidentTone {
+    var ink: Color {
+        switch self {
+        case .idle: return LP.textTertiary
+        case .normal: return LP.mint
+        case .degraded: return LP.amber
+        case .failed: return LP.danger
+        }
+    }
+}
+
+/// 切换块的一行：图标 + 名字 + 当前值 + 下拉提示。
+struct MenuBarRowLabel: View {
+    var icon: String
+    var title: String
+    var value: String
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 9)).frame(width: 13)
+                .foregroundStyle(LP.textTertiary)
+            Text(title).font(.system(size: 11.5))
+            Spacer(minLength: 6)
+            Text(value).font(.system(size: 11))
+                .foregroundStyle(LP.textSecondary)
+                .lineLimit(1).truncationMode(.middle)
+            Image(systemName: "chevron.up.chevron.down").font(.system(size: 8))
+                .foregroundStyle(LP.textTertiary)
+        }
+        .foregroundStyle(LP.text)
+        .contentShape(Rectangle())
     }
 }

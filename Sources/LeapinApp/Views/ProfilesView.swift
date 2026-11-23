@@ -23,6 +23,16 @@ struct ProfilesView: View {
     @State private var speedResults: [String: ControlNodeSpeedResult] = [:]
     @State private var speedTesting: Set<String> = []
 
+    /// 作为「走哪」的 tab 出现时传 `false`：那一屏的页头与 tab 标题已经写明你在哪，
+    /// 这里的大标题（「当前配置」+ 配置名）就是第三遍重复。
+    ///
+    /// 只影响标题块：导入 / 粘贴订阅 / 导出 / 打开目录等动作与全部业务逻辑照旧。
+    var showsPageHeader: Bool = true
+
+    init(showsPageHeader: Bool = true) {
+        self.showsPageHeader = showsPageHeader
+    }
+
     private var currentMeta: ProfileMeta? {
         metas.first { $0.id == engine.profile.id }
     }
@@ -92,105 +102,19 @@ struct ProfilesView: View {
     private var heroPanel: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .center, spacing: 16) {
-                VStack(alignment: .leading, spacing: 7) {
-                    LPEyebrow("当前配置 / Active profile")
-
-                    Text(engine.profile.name)
-                        .font(LPFont.display(20, weight: .semibold))
-                        .foregroundStyle(LP.text)
-                        .lineLimit(1)
-
-                    HStack(spacing: 7) {
-                        Text("\(engine.ruleCount) 条规则")
-                            .font(LPFont.mono(12))
-                            .foregroundStyle(LP.textSecondary)
-                        Text("·")
-                            .font(LPFont.mono(12))
-                            .foregroundStyle(LP.textTertiary)
-                        Text(currentMeta.map { Fmt.day($0.updatedAt) } ?? "本机配置")
-                            .font(LPFont.mono(12))
-                            .foregroundStyle(LP.textTertiary)
-                        Circle()
-                            .fill(LP.mint)
-                            .frame(width: 5, height: 5)
-                            .padding(.leading, 4)
-                        Text("已启用")
-                            .font(.system(size: 10))
-                            .foregroundStyle(LP.textSecondary)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("\(engine.ruleCount) 条规则，已启用")
+                // 大标题只在这一页独立成页时出现；作为 tab 时它被 tab 标题取代。
+                if showsPageHeader {
+                    heroTitle
                 }
 
-                Spacer(minLength: 12)
+                if showsPageHeader {
+                    Spacer(minLength: 12)
+                }
 
-                HStack(spacing: 8) {
-                    Button {
-                        app.beginImport()
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "square.and.arrow.down")
-                                .font(.system(size: 9, weight: .bold))
-                            Text("导入配置")
-                                .font(.system(size: 12, weight: .semibold))
-                                .lineLimit(1)
-                                .fixedSize()
-                        }
-                    }
-                    .buttonStyle(LPPrimaryButtonStyle())
-                    .accessibilityLabel("导入配置")
+                heroActions
 
-                    Button {
-                        app.importFromClipboardLink()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "link")
-                                .font(.system(size: 9, weight: .bold))
-                            Text("粘贴订阅")
-                                .font(.system(size: 12, weight: .medium))
-                                .lineLimit(1)
-                                .fixedSize()
-                        }
-                    }
-                    .buttonStyle(LPGhostButtonStyle())
-                    .help("从剪贴板读取 http(s) 订阅链接并下载导入")
-                    .accessibilityLabel("粘贴订阅链接")
-
-                    Menu {
-                        Button("Clash YAML") { app.exportProfile(format: .clash) }
-                        Button("Surge conf") { app.exportProfile(format: .surge) }
-                        Button("Leapin JSON") { app.exportProfile(format: .json) }
-                        Divider()
-                        Button("Hosts 拦截表（REJECT 精确域名）") { app.exportProfile(format: .hosts) }
-                        Button("ABP / uBlock 过滤列表") { app.exportProfile(format: .abp) }
-                        Button("Clash rule-set（classical）") { app.exportProfile(format: .ruleSet) }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 9, weight: .bold))
-                            Text("导出")
-                                .font(.system(size: 12, weight: .medium))
-                                .lineLimit(1)
-                                .fixedSize()
-                        }
-                        .foregroundStyle(LP.text)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .lpGlass(in: Capsule(style: .continuous),
-                                 fallbackFill: LP.panelSolid,
-                                 fallbackMaterial: .thinMaterial)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
-                    .fixedSize()
-                    .help("导出为 Clash / Surge / JSON / Hosts / ABP / rule-set")
-                    .accessibilityLabel("导出配置")
-
-                    Button("打开目录") {
-                        NSWorkspace.shared.open(engine.store.root)
-                        app.showToast("已在访达中打开配置目录", kind: .info)
-                    }
-                    .buttonStyle(LPGhostButtonStyle())
+                if !showsPageHeader {
+                    Spacer(minLength: 0)
                 }
             }
 
@@ -203,6 +127,112 @@ struct ProfilesView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .lpPanel(padding: 0)
         .lpAppear(0)
+    }
+
+    /// 页面大标题块：「当前配置 / Active profile」+ 配置名 + 规则数 / 更新日 / 已启用。
+    private var heroTitle: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            LPEyebrow("当前配置 / Active profile")
+
+            Text(engine.profile.name)
+                .font(LPFont.display(20, weight: .semibold))
+                .foregroundStyle(LP.text)
+                .lineLimit(1)
+
+            HStack(spacing: 7) {
+                Text("\(engine.ruleCount) 条规则")
+                    .font(LPFont.mono(12))
+                    .foregroundStyle(LP.textSecondary)
+                Text("·")
+                    .font(LPFont.mono(12))
+                    .foregroundStyle(LP.textTertiary)
+                Text(currentMeta.map { Fmt.day($0.updatedAt) } ?? "本机配置")
+                    .font(LPFont.mono(12))
+                    .foregroundStyle(LP.textTertiary)
+                Circle()
+                    .fill(LP.mint)
+                    .frame(width: 5, height: 5)
+                    .padding(.leading, 4)
+                Text("已启用")
+                    .font(.system(size: 10))
+                    .foregroundStyle(LP.textSecondary)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(engine.ruleCount) 条规则，已启用")
+        }
+    }
+
+    /// 标题右侧的动作条：导入 / 粘贴订阅 / 导出 / 打开目录。作为 tab 时整条仍在，
+    /// 只是不再和大标题并排（能力不能因为换了个容器就消失）。
+    private var heroActions: some View {
+        HStack(spacing: 8) {
+            Button {
+                app.beginImport()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("导入配置")
+                        .font(.system(size: 12, weight: .semibold))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .buttonStyle(LPPrimaryButtonStyle())
+            .accessibilityLabel("导入配置")
+
+            Button {
+                app.importFromClipboardLink()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "link")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("粘贴订阅")
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
+            .buttonStyle(LPGhostButtonStyle())
+            .help("从剪贴板读取 http(s) 订阅链接并下载导入")
+            .accessibilityLabel("粘贴订阅链接")
+
+            Menu {
+                Button("Clash YAML") { app.exportProfile(format: .clash) }
+                Button("Surge conf") { app.exportProfile(format: .surge) }
+                Button("Leapin JSON") { app.exportProfile(format: .json) }
+                Divider()
+                Button("Hosts 拦截表（REJECT 精确域名）") { app.exportProfile(format: .hosts) }
+                Button("ABP / uBlock 过滤列表") { app.exportProfile(format: .abp) }
+                Button("Clash rule-set（classical）") { app.exportProfile(format: .ruleSet) }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("导出")
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+                .foregroundStyle(LP.text)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .lpGlass(in: Capsule(style: .continuous),
+                         fallbackFill: LP.panelSolid,
+                         fallbackMaterial: .thinMaterial)
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("导出为 Clash / Surge / JSON / Hosts / ABP / rule-set")
+            .accessibilityLabel("导出配置")
+
+            Button("打开目录") {
+                NSWorkspace.shared.open(engine.store.root)
+                app.showToast("已在访达中打开配置目录", kind: .info)
+            }
+            .buttonStyle(LPGhostButtonStyle())
+        }
     }
 
     // MARK: Profile list

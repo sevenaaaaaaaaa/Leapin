@@ -8,6 +8,18 @@ import LeapinIntegrations
 
 @MainActor
 struct CaptureView: View {
+    /// 搜索注入点：父视图带进来的**初始**过滤词（「为什么」页从 `RouteContext` 取到的 host）。
+    ///
+    /// 只喂初始值，不改筛选：唯一的写入口是 `applyInitialSearchIfNeeded()`，它只写一次，
+    /// 且搜索框里已经有用户打的字就不写。默认空串，`CaptureView()` 的老用法一字未改。
+    var initialSearch: String = ""
+
+    /// 这个实例是不是当前可见的那一个。
+    ///
+    /// 「为什么」页把出现过的 tab 都留在 ZStack 里（切 tab 不销毁、不重建），隐藏的连接 tab
+    /// 收到全窗口的「聚焦搜索框」请求时不该抢焦点 —— 否则键击会落进一个看不见的输入框。
+    var isActive: Bool = true
+
     @ObservedObject private var engine = LeapinEngine.shared
     @EnvironmentObject private var app: AppModel
     @State private var search = ""
@@ -21,6 +33,14 @@ struct CaptureView: View {
     @FocusState private var searchFocused: Bool
     @FocusState private var listFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// 注入词是否已处理过。处理过就不再写：切 tab 重挂载、父视图重算 body 都不会重放。
+    @State private var appliedInitialSearch = false
+
+    init(initialSearch: String = "", isActive: Bool = true) {
+        self.initialSearch = initialSearch
+        self.isActive = isActive
+    }
 
     private enum StatusFilter: String, CaseIterable, Identifiable {
         case all, success, redirect, clientError, blocked
@@ -60,6 +80,23 @@ struct CaptureView: View {
 
     private var current: CapturedRequest? {
         source.first { $0.id == selected }
+    }
+
+    /// 注入词的唯一写入口。
+    ///
+    /// 「为什么」页在 `.task` 里取 host，而 `.task` 晚于首帧出现，所以注入词可能比 `onAppear` 还晚到；
+    /// 两个时机都走这里。三条前置条件保证它不覆盖用户输入：已注入过、注入词为空、
+    /// 搜索框里已经有内容 —— 任一成立就直接返回，之后也不会再补。
+    private func applyInitialSearchIfNeeded() {
+        guard !appliedInitialSearch else { return }
+        guard !initialSearch.isEmpty else { return }
+        guard search.isEmpty else {
+            // 用户先动过搜索框：注入词作废。
+            appliedInitialSearch = true
+            return
+        }
+        search = initialSearch
+        appliedInitialSearch = true
     }
 
     var body: some View {
@@ -154,6 +191,8 @@ struct CaptureView: View {
             app.showToast("已清空记录", kind: .info)
         }
         .onChange(of: app.searchFocusRequest) { _, _ in
+            // 隐藏的 tab 不抢焦点：看不见的搜索框拿到键盘，用户会以为输入丢了。
+            guard isActive else { return }
             searchFocused = true
         }
         .onChange(of: filtered.count) { _, _ in
@@ -167,6 +206,8 @@ struct CaptureView: View {
                 if freshID == id { LPMotion.run(LPMotion.emphasized) { freshID = nil } }
             }
         }
+        .onAppear { applyInitialSearchIfNeeded() }
+        .onChange(of: initialSearch) { _, _ in applyInitialSearchIfNeeded() }
     }
 
     private var toolbar: some View {

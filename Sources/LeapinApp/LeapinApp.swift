@@ -71,13 +71,15 @@ struct LeapinApp: App {
                 Button("搜索当前页面") { app.requestSearchFocus() }
                     .keyboardShortcut("f", modifiers: .command)
                 Divider()
-                ForEach(Array(AppModel.Section.allCases.prefix(10).enumerated()), id: \.element) { index, section in
-                    Button(section.title) { app.go(to: section) }
-                        .keyboardShortcut(Self.key(for: index), modifiers: .command)
+                // 11 行与侧栏同源（WorkbenchSidebar）：四个动词按计划里的 shortcut 挂
+                // ⌘1..⌘4，其余行不给键位——菜单和侧栏不该有两份顺序和两套键。
+                ForEach(WorkbenchSidebar.rows.filter { $0.shortcut != nil }) { row in
+                    Button(row.title) { app.dispatch(row.destination) }
+                        .keyboardShortcut(Self.key(for: row.shortcut ?? ""), modifiers: .command)
                 }
-                Divider()
-                Button("网络活动") { app.go(to: .activity) }
-                Button("排障与配置") { app.go(to: .diagnostics) }
+                ForEach(WorkbenchSidebar.rows.filter { $0.shortcut == nil }) { row in
+                    Button(row.title) { app.dispatch(row.destination) }
+                }
                 Divider()
                 Button("启动 / 停止代理") { app.toggle() }
                     .keyboardShortcut("p", modifiers: [.command, .shift])
@@ -92,26 +94,17 @@ struct LeapinApp: App {
             MenuBarPanel()
                 .environmentObject(app)
         } label: {
-            MenuBarLabel(running: app.engine.state == .running)
+            MenuBarLabel()
         }
         // A window-style extra is what makes the node search field, the scroll
         // list and the nested menus usable; menu style cannot host them.
         .menuBarExtraStyle(.window)
     }
 
-    private static func key(for index: Int) -> KeyEquivalent {
-        switch index {
-        case 0: return "1"
-        case 1: return "2"
-        case 2: return "3"
-        case 3: return "4"
-        case 4: return "5"
-        case 5: return "6"
-        case 6: return "7"
-        case 7: return "8"
-        case 8: return "9"
-        default: return "0"
-        }
+    /// ⌘1..⌘4 的键位来自 `WorkbenchSidebar`（T-05），App 只做 String → KeyEquivalent，
+    /// 不再自己维护一份「第几个 Section 配第几个数字」的副本。
+    private static func key(for shortcut: String) -> KeyEquivalent {
+        KeyEquivalent(shortcut.first ?? "?")
     }
 }
 
@@ -120,8 +113,10 @@ final class AppModel: ObservableObject {
     /// Pre-filled rule seeded from a captured request; the rewrite page consumes it
     /// and opens the editor so the user confirms before anything is saved.
     @Published var pendingRewriteLine: String?
+    /// 导航页。`.why` 是 M2 新增的「为什么」动词页；`.capture` 保留为它的深链 alias：
+    /// 两个 rawValue 都落到 `WhyPage`，侧栏与「前往」菜单只列 `why` 一行。
     enum Section: String, CaseIterable, Identifiable {
-        case dashboard, rules, rewrite, adblock, capture, ssh, nas, learn, privacy, profiles, settings, activity, diagnostics
+        case dashboard, rules, rewrite, adblock, capture, why, ssh, nas, learn, profiles, settings, activity, diagnostics
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -130,10 +125,10 @@ final class AppModel: ObservableObject {
             case .rewrite: return "请求重写"
             case .adblock: return "去广告"
             case .capture: return "抓包"
+            case .why: return "为什么"
             case .ssh: return "SSH"
             case .nas: return "NAS"
             case .learn: return "智能学习"
-            case .privacy: return "隐私"
             case .profiles: return "线路与订阅"
             case .settings: return "设置"
             case .activity: return "网络活动"
@@ -147,10 +142,10 @@ final class AppModel: ObservableObject {
             case .rewrite: return "arrow.triangle.2.circlepath"
             case .adblock: return "hand.raised.fill"
             case .capture: return "waveform.path.ecg"
+            case .why: return "waveform.path.ecg"
             case .ssh: return "terminal"
             case .nas: return "externaldrive.connected.to.line.below"
             case .learn: return "brain"
-            case .privacy: return "lock.shield"
             case .profiles: return "doc.on.doc"
             case .settings: return "gearshape"
             case .activity: return "waveform.path"
@@ -160,8 +155,8 @@ final class AppModel: ObservableObject {
         /// 该页面是否真的有可聚焦的搜索框（⌘F 只在 true 的页面上生效）。
         var supportsSearch: Bool {
             switch self {
-            case .rules, .rewrite, .capture, .adblock, .profiles, .activity, .diagnostics: return true
-            case .dashboard, .ssh, .nas, .learn, .privacy, .settings: return false
+            case .rules, .rewrite, .capture, .why, .adblock, .profiles, .activity, .diagnostics: return true
+            case .dashboard, .ssh, .nas, .learn, .settings: return false
             }
         }
 
@@ -172,19 +167,54 @@ final class AppModel: ObservableObject {
             case .rewrite: return "改请求头、改响应正文、Mock 接口与重定向"
             case .adblock: return "过滤列表、拦截统计与白名单"
             case .capture: return "HTTP(S) 请求抓取与 HAR 导出"
+            case .why: return "命中链、探测与诊断"
             case .ssh: return "交互式终端，密码经 askpass 传递"
             case .nas: return "Bonjour 发现与 SMB 挂载"
             case .learn: return "从 App 列表或截图生成分流规则"
-            case .privacy: return "隐私审计与网络加固建议"
             case .profiles: return "配置导入、导出与切换"
             case .settings: return "端口、DNS、抓包与日志"
             case .activity: return "连接明细、流量与分流路径"
             case .diagnostics: return "网站检查、规则调整与可恢复操作"
             }
         }
+
+        /// 这个 rawValue 现在落在哪个动词页；不是动词页的返回 nil。
+        ///
+        /// T-13 的收口表：退役页不再有自己的身体，只作为深链 alias 落进某个动词页的某个 tab
+        /// （profiles → 走哪·配置与订阅、adblock → 改成什么·去广告、activity → 为什么·指标、
+        /// diagnostics → 为什么·诊断、capture → 为什么·连接）。页头从这里取名字，
+        /// 于是「标题写的页」和「身体画的页」不可能对不上。
+        var verb: WorkbenchVerb? {
+            switch self {
+            case .dashboard, .profiles: return .goWhere
+            case .rules: return .howJudged
+            case .rewrite, .adblock: return .whatChanged
+            case .why, .capture, .activity, .diagnostics: return .why
+            case .ssh, .nas, .learn, .settings: return nil
+            }
+        }
+
+        /// 页头标题用动词名（dashboard → 走哪、why/capture → 为什么），其余页沿用页面名。
+        var headerTitle: String { verb?.title ?? title }
+
+        /// 页头图标跟着落点走，不跟旧 rawValue 走。
+        var headerIcon: String { verb?.icon ?? icon }
+
+        /// 页头副标题写这个动词页现在有哪几个 tab；旧页名的副标题不再出现在页头上。
+        var headerSubtitle: String {
+            switch verb {
+            case .goWhere?: return "总览 / 配置与订阅"
+            case .whatChanged?: return "重写 / Mock / 脚本 / 去广告"
+            case .why?: return "连接 / 指标 / 探测 / 诊断"
+            case .howJudged?, nil: return subtitle
+            }
+        }
     }
 
     let engine = LeapinEngine.shared
+    /// 四个动词共享的上下文（T-05 的纯逻辑）。根视图把它下发给整棵树，
+    /// WhyPage 从 T-07 起在 onAppear 里 take 一次。
+    let routes = RouteContext()
     let assistant = NetworkAssistantModel()
     let scenes = NetworkScenes(root: LeapinEngine.shared.store.root)
     let bookmarks = NetworkBookmarks(root: LeapinEngine.shared.store.root)
@@ -263,6 +293,28 @@ final class AppModel: ObservableObject {
     func go(to section: Section) {
         LPMotion.run(LPMotion.press) { self.section = section }
         UserDefaults.standard.set(section.rawValue, forKey: "startSection")
+    }
+
+    /// 侧栏 /「前往」菜单 / 命令面板共用的一条落点映射。
+    ///
+    /// 行数据在 `WorkbenchSidebar`（T-05 的纯数据），这里只把它变成动作，
+    /// 所以三个入口不会各自解释一遍「sheet 是哪一张」「导入走哪个门」。
+    func dispatch(_ destination: WorkbenchDestination) {
+        switch destination {
+        case .section(let raw):
+            // 落点写错的代价不该是崩一屏：忽略，交给静态断言去发现。
+            guard let target = Section(rawValue: raw) else { return }
+            go(to: target)
+        case .sheet(let sheet):
+            switch sheet {
+            case .home: showHome = true
+            case .company: showCompany = true
+            case .networkTools: showNetworkTools = true
+            }
+        // 导入走导入中心（不是 showImporter 的系统文件框）。
+        case .importCenter:
+            beginImport()
+        }
     }
 
     /// ⌘F 只对真正有搜索框的页面生效；其余页面改为打开命令面板，
@@ -522,6 +574,7 @@ struct RootView: View {
             .environment(\.lpWindowWidth, geo.size.width)
         }
         .background(WindowAutosave())
+        .environmentObject(app.routes)
         .overlay(alignment: .bottom) { toastView }
         .overlay {
             if app.showPalette {
@@ -598,21 +651,32 @@ struct RootView: View {
         .lpAnimation(LPMotion.standard, value: app.section)
     }
 
+    /// T-13 的收口表：**每个 rawValue 只落一个视图**，退役页作为深链 alias 落进动词页的某个 tab。
+    ///
+    /// - 走哪：dashboard → 总览、profiles → 配置与订阅
+    /// - 怎么判：rules
+    /// - 改成什么：rewrite、adblock（同一页，页内切到「去广告」tab）
+    /// - 为什么：why / capture → 连接、activity → 指标、diagnostics → 诊断
+    ///
+    /// 旧页名（网络活动 / 排障与配置 / 线路与订阅 / 去广告）不再有自己的入口，
+    /// 但 rawValue 全部保留：外链、旧 defaults 里的 startSection 和通知还能落到同一页。
     @ViewBuilder private var sectionContent: some View {
         switch app.section ?? .dashboard {
-        case .dashboard: DashboardView()
+        case .dashboard: GoWherePage(initialTab: .overview)
+        case .profiles: GoWherePage(initialTab: .profiles)
         case .rules: RulesView()
         case .rewrite: RewriteView()
-        case .adblock: AdBlockView()
-        case .capture: CaptureView()
+        // RewriteView 没有 initialTab：它固定从「重写」进，去广告是页内第四个 tab。
+        // 旧深链值不值得再加一个 initialTab 参数？不值得——多一个参数就多一处可漂的默认值。
+        case .adblock: RewriteView()
+        case .why, .capture: WhyPage(initialTab: .connections)
+        case .activity: WhyPage(initialTab: .metrics)
+        case .diagnostics: WhyPage(initialTab: .diagnostics)
         case .ssh: SSHView()
         case .nas: NASView()
+        // 侧栏不列 learn：它已降级成「怎么判」底部的学习建议入口，但独立页保留。
         case .learn: LearnView()
-        case .privacy: PrivacyView()
-        case .profiles: ProfilesView()
         case .settings: SettingsView()
-        case .activity: ObservationView()
-        case .diagnostics: DiagnosticsWorkspace(assistant: app.assistant)
         }
     }
 
@@ -660,13 +724,15 @@ private struct SidebarView: View {
             // 分组导航放在可滚动区里：窗口高度不足时只压缩导航，状态卡始终可见。
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(Self.groups.enumerated()), id: \.offset) { groupIndex, group in
+                    // 3 组 11 行全部来自 WorkbenchSidebar（T-05 的纯数据）：顺序、分组、
+                    // 落点和 ⌘1..⌘4 都由那份计划决定，侧栏只负责画和把行变成动作。
+                    ForEach(Array(WorkbenchSidebar.groups.enumerated()), id: \.element.id) { groupIndex, group in
                         if groupIndex > 0 {
                             if compact {
                                 Rectangle().fill(LP.stroke).frame(height: 1)
                                     .padding(.horizontal, 16).padding(.vertical, 6)
                             } else {
-                                Text(group.title)
+                                Text(group.name)
                                     .font(LPFont.mono(10, weight: .medium))
                                     .tracking(1.7)
                                     .foregroundStyle(LP.textTertiary)
@@ -675,7 +741,7 @@ private struct SidebarView: View {
                                     .padding(.bottom, 4)
                             }
                         } else if !compact {
-                            Text(group.title)
+                            Text(group.name)
                                 .font(LPFont.mono(10, weight: .medium))
                                 .tracking(1.7)
                                 .foregroundStyle(LP.textTertiary)
@@ -684,13 +750,13 @@ private struct SidebarView: View {
                         }
 
                         VStack(spacing: 2) {
-                            ForEach(group.sections) { section in
-                                let index = AppModel.Section.allCases.firstIndex(of: section) ?? 0
-                                SidebarRow(section: section,
-                                           selected: app.section == section,
-                                           hint: index < 9 ? "\(index + 1)" : (index == 9 ? "0" : nil),
+                            ForEach(group.rows) { row in
+                                SidebarRow(title: row.title,
+                                           icon: row.icon,
+                                           selected: isSelected(row),
+                                           hint: row.shortcut,
                                            compact: compact) {
-                                    app.go(to: section)
+                                    app.dispatch(row.destination)
                                 }
                             }
                         }
@@ -710,12 +776,16 @@ private struct SidebarView: View {
                  shadow: 0.10)
     }
 
-    private static let groups: [(title: String, sections: [AppModel.Section])] = [
-        ("工作区", [.dashboard, .profiles]),
-        ("观测与排障", [.activity, .diagnostics, .capture]),
-        ("网络工具", [.rules, .rewrite, .adblock, .nas, .ssh, .learn]),
-        ("系统", [.privacy, .settings])
-    ]
+    /// 选中态只认 section 行：sheet 与导入是动作、不是页面，永远不选中。
+    /// `.why` 与 `.capture` 是同一个页面的两个 rawValue，任一成立都算「为什么」选中。
+    private func isSelected(_ row: WorkbenchSidebar.Row) -> Bool {
+        guard case .section(let raw) = row.destination,
+              let target = AppModel.Section(rawValue: raw) else { return false }
+        if target == .why || target == .capture {
+            return app.section == .why || app.section == .capture
+        }
+        return app.section == target
+    }
 
     private var paletteEntry: some View {
         Button {
@@ -788,7 +858,8 @@ private struct SidebarView: View {
 
 @MainActor
 private struct SidebarRow: View {
-    let section: AppModel.Section
+    let title: String
+    let icon: String
     let selected: Bool
     var hint: String? = nil
     var compact: Bool = false
@@ -798,12 +869,12 @@ private struct SidebarRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: section.icon)
+                Image(systemName: icon)
                     .font(.system(size: 12, weight: .medium))
                     .frame(width: 18)
                     .foregroundStyle(selected ? LP.accent : LP.textSecondary)
                 if !compact {
-                    Text(section.title)
+                    Text(title)
                         .font(.system(size: 12, weight: selected ? .semibold : .regular))
                         .foregroundStyle(selected ? LP.text : LP.textSecondary)
                     Spacer(minLength: 0)
@@ -838,8 +909,8 @@ private struct SidebarRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
-        .help(hint.map { "\(section.title)（⌘\($0)）" } ?? section.title)
-        .accessibilityLabel(section.title)
+        .help(hint.map { "\(title)（⌘\($0)）" } ?? title)
+        .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -944,7 +1015,9 @@ private struct PageHeaderBar: View {
     private var section: AppModel.Section { app.section ?? .dashboard }
 
     var body: some View {
-        PageHeader(title: section.title, subtitle: section.subtitle, icon: section.icon) {
+        // 标题用动词名：dashboard → 走哪、capture/why → 为什么。落到哪个页就写哪个动词，
+        // 否则页头会拿旧页名（网络活动 / 排障与配置）盖在动词页上。
+        PageHeader(title: section.headerTitle, subtitle: section.headerSubtitle, icon: section.headerIcon) {
             HStack(spacing: 0) {
                 Button {
                     app.showPalette = true
@@ -1041,18 +1114,58 @@ struct StatusPill: View {
 
 /// The status-bar item: shield plus the last measured latency, so the number is
 /// visible with the panel closed.
+///
+/// 字形由 `ResidentTone` 决定（T-02），不再看“跑没跑”这一个布尔：降级与失败
+/// 都还在 running 里，只问 running 的话这两种状态会被画成同一枚盾。
+///
+/// 为什么图标自己推一次：`ResidentStatusStore` 的帧以前只由面板（打开时）和浮窗
+/// （可见时）喂，窗口全关时它停在 `.empty`，状态栏就永远是 idle——S5 承诺的
+/// “关着窗出问题，菜单栏变红”于是永远不成立。这里改成事件驱动：只订阅引擎里
+/// **低频**的那几个信号（状态 / 系统代理 / 错误 / 配置），到一次推一次。
+/// 不订阅 `$stats`：它每个请求都变，状态栏会跟着抖；也不加任何定时器。
 @MainActor
 private struct MenuBarLabel: View {
-    let running: Bool
+    /// 用 `let` 而不是 `@ObservedObject`：引擎的每一个 `@Published`（包括每请求都变的
+    /// `stats`）都会让订阅它的视图重绘，状态栏图标就会被每个请求重画一次。
+    /// 这里只靠下面几条 `onReceive` 显式订阅低频信号，够了。
+    private let engine = LeapinEngine.shared
+    /// 徽标（延迟）要跟着测速更新，这一个仍然观察。
     @ObservedObject private var status = MenuBarStatus.shared
+    /// 图标自己记的 tone：store 可能还没人喂过，不能直接读它的瞬时值当真相。
+    @State private var tone: ResidentTone = .idle
 
     var body: some View {
-        if let badge = status.badge {
-            Label(badge, systemImage: icon)
+        icon
+            // 首帧没有旧值问题，直接推。
+            .onAppear { sync() }
+            // 其余一律延后一拍：`@Published` 在 willSet 发值，同步回调里读到的还是旧属性，
+            // 不延后的话启动后图标停在 idle、停止后停在 normal，之后没人纠正。
+            .onReceive(engine.$state) { _ in scheduleSync() }
+            .onReceive(engine.$systemProxyActive) { _ in scheduleSync() }
+            .onReceive(engine.$lastError) { _ in scheduleSync() }
+            .onReceive(engine.$profile) { _ in scheduleSync() }
+    }
+
+    @ViewBuilder private var icon: some View {
+        if let badge = status.badge, tone == .normal {
+            // 延迟只在正常态出现：降级/失败时挂着旧延迟，等于用旧数字冒充健康。
+            Label(badge, systemImage: tone.iconName)
+                .accessibilityLabel(tone.accessibilityText)
         } else {
-            Image(systemName: icon)
+            Image(systemName: tone.iconName)
+                .accessibilityLabel(tone.accessibilityText)
         }
     }
 
-    private var icon: String { running ? "shield.lefthalf.filled" : "shield.slash" }
+    /// 事件到了才推一帧；`update(from:)` 是 store 的既有入口，这里不改 store。
+    /// 不持有 store 引用：渲染不读它，写一次就走。
+    private func sync() {
+        tone = ResidentStatusStore.shared.update(from: engine).tone
+    }
+
+    /// 延后一拍再推：`@Published` 的 willSet 语义决定了同步回调里属性还没换新，
+    /// 这一拍是读得到新值的唯一代价，比加定时器便宜得多。
+    private func scheduleSync() {
+        DispatchQueue.main.async { sync() }
+    }
 }

@@ -110,22 +110,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 let model = AppModel()
                 let content: AnyView
+                // 快照名跟着 M2 的新壳走（T-13）：同一个像素由哪个视图画，必须和 sectionContent 一致。
+                // 退役页没有自己的快照名了——它们的名字现在指向落点所在的动词页那一页。
                 switch spec {
-                case "dashboard": content = AnyView(DashboardView().environmentObject(model))
+                case "dashboard": content = AnyView(GoWherePage(initialTab: .overview).environmentObject(model))
+                case "profiles": content = AnyView(GoWherePage(initialTab: .profiles).environmentObject(model))
                 case "settings": content = AnyView(SettingsView().environmentObject(model))
                 case "rules": content = AnyView(RulesView().environmentObject(model))
-                case "profiles": content = AnyView(ProfilesView().environmentObject(model))
-                case "capture": content = AnyView(CaptureView().environmentObject(model))
-                case "adblock": content = AnyView(AdBlockView().environmentObject(model))
+                case "capture", "why": content = AnyView(WhyPage(initialTab: .connections).environmentObject(model))
+                case "activity": content = AnyView(WhyPage(initialTab: .metrics).environmentObject(model))
+                case "diagnostics": content = AnyView(WhyPage(initialTab: .diagnostics).environmentObject(model))
+                case "adblock": content = AnyView(RewriteView().environmentObject(model))
                 case "rewrite": content = AnyView(RewriteView().environmentObject(model))
                 case "learn": content = AnyView(LearnView().environmentObject(model))
-                case "privacy": content = AnyView(PrivacyView().environmentObject(model))
-                case "activity": content = AnyView(ObservationView().environmentObject(model))
-                case "diagnostics": content = AnyView(DiagnosticsWorkspace(assistant: model.assistant))
                 default: content = AnyView(Text("unknown view: \(spec)"))
                 }
                 let host = NSHostingView(rootView:
-                    content.frame(width: 1160, height: 860)
+                    content
+                        // WhyPage 在出现时从 RouteContext 取一次 host（T-07）。快照直接实例化视图，
+                        // 没有根视图那层注入；缺这一行不是画错，是取 route 时运行时崩。
+                        .environmentObject(model.routes)
+                        .frame(width: 1160, height: 860)
                         .background(Color(nsColor: .windowBackgroundColor)))
                 host.frame = NSRect(x: 0, y: 0, width: 1160, height: 860)
                 // Pages that size themselves from the window (settings' columns,
@@ -134,6 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 1160, height: 860),
                                       styleMask: [.titled], backing: .buffered, defer: false)
                 window.appearance = NSAppearance(named: .aqua)
+                host.appearance = NSAppearance(named: .aqua)
                 window.contentView = host
                 window.orderFrontRegardless()
                 host.layoutSubtreeIfNeeded()
@@ -263,8 +269,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(proxyItem)
         menu.addItem(.separator())
 
-        for section in [AppModel.Section.dashboard, .rules, .capture, .settings] {
-            let item = NSMenuItem(title: section.title, action: #selector(dockOpenSection(_:)), keyEquivalent: "")
+        // 四个动词 + 设置。标题用动词名（走哪 / 怎么判 / 为什么），落点和侧栏同一套；
+        // `.capture` 只是 `.why` 的深链 alias，菜单里不再出现「抓包」这个名字。
+        for section in [AppModel.Section.dashboard, .rules, .why, .settings] {
+            let item = NSMenuItem(title: section.headerTitle, action: #selector(dockOpenSection(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = section.rawValue
             menu.addItem(item)

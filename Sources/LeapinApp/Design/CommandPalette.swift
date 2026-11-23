@@ -131,15 +131,42 @@ struct CommandPalette: View {
                 app.showToast("已复制 127.0.0.1:\(device)")
             }))
 
-        let shortcuts = ["⌘1", "⌘2", "⌘3", "⌘4", "⌘5", "⌘6", "⌘7", "⌘8", "⌘9", "⌘0"]
-        for (i, section) in AppModel.Section.allCases.enumerated() {
+        // 「前往」组与侧栏、⌘1..⌘4 同源（WorkbenchSidebar，T-05）：11 行，动作分
+        // section / sheet / importCenter 三种，统一交给 app.dispatch 落地——
+        // 命令面板不再自己列一遍 Section 全表。
+        for row in WorkbenchSidebar.rows {
             items.append(PaletteCommand(
-                id: "go-\(section.rawValue)", title: "前往\(section.title)",
-                subtitle: section.subtitle, icon: section.icon, group: "前往",
-                shortcut: i < shortcuts.count ? shortcuts[i] : nil,
-                run: { app.go(to: section) }))
+                id: goID(row), title: "前往\(row.title)", subtitle: goSubtitle(row),
+                icon: row.icon, group: "前往",
+                shortcut: row.shortcut.map { "⌘\($0)" },
+                run: { app.dispatch(row.destination) }))
         }
         return items
+    }
+
+    /// 稳定 id：section 行用 rawValue，sheet / 导入各带前缀，不让中文标题当 id。
+    private func goID(_ row: WorkbenchSidebar.Row) -> String {
+        switch row.destination {
+        case .section(let raw): return "go-\(raw)"
+        case .sheet(let sheet): return "go-sheet-\(sheet.rawValue)"
+        case .importCenter: return "go-import"
+        }
+    }
+
+    /// 副标题：section 行沿用页面自己的 subtitle；另外两种动作写清它是一张面板还是一个流程。
+    private func goSubtitle(_ row: WorkbenchSidebar.Row) -> String {
+        switch row.destination {
+        case .section(let raw):
+            return AppModel.Section(rawValue: raw)?.subtitle ?? row.title
+        case .sheet(.home):
+            return "检查并打开绑定的家庭资源"
+        case .sheet(.company):
+            return "任意客户端、系统 VPN、浏览器登录与专用代理"
+        case .sheet(.networkTools):
+            return "分享本地服务、HTTPS 调试与工具说明"
+        case .importCenter:
+            return "导入配置、订阅与浏览器书签"
+        }
     }
 
     private var results: [PaletteCommand] {

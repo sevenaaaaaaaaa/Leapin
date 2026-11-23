@@ -8,7 +8,11 @@ import LeapinIntegrations
 @MainActor
 struct RulesView: View {
     @EnvironmentObject private var app: AppModel
+    /// 四动词共享上下文（T-05）：规则行把 host 交给「为什么」页时就靠它。
+    @EnvironmentObject private var routes: RouteContext
     @ObservedObject private var engine = LeapinEngine.shared
+    /// Mihomo 执行时策略组来自内核本身；原生执行时这一段不参与。
+    @ObservedObject private var managed = LeapinEngine.shared.managedKernel
     @State private var search = ""
     @State private var showAdd = false
     @State private var selection: String?
@@ -19,6 +23,10 @@ struct RulesView: View {
     /// Bumped by the probe refresh timer so measured latency re-renders even though
     /// LPHealth itself is not observable.
     @State private var healthTick = 0
+    /// Mihomo 当前的分组与选中项（内核返回）；原生执行时恒为空。
+    @State private var managedGroups: [ManagedPolicy] = []
+    @State private var groupBusy = false
+    @State private var groupNote: String?
     @FocusState private var searchFocused: Bool
     @FocusState private var listFocused: Bool
 
@@ -79,6 +87,9 @@ struct RulesView: View {
             }
             toolbar.disabled(engine.executionKernel == .mihomo)
             HStack(alignment: .top, spacing: 22) {
+                // 只锁「写」：Mihomo 下规则是来源预览，但读动作（选中、追问为什么、
+                // 复制、策略组切换）一律照常——追问只是看，不该跟着写入口一起被冻。
+                // 写入口逐个上锁：工具栏、行尾删除、⌫、临时规则清除、空态「添加规则」。
                 ruleList
                     .clipShape(RoundedRectangle(cornerRadius: LPGlass.panelRadius, style: .continuous))
                     .lpGlass(radius: LPGlass.panelRadius,
@@ -88,9 +99,11 @@ struct RulesView: View {
             }
             .padding(.horizontal, 32)
             .padding(.top, 16)
-            .padding(.bottom, 24)
+            .padding(.bottom, 10)
+            learnFooter
+                .padding(.horizontal, 32)
+                .padding(.bottom, 20)
         }
-        .disabled(engine.executionKernel == .mihomo)
         .navigationTitle("分流规则")
         .sheet(isPresented: $showAdd) {
             AddRuleSheet { rule in
@@ -126,8 +139,25 @@ struct RulesView: View {
                 selection = nil
             }
         }
-        .task { refreshDiagnostics() }
-        .onChange(of: engine.profile.rules.count) { _, _ in refreshDiagnostics() }
+        .task {
+            refreshDiagnostics()
+            await refreshPolicyGroups()
+        }
+        // 判据跟着规则内容走，不只跟条数：改一条规则的 value（条数不变）后，
+        // 「永不命中 / 被遮蔽」不能停在旧结论上（T-10 评审 optional）。
+        .onChange(of: engine.profile.rules) { _, _ in refreshDiagnostics() }
+        .onChange(of: engine.executionKernel) { _, _ in
+            Task { await refreshPolicyGroups() }
+        }
+        .onChange(of: managed.running) { _, _ in
+            Task { await refreshPolicyGroups() }
+        }
+    }
+
+    /// 内核可能给 `load-balance` / `LoadBalance` 两种写法；负载均衡组的下拉必须一起禁用，
+    /// 否则选中会抛错（T-10 评审 optional）。
+    private static func isLoadBalance(_ type: String) -> Bool {
+        type.lowercased().replacingOccurrences(of: "-", with: "") == "loadbalance"
     }
 
     /// Recomputes dead-rule diagnostics. Only called when the rule set changes
@@ -205,6 +235,7 @@ struct RulesView: View {
                 app.showToast("已清除临时规则")
             }
             .buttonStyle(LPGhostButtonStyle())
+            .disabled(engine.executionKernel == .mihomo)
         }
         .padding(.horizontal, 32)
         .padding(.top, 10)
@@ -219,10 +250,17 @@ struct RulesView: View {
                     message: engine.profile.rules.isEmpty
                         ? "可以从配置页导入 Clash / Surge 配置，或手动添加第一条规则。"
                         : "换一个关键词，或把策略筛选切回“全部”。",
-                    actionTitle: engine.profile.rules.isEmpty ? "添加规则" : "清除筛选",
+                    actionTitle: engine.profile.rules.isEmpty
+                        ? (engine.executionKernel == .mihomo ? "只读预览" : "添加规则")
+                        : "清除筛选",
                     action: {
-                        if engine.profile.rules.isEmpty { showAdd = true }
-                        else { search = ""; filter = .all }
+                        if engine.profile.rules.isEmpty {
+                            // 规则编辑在 Mihomo 下不可用：不开编辑器，免得白填一遍才被拒。
+                            guard engine.executionKernel != .mihomo else { return }
+                            showAdd = true
+                        } else {
+                            search = ""; filter = .all
+                        }
                     })
             } else {
                 VStack(spacing: 0) {
@@ -231,7 +269,13 @@ struct RulesView: View {
                         Text("类型").frame(width: 66, alignment: .leading)
                         Text("匹配值")
                         Spacer(minLength: 8)
-                        Text("策略")
+                        // 「策略」与行尾按钮之间的 12pt 是 LPRow 的内边距，
+                        // 表头照抄同一个数字，两列才对得上。
+                        HStack(spacing: 0) {
+                            Text("策略").padding(.trailing, 12)
+                            Text("为什么")
+                                .frame(width: Self.whyColumnWidth, alignment: .trailing)
+                        }
                     }
                     .font(LPFont.mono(10, weight: .medium))
                     .tracking(1.2)
@@ -244,13 +288,19 @@ struct RulesView: View {
                     LazyVStack(spacing: 1) {
                         ForEach(filtered, id: \.index) { item in
                             let rule = item.rule
-                            LPRow(selected: selection == rule.id,
-                                  accessibilityText: "\(rule.kind.rawValue) \(rule.value) \(rule.policy)") {
-                                selection = rule.id
-                                listFocused = true
-                            } content: {
-                                RuleRow(index: item.index + 1, rule: rule,
-                                        diagnostic: diagnostics[item.index])
+                            // 能取出域名才给「为什么」；取不出来就禁用并在 help 里说明原因，
+                            // 不拿一个猜出来的 host 去问为什么。
+                            let why = whyHost(for: rule)
+                            HStack(spacing: 0) {
+                                LPRow(selected: selection == rule.id,
+                                      accessibilityText: "\(rule.kind.rawValue) \(rule.value) \(rule.policy)") {
+                                    selection = rule.id
+                                    listFocused = true
+                                } content: {
+                                    RuleRow(index: item.index + 1, rule: rule,
+                                            diagnostic: diagnostics[item.index])
+                                }
+                                whyButton(for: rule, host: why)
                             }
                             .overlay(alignment: .bottom) {
                                 if item.index != filtered.last?.index {
@@ -258,6 +308,11 @@ struct RulesView: View {
                                 }
                             }
                             .contextMenu {
+                                Button("看它为什么没命中") {
+                                    if let why { askWhy(why) }
+                                }
+                                .disabled(why == nil)
+                                Divider()
                                 Button("复制匹配值") {
                                     LPClipboard.copy(rule.value)
                                     app.showToast("已复制 \(rule.value)", kind: .info)
@@ -267,7 +322,9 @@ struct RulesView: View {
                                     app.showToast("已复制原始规则", kind: .info)
                                 }
                                 Divider()
+                                // 写入口单独上锁；同一菜单里的「看它为什么没命中」「复制」照旧可用。
                                 Button("删除规则", role: .destructive) { pendingDelete = rule }
+                                    .disabled(engine.executionKernel == .mihomo)
                             }
                         }
                     }
@@ -278,6 +335,8 @@ struct RulesView: View {
                     .focused($listFocused)
                     .onMoveCommand { direction in moveSelection(direction) }
                     .onDeleteCommand {
+                        // 只锁写：Mihomo 下规则是来源预览，⌫ 不该弹出删除确认。
+                        guard engine.executionKernel != .mihomo else { return }
                         if let id = selection, let rule = engine.profile.rules.first(where: { $0.id == id }) {
                             pendingDelete = rule
                         }
@@ -310,6 +369,239 @@ struct RulesView: View {
         .overlay(alignment: .top) { LPDivider() }
     }
 
+    // MARK: - 规则行 → 为什么（带 host）
+
+    /// 行尾「为什么」列的宽度；表头和行都用这一个数字，不会各写一遍。
+    private static let whyColumnWidth: CGFloat = 34
+
+    /// 从规则的匹配值里取出能查的域名。
+    ///
+    /// 只有天生就是主机名的写法才取得出来：DOMAIN / DOMAIN-SUFFIX 直接取；
+    /// DOMAIN-KEYWORD 只有值本身像域名时才取（`ads` 这种子串不是 host）。
+    /// 其余类型一律 nil——按钮因此禁用，原因由 `whyUnavailableReason` 说清。
+    private func whyHost(for rule: Rule) -> String? {
+        switch rule.kind {
+        case .domain, .domainSuffix:
+            return Self.hostValue(rule.value)
+        case .domainKeyword:
+            guard let host = Self.hostValue(rule.value), host.contains(".") else { return nil }
+            return host
+        default:
+            return nil
+        }
+    }
+
+    /// 把一条规则值规范化成 host；不是主机名就 nil。
+    private static func hostValue(_ raw: String) -> String? {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if value.hasPrefix("*.") { value.removeFirst(2) }
+        if value.hasPrefix(".") { value.removeFirst() }
+        guard !value.isEmpty, value.count <= 253 else { return nil }
+        let pattern = #"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$"#
+        guard value.range(of: pattern, options: .regularExpression) != nil else { return nil }
+        return value
+    }
+
+    /// 为什么这一行不能带 host 去「为什么」页：写清楚，而不是给个灰按钮不说话。
+    private func whyUnavailableReason(for rule: Rule) -> String {
+        switch rule.kind {
+        case .domain, .domainSuffix:
+            return "匹配值「\(rule.value)」不是可直接查询的域名（含通配或非法字符）"
+        case .domainKeyword:
+            return "关键词「\(rule.value)」不是域名，取不出可查询的 host"
+        case .domainRegex:
+            return "正则规则无法反解出 host"
+        case .ipCIDR, .ipCIDR6:
+            return "IP 规则没有域名可查；到「为什么」页按连接查看"
+        case .srcIPCIDR:
+            return "源地址规则没有目标域名可查"
+        case .processName:
+            return "进程规则没有域名可查"
+        case .geoIP:
+            return "地区规则没有域名可查"
+        case .ruleSet:
+            return "规则集没有单一 host；展开规则集后按成员规则查"
+        case .and, .or, .not:
+            return "组合表达式没有单一 host"
+        case .match:
+            return "MATCH 是兜底规则，没有具体 host"
+        }
+    }
+
+    /// 行尾的追问按钮：能取到域名才可点，取不到就禁用并把原因写进 help 与旁白。
+    @ViewBuilder
+    private func whyButton(for rule: Rule, host: String?) -> some View {
+        Button {
+            if let host { askWhy(host) }
+        } label: {
+            Image(systemName: "questionmark.circle")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(host == nil ? LP.textTertiary.opacity(0.4) : LP.textTertiary)
+                .frame(width: Self.whyColumnWidth, height: 22, alignment: .center)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .disabled(host == nil)
+        .help(host.map { "看 \($0) 为什么没命中：带这个 host 去「为什么」页" }
+              ?? whyUnavailableReason(for: rule))
+        .accessibilityLabel("看它为什么没命中")
+        .accessibilityHint(host == nil ? whyUnavailableReason(for: rule) : "带 \(host ?? "") 去为什么页")
+    }
+
+    /// HLD §5 的跨页链路：先给上下文，再切页；两页共用同一个 subject。
+    private func askWhy(_ host: String) {
+        routes.focus(RouteSubject(host: host, source: .rule))
+        app.go(to: .why)
+    }
+
+    /// 页脚：规则页判的是现状，「学习建议」是下一步——入口放底部，不抢规则表。
+    private var learnFooter: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "brain")
+                .font(.system(size: 11))
+                .foregroundStyle(LP.textTertiary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("学习建议")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(LP.text)
+                Text("不确定怎么分？从 App 列表或截图生成建议，再回这里逐条确认。")
+                    .font(.system(size: 10))
+                    .foregroundStyle(LP.textTertiary)
+            }
+            Spacer(minLength: 12)
+            Button("打开智能学习") { app.go(to: .learn) }
+                .buttonStyle(LPGhostButtonStyle())
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .lpPanel(padding: 0)
+    }
+
+    // MARK: - 策略组（原生 / Mihomo 两套来源）
+
+    /// 原生执行读 `profile.groups`（selectOutbound 写回配置）；
+    /// Mihomo 执行读内核当前分组（selectManagedPolicy 走内核 API）。
+    /// 规则在 Mihomo 下不可改，但「哪个组选了哪条线」仍要能切。
+    @ViewBuilder
+    private var policyGroupsSection: some View {
+        if engine.executionKernel == .mihomo {
+            managedGroupsSection
+        } else {
+            nativeGroupsSection
+        }
+    }
+
+    @ViewBuilder
+    private var nativeGroupsSection: some View {
+        if engine.profile.groups.isEmpty {
+            railNote("当前配置没有策略组")
+        } else {
+            ForEach(engine.profile.groups) { group in
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 7) {
+                        Text(group.name)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(LP.text)
+                        Spacer()
+                        Text(group.type.rawValue.uppercased())
+                            .font(LPFont.mono(10))
+                            .tracking(0.6)
+                            .foregroundStyle(LP.textTertiary)
+                    }
+                    LPSelectField(value: Binding(
+                        get: { group.selected ?? group.proxies.first ?? "DIRECT" },
+                        set: { engine.selectOutbound(group: group.name, outbound: $0) }
+                    ), options: group.proxies.map { ($0, $0) })
+                    if group.type == .urlTest || group.type == .fallback || group.type == .loadBalance {
+                        HStack(spacing: 6) {
+                            Text("当前")
+                                .font(LPFont.mono(9))
+                                .foregroundStyle(LP.textTertiary)
+                            Text(engine.state == .running
+                                 ? (engine.effectiveMember(group: group.name) ?? "—")
+                                 : "未运行")
+                                .font(LPFont.mono(10))
+                                .foregroundStyle(LP.textSecondary)
+                                .lineLimit(1)
+                            Spacer(minLength: 4)
+                            groupHealthNote(group)
+                        }
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var managedGroupsSection: some View {
+        if !managed.running {
+            railNote(groupNote ?? "Mihomo 内核未运行，启动后这里列出内核的分组与选中项。")
+        } else if managedGroups.isEmpty {
+            railNote(groupNote ?? "内核还没有返回策略组。")
+        } else {
+            ForEach(managedGroups) { group in
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 7) {
+                        Text(group.name)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(LP.text)
+                        Spacer()
+                        Text(group.type.uppercased())
+                            .font(LPFont.mono(10))
+                            .tracking(0.6)
+                            .foregroundStyle(LP.textTertiary)
+                    }
+                    LPSelectField(value: Binding(
+                        get: { group.selected },
+                        set: { selectManaged(group: group.name, member: $0) }
+                    ), options: group.members.map { ($0, $0) })
+                        .disabled(groupBusy || Self.isLoadBalance(group.type))
+                    if groupBusy {
+                        Text("切换中…")
+                            .font(LPFont.mono(9))
+                            .foregroundStyle(LP.textTertiary)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            railNote("选择交给内核执行，只影响新连接。")
+            if let groupNote { railNote(groupNote) }
+        }
+    }
+
+    /// 拉一次内核当前分组；Mihomo 没在跑就清空，不假装有数据。
+    private func refreshPolicyGroups() async {
+        guard engine.executionKernel == .mihomo, managed.running else {
+            managedGroups = []
+            return
+        }
+        do {
+            managedGroups = try await engine.managedPolicies()
+            groupNote = nil
+        } catch {
+            managedGroups = []
+            groupNote = Redactor.redact(error.localizedDescription)
+        }
+    }
+
+    private func selectManaged(group: String, member: String) {
+        guard !groupBusy else { return }
+        groupBusy = true
+        Task {
+            do {
+                try await engine.selectManagedPolicy(group: group, member: member)
+                groupNote = nil
+                app.showToast("已切换 \(group) → \(member)，仅新连接生效", kind: .info)
+            } catch {
+                groupNote = Redactor.redact(error.localizedDescription)
+            }
+            await refreshPolicyGroups()
+            groupBusy = false
+        }
+    }
+
     private func moveSelection(_ direction: MoveCommandDirection) {
         guard !filtered.isEmpty else { return }
         let current = filtered.firstIndex(where: { $0.rule.id == selection })
@@ -329,44 +621,7 @@ struct RulesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 railSection("策略组 / GROUPS") {
-                    if engine.profile.groups.isEmpty {
-                        railNote("当前配置没有策略组")
-                    } else {
-                        ForEach(engine.profile.groups) { group in
-                            VStack(alignment: .leading, spacing: 5) {
-                                HStack(spacing: 7) {
-                                    Text(group.name)
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundStyle(LP.text)
-                                    Spacer()
-                                    Text(group.type.rawValue.uppercased())
-                                        .font(LPFont.mono(10))
-                                        .tracking(0.6)
-                                        .foregroundStyle(LP.textTertiary)
-                                }
-                                LPSelectField(value: Binding(
-                                    get: { group.selected ?? group.proxies.first ?? "DIRECT" },
-                                    set: { engine.selectOutbound(group: group.name, outbound: $0) }
-                                ), options: group.proxies.map { ($0, $0) })
-                                if group.type == .urlTest || group.type == .fallback || group.type == .loadBalance {
-                                    HStack(spacing: 6) {
-                                        Text("当前")
-                                            .font(LPFont.mono(9))
-                                            .foregroundStyle(LP.textTertiary)
-                                        Text(engine.state == .running
-                                             ? (engine.effectiveMember(group: group.name) ?? "—")
-                                             : "未运行")
-                                            .font(LPFont.mono(10))
-                                            .foregroundStyle(LP.textSecondary)
-                                            .lineLimit(1)
-                                        Spacer(minLength: 4)
-                                        groupHealthNote(group)
-                                    }
-                                }
-                            }
-                            .padding(.vertical, 4)
-                        }
-                    }
+                    policyGroupsSection
                 }
 
                 railRule
@@ -448,7 +703,8 @@ struct RulesView: View {
         }
     }
 
-    /// 「永不命中」总览：先给结论（多少条），再给可点击的例子，点一下跳到该行。
+    /// 死规则总览：先给结论（多少条），再给可点击的例子，点一下跳到该行。
+    /// 「死」不止一种：被遮蔽 / 不可达 / 重复 / 规则集缺失 / 永不命中，逐条标出是哪一种。
     @ViewBuilder
     private var diagnosticsSection: some View {
         let dead = deadRules
@@ -456,7 +712,7 @@ struct RulesView: View {
             railNote("当前 \(engine.profile.rules.count) 条规则都可命中")
         } else {
             VStack(alignment: .leading, spacing: 8) {
-                Text("\(dead.count) 条永不命中")
+                Text("\(dead.count) 条不会命中")
                     .font(LPFont.mono(10, weight: .semibold))
                     .foregroundStyle(LP.danger)
                 ForEach(dead.prefix(4), id: \.diagnostic.index) { item in
@@ -480,7 +736,7 @@ struct RulesView: View {
                     .help(item.diagnostic.reason)
                 }
                 if dead.count > 4 {
-                    railNote("其余 \(dead.count - 4) 条在列表中以「永不命中」标出。")
+                    railNote("其余 \(dead.count - 4) 条在列表行尾以「被遮蔽 / 不可达」等标记标出。")
                 }
             }
         }
@@ -502,14 +758,9 @@ struct RulesView: View {
         listFocused = true
     }
 
+    /// 标签只在 `RuleRow` 里定义一次，侧栏与行尾不会标出两种叫法。
     private func diagnosticLabel(_ kind: RuleDiagnostic.Kind) -> String {
-        switch kind {
-        case .shadowed: return "被遮蔽"
-        case .duplicate: return "重复"
-        case .unreachable: return "不可达"
-        case .ruleSetMissing: return "规则集缺失"
-        case .neverMatch: return "永不命中"
-        }
+        RuleRow.diagnosticLabel(kind)
     }
 
     private func railSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -570,7 +821,9 @@ struct RuleRow: View {
                 .lineLimit(1)
             if rule.noResolve { Badge(text: "no-resolve", color: LP.textTertiary) }
             if let diagnostic {
-                Badge(text: "永不命中", color: LP.danger)
+                // 「被遮蔽」= 前面的同 kind+value（或更宽的域名/IP）先命中；
+                // 「不可达」= 排在非取反 MATCH 之后。两种死法分开标，原因在 help 里。
+                Badge(text: Self.diagnosticLabel(diagnostic.kind), color: LP.danger)
                     .help(diagnostic.reason)
             }
             Spacer()
@@ -602,6 +855,17 @@ struct RuleRow: View {
         case .match: return "MATCH"
         }
     }
+    /// 一类死法一个标签：只写「永不命中」看不出是被前面那条盖住，还是排在 MATCH 之后。
+    static func diagnosticLabel(_ kind: RuleDiagnostic.Kind) -> String {
+        switch kind {
+        case .shadowed: return "被遮蔽"
+        case .duplicate: return "重复"
+        case .unreachable: return "不可达"
+        case .ruleSetMissing: return "规则集缺失"
+        case .neverMatch: return "永不命中"
+        }
+    }
+
     /// 类型一律中性：表格里只有「策略」携带信息，且用墨阶而非彩色。
     private var color: Color { LP.textSecondary }
 

@@ -39,6 +39,7 @@ struct SettingsView: View {
                     pairingSection
                     launchSection
                     captureSection
+                    factsSection
                     advancedSection
                     saveBar
                 }
@@ -99,13 +100,14 @@ struct SettingsView: View {
                 FieldRow(label: "启动时打开", hint: "下次启动生效") {
                     LPSelectField(value: Binding(get: { app.startSectionPref },
                                                set: { app.setStartSection($0) }),
-                                options: AppModel.Section.allCases.map { ($0, $0.title) })
+                                options: Self.startOptions)
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     shortcutLine("⌘⇧Space", "在任意 App 里唤起命令面板")
-                    shortcutLine("⌘K", "命令面板 · ⌘F 搜索当前页面")
+                    shortcutLine("⌘1 – ⌘4", "动词 · ⌘K 命令面板")
+                    shortcutLine("⌘K", "命令面板")
+                    shortcutLine("⌘F", "搜索当前页面；没有搜索框的页面改开命令面板")
                     shortcutLine("⌘⇧P", "启动 / 停止代理")
-                    shortcutLine("⌘1 – ⌘0", "直接跳到十个页面")
                 }
                 .padding(.top, 4)
                 Text("关闭主窗口不会退出：App 常驻菜单栏，可随时从图标或 Dock 菜单操作。")
@@ -114,6 +116,19 @@ struct SettingsView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 2)
             }
+        }
+    }
+
+    /// 「启动时打开」的候选只有侧栏里落点是 Section 的那几行（11 行里 7 行）。
+    ///
+    /// 三种工具 sheet 与导入中心是动作不是页面，当不了起页；activity / diagnostics / adblock /
+    /// profiles 这些别名页已经并进动词页内部，也没有独立入口——所以这份列表直接读
+    /// `WorkbenchSidebar.rows`，不另抄一份、也不再用 `Section.allCases`（那会把退役页列出来）。
+    private static var startOptions: [(AppModel.Section, String)] {
+        WorkbenchSidebar.rows.compactMap { row in
+            guard case .section(let raw) = row.destination,
+                  let section = AppModel.Section(rawValue: raw) else { return nil }
+            return (section, row.title)
         }
     }
 
@@ -207,6 +222,50 @@ struct SettingsView: View {
                 )
             }
         }
+    }
+
+    /// 「隐私与数据」：原来 Privacy 页里的事实，按 HLD §4 的迁移表搬到设置。
+    ///
+    /// 只写读得到的真值：读不到就写「—」并注明为什么，不再放「永远显示通过」的安全项
+    /// （那张表在 `docs/audit-ui.md` 的 P1 里被判过一次）。
+    private var factsSection: some View {
+        Card(title: "隐私与数据", subtitle: "系统代理、DNS、日志与凭据的当前事实", icon: "lock.shield") {
+            VStack(spacing: 8) {
+                FactRow(label: "系统代理", value: proxyFact.value, note: proxyFact.note)
+                FactRow(label: "DNS", value: dnsFact.value, note: dnsFact.note)
+                FactRow(label: "日志",
+                        value: "级别 \(engine.profile.general.logLevel.rawValue)",
+                        note: "日志与 HAR 导出前由 Redactor 脱敏（固定执行，没有开关）；级别在「高级」里改")
+                FactRow(label: "凭据",
+                        value: "登录钥匙串",
+                        note: "SSH / NAS 密码可选存在钥匙串（服务名 \(Keychain.service)），不进配置文件与日志")
+            }
+        }
+    }
+
+    /// 系统代理事实：引擎在跑写「运行中」，没跑就写「未运行」，接管与否分开说。
+    private var proxyFact: (value: String, note: String) {
+        guard engine.systemProxyActive else {
+            return ("未接管", "系统网络不经过本机；要接管时打开页头的「网络接管」")
+        }
+        let running = engine.state == .running ? "运行中" : "未运行"
+        return ("已接管", "引擎" + running + "；页头的「网络接管」开关随时可关")
+    }
+
+    /// DNS 事实读的是当前 profile（设置页上方那张 DNS 卡改的就是它）。
+    private var dnsFact: (value: String, note: String) {
+        let dns = engine.profile.dns
+        let mode: String
+        switch dns.mode {
+        case .system: mode = "系统 DNS"
+        case .doh: mode = "DoH"
+        case .dot: mode = "DoT"
+        case .fakeIP: mode = "Fake-IP"
+        }
+        let upstream = dns.upstreams.isEmpty
+            ? "没有配置上游，跟随系统解析"
+            : dns.upstreams.joined(separator: " · ")
+        return ("\(mode) · :\(dns.listenPort)", upstream)
     }
 
     private var advancedSection: some View {
@@ -433,6 +492,42 @@ private struct ToggleRow: View {
         .overlay(alignment: .bottom) {
             Rectangle().fill(LP.stroke.opacity(0.55)).frame(height: 0.5)
         }
+    }
+}
+
+/// 只读事实行：标签 / 值 / 一句来源说明。
+///
+/// 没有开关、没有勾选框：这一行说的是「现在是什么」，不是「要不要打开」。
+private struct FactRow: View {
+    var label: String
+    var value: String
+    var note: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 12) {
+                Text(label)
+                    .font(.system(size: 12))
+                    .foregroundStyle(LP.text)
+                    .frame(width: 88, alignment: .leading)
+                Spacer(minLength: 12)
+                Text(value)
+                    .font(LPFont.mono(12, weight: .medium))
+                    .foregroundStyle(LP.text)
+                    .lineLimit(1)
+                    .textSelection(.enabled)
+            }
+            Text(note)
+                .font(.system(size: 10))
+                .foregroundStyle(LP.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 100)
+        }
+        .padding(.vertical, 7)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(LP.stroke.opacity(0.55)).frame(height: 0.5)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

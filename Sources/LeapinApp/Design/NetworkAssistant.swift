@@ -22,6 +22,8 @@ final class NetworkAssistantModel: ObservableObject {
     @Published private(set) var applied = false
     @Published private(set) var receipt: NetworkRuleChange?
     @Published private(set) var report: NetworkDiagnosticReport?
+    /// 原地重测的那个主机：报告卡上的「重新检查」不必再问用户一次（T-12）。
+    @Published private(set) var lastTarget: SiteTarget?
     private var preview: Profile?
     private let engine = LeapinEngine.shared
 
@@ -48,6 +50,9 @@ final class NetworkAssistantModel: ObservableObject {
 
     func inspectLocal(capture: Bool = false) {
         guard !busy else { return }
+        // 本地检查不是针对某个 host 的：留着上一个 target 会让报告卡上的「重新检查」
+        // 偷偷去重测旧主机（T-14 评审 O3）。
+        lastTarget = nil
         task = nil; evidence = []; message = nil
         report = NetworkDiagnosticAnalyzer.analyze(diagnosticInput(capture: capture))
     }
@@ -62,8 +67,55 @@ final class NetworkAssistantModel: ObservableObject {
             managedLogs: engine.executionKernel == .mihomo ? engine.managedKernel.logs : "")
     }
 
+    /// S2 的原地链路：host + policy → 一条精确规则 → 用新规则重测同一个主机，全程留在「为什么」。
+    ///
+    /// 规则由 `RuleDraft` 生成（置顶、同 host+policy 去重），policy 来自用户选择而不是写死 DIRECT；
+    /// 保存后立刻 `diagnose`，结果落在同一页的证据与报告里，不跳页、不重新输入。
+    @discardableResult
+    func submit(host: String, policy: String) -> Bool {
+        guard !busy else {
+            // 不静默失败：调用方（编辑器）会把这句话显示在原处，sheet 不关。
+            message = "正在检查中；等这次检查结束再改规则。"
+            return false
+        }
+        let trimmed = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let target = SiteTarget(trimmed) else {
+            failed = true
+            message = "「\(trimmed)」里没有可写规则的域名；请输入主机名或完整网址。"
+            return false
+        }
+        let draft = RuleDraft(host: target.host, policy: policy, source: .manual)
+        let snapshot = engine.profile
+        let change = NetworkRuleChange(profile: snapshot, target: target, policy: policy)
+        let existing = change.after == change.before
+        do {
+            if !existing {
+                try engine.commitTaskRules(expected: snapshot, rules: change.after)
+            }
+        } catch {
+            failed = true
+            message = error.localizedDescription
+            return false
+        }
+        // 规则已经在配置里时什么都没写：不要用一个 before == after 的空改动覆盖 receipt，
+        // 否则「撤销上次规则修改」会谎称恢复，还会把上一次真实改动的撤销点挤掉（T-14 评审 B3）。
+        if !existing {
+            receipt = change
+            applied = true
+        }
+        preview = nil
+        task = .inspect(target)
+        diagnose(target)
+        failed = false
+        message = existing
+            ? "规则已存在：\(draft.rule.raw)；配置未改动，正在原地重测…"
+            : "已添加 \(draft.rule.raw)；正在原地重测…"
+        return true
+    }
+
     func diagnose(_ target: SiteTarget) {
         guard !busy else { return }
+        lastTarget = target
         busy = true; report = nil
         message = "正在检查规则、DNS、直连 GET 与代理 HEAD…"
         failed = false; evidence = []
@@ -140,7 +192,7 @@ final class NetworkAssistantModel: ObservableObject {
             self.receipt = nil
             applied = false
             failed = false
-            message = "已撤销上次直连规则，恢复原有分流。再次修改前，请重新查看计划。"
+            message = "已撤销上次规则修改，恢复原有分流。再次修改前，请重新查看计划。"
             // A new edit must get a fresh preview after undo.
             preview = nil
         } catch {
@@ -191,7 +243,7 @@ struct NetworkTaskPanel: View {
                 HStack(spacing: 10) {
                     action(task)
                     if assistant.receipt != nil {
-                        Button("撤销上次直连修改") { assistant.undo() }
+                        Button("撤销上次规则修改") { assistant.undo() }
                             .buttonStyle(LPGhostButtonStyle()).disabled(assistant.busy)
                     }
                     Spacer(minLength: 0)
@@ -322,30 +374,81 @@ struct NetworkTaskPanel: View {
 
 @MainActor
 struct DiagnosticsWorkspace: View {
+    /// 同一套工作区在「为什么」里有两个投影：探测（只发起检查、看命中链与耗时）与
+    /// 诊断（再加报告卡与导出）。一个视图、两个视图不要各写一套探针入口。
+    enum Scope: String, Equatable {
+        case probes, full
+    }
+
     @EnvironmentObject private var app: AppModel
     @ObservedObject var assistant: NetworkAssistantModel
+    var scope: Scope = .full
+    /// 作为 tab 内嵌时不再画页面级大标题：外层已经写了「为什么」与 tab 名（T-11 的同一口径）。
+    var embedded: Bool = false
+    /// 这个实例是不是当前可见的 tab。
+    ///
+    /// WhyPage 把出现过的 tab 留在 ZStack 里（切 tab 不销毁），所以探测与诊断会同时挂载；
+    /// 全局的「聚焦搜索框」请求只该落到看得见的那一个（T-14 评审 O1）。
+    var isActive: Bool = true
     @FocusState private var focused: Bool
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                Text("检查一个目标，或调整一条规则。")
-                    .font(LPFont.display(22, weight: .semibold)).foregroundStyle(LP.text)
-                HStack(spacing: 12) {
-                    Button("检查本地代理") { assistant.inspectLocal() }.buttonStyle(LPPrimaryButtonStyle()).disabled(assistant.busy)
-                    Button("排查抓包与解密") { assistant.inspectLocal(capture: true) }.buttonStyle(LPGhostButtonStyle()).disabled(assistant.busy)
-                    Text("本地检查不发起外部请求").font(.system(size: 12)).foregroundStyle(LP.textTertiary)
+                if !embedded {
+                    Text("检查一个目标，或调整一条规则。")
+                        .font(LPFont.display(22, weight: .semibold)).foregroundStyle(LP.text)
+                }
+                // 本地检查的结果是一张报告卡，而探测 tab 不渲染报告卡：在这里留着入口
+                // 只会让人点了看不到任何结果（T-14 评审 O2）。
+                if scope == .full {
+                    HStack(spacing: 12) {
+                        Button("检查本地代理") { assistant.inspectLocal() }.buttonStyle(LPPrimaryButtonStyle()).disabled(assistant.busy)
+                        Button("排查抓包与解密") { assistant.inspectLocal(capture: true) }.buttonStyle(LPGhostButtonStyle()).disabled(assistant.busy)
+                        Text("本地检查不发起外部请求").font(.system(size: 12)).foregroundStyle(LP.textTertiary)
+                    }
                 }
                 TaskComposer(assistant: assistant, focused: $focused)
+                if assistant.task == nil, let message = assistant.message {
+                    Text(message)
+                        .font(.system(size: 12))
+                        .foregroundStyle(assistant.failed ? LP.danger : LP.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 NetworkTaskPanel(assistant: assistant)
-                if let report = assistant.report { DiagnosticReportView(report: report) }
-                HStack(spacing: 12) {
-                    Button("网络活动与连接明细") { app.go(to: .activity) }.buttonStyle(LPGhostButtonStyle())
-                    Button("抓包与 HTTPS 解密") { app.go(to: .capture) }.buttonStyle(LPGhostButtonStyle())
-                    Button("导入与转换配置") { app.beginImport() }.buttonStyle(LPGhostButtonStyle())
+                if scope == .probes {
+                    Text("命中链、DNS trace 与直连 / 代理耗时都在上面；完整报告与重复请求检查在「诊断」tab。")
+                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if scope == .full, let report = assistant.report {
+                    // 没有可重测的 host（本地检查之后）就不给「重新检查」，否则是死键。
+                    DiagnosticReportView(report: report, onRetest: retestAction)
+                }
+                if scope == .full {
+                    HStack(spacing: 12) {
+                        Button("网络活动与连接明细") { app.go(to: .activity) }.buttonStyle(LPGhostButtonStyle())
+                        Button("抓包与 HTTPS 解密") { app.go(to: .capture) }.buttonStyle(LPGhostButtonStyle())
+                        Button("导入与转换配置") { app.beginImport() }.buttonStyle(LPGhostButtonStyle())
+                    }
                 }
             }.pagePadding()
         }
-        .onChange(of: app.searchFocusRequest) { _, _ in focused = true }
+        .onChange(of: app.searchFocusRequest) { _, _ in
+            guard isActive else { return }
+            focused = true
+        }
+    }
+
+    /// 报告卡上的「重新检查」：用同一份工作区再测一次，不要求用户回到输入框。
+    private func retest() {
+        guard let target = assistant.lastTarget else { return }
+        assistant.diagnose(target)
+    }
+
+    /// 没有可重测的主机（例如刚做完本地检查）时不把动作交给卡片：按钮不出现，也就没有死键。
+    private var retestAction: (() -> Void)? {
+        assistant.lastTarget == nil ? nil : { retest() }
     }
 }
 
@@ -381,7 +484,7 @@ private struct TaskComposer: View {
             Text("本地任务助手 · 输入 example.com 检查网站，或输入「让 example.com 直连」预览规则。")
                 .font(.system(size: 12)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
             if assistant.receipt != nil, assistant.task == nil {
-                Button("撤销上次直连修改") { assistant.undo() }.buttonStyle(LPGhostButtonStyle())
+                Button("撤销上次规则修改") { assistant.undo() }.buttonStyle(LPGhostButtonStyle())
             }
         }
         .padding(20).lpPanel(padding: 0)

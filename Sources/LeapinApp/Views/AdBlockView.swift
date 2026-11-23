@@ -6,6 +6,10 @@ import LeapinPolicy
 import LeapinNet
 import LeapinIntegrations
 
+/// 去广告。M2 之后它是「改成什么」页的第四个 tab（docs/tasks/product-v4.md T-09）：
+/// 视图不分叉——同一个 AdBlockView 既能被 RewriteView 内嵌（embedded），也仍然能被
+/// 旧的 adblock 入口单独打开；列表数据和应用入口都收在 RewriteDeck 里，这里只渲染。
+/// 过滤引擎（AdBlockList / verdict）一行没改。
 @MainActor
 struct AdBlockView: View {
     @ObservedObject private var engine = LeapinEngine.shared
@@ -20,7 +24,25 @@ struct AdBlockView: View {
     @State private var pendingAllowList: [String] = []
     @FocusState private var probeFocused: Bool
 
-    var body: some View {
+    /// 内嵌时不写页面级标题，标题归外层的动词页。
+    let embedded: Bool
+    /// 四类共用的列表与唯一 apply 入口。
+    let deck: RewriteDeck
+
+    init(embedded: Bool = false, deck: RewriteDeck = RewriteDeck()) {
+        self.embedded = embedded
+        self.deck = deck
+    }
+
+    @ViewBuilder var body: some View {
+        if embedded {
+            page
+        } else {
+            page.navigationTitle("去广告")
+        }
+    }
+
+    private var page: some View {
         ScrollView {
             VStack(spacing: 22) {
                 instrumentBar
@@ -34,10 +56,9 @@ struct AdBlockView: View {
             }
             .pagePadding()
         }
-        .navigationTitle("去广告")
         .onAppear {
             guard !loadedAllow else { return }
-            allowText = engine.profile.adblock.allowList.joined(separator: "\n")
+            allowText = deck.allowListText
             loadedAllow = true
         }
         .onChange(of: app.searchFocusRequest) { _, _ in probeFocused = true }
@@ -45,7 +66,7 @@ struct AdBlockView: View {
                    message: "保存会用编辑器中的 \(pendingAllowList.count) 条替换当前白名单，此操作可在提示条中撤销。",
                    isPresented: $showAllowConfirm,
                    confirmTitle: "覆盖保存") {
-            applyAllowList(pendingAllowList)
+            commitAllowList(pendingAllowList)
         }
     }
 
@@ -53,12 +74,12 @@ struct AdBlockView: View {
 
     private var instrumentBar: some View {
         HStack(spacing: 0) {
-            metric("过滤规则 / RULES", "\(engine.adblockRuleCount)", caption: "ABP 与 hosts 规则总数")
+            metric("过滤规则 / RULES", "\(deck.adblockRuleCount)", caption: "ABP 与 hosts 规则总数")
             Rectangle().fill(LP.stroke).frame(width: 1, height: 44)
             metric("已拦截 / BLOCKED", "\(engine.stats.blocked)", caption: "本次会话累计")
             Rectangle().fill(LP.stroke).frame(width: 1, height: 44)
             metric("白名单 / ALLOW",
-                   "\(engine.profile.adblock.allowList.count)",
+                   "\(deck.allowList.count)",
                    caption: "优先于拦截规则")
         }
         .padding(.vertical, 2)
@@ -234,16 +255,17 @@ struct AdBlockView: View {
     // MARK: Lists
 
     private var blockLists: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let rows = deck.rows(for: .adblock)
+        return VStack(alignment: .leading, spacing: 0) {
             SectionHeader(title: "过滤列表",
-                          subtitle: "\(engine.profile.adblock.blockLists.count) 个来源",
+                          subtitle: "\(rows.count) 个来源",
                           icon: "doc.text")
                 .padding(18)
 
             LPDivider()
 
-            if engine.profile.adblock.blockLists.isEmpty {
-                Text("还没有自定义来源 · 默认使用内置 leapin-ads.txt（约 100 条）")
+            if rows.isEmpty {
+                Text("\(RewriteDeck.Kind.adblock.emptyTitle) · \(RewriteDeck.Kind.adblock.emptyDetail)")
                     .font(.system(size: 12))
                     .foregroundStyle(LP.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -251,20 +273,25 @@ struct AdBlockView: View {
                     .padding(.vertical, 12)
             } else {
                 VStack(spacing: 0) {
-                    ForEach(engine.profile.adblock.blockLists, id: \.self) { item in
+                    ForEach(rows) { row in
                         HStack(spacing: 9) {
-                            Image(systemName: item.hasPrefix("http") ? "link" : "doc.text")
+                            Image(systemName: row.title.hasPrefix("http") ? "link" : "doc.text")
                                 .font(.system(size: 10))
                                 .foregroundStyle(LP.textTertiary)
                                 .frame(width: 14)
-                            Text(item)
-                                .font(LPFont.mono(12))
-                                .foregroundStyle(LP.text)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(row.title)
+                                    .font(LPFont.mono(12))
+                                    .foregroundStyle(LP.text)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Text(row.detail)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(LP.textTertiary)
+                            }
                             Spacer(minLength: 8)
                             Button {
-                                removeList(item)
+                                commit(.removeBlockList(row.title))
                             } label: {
                                 Image(systemName: "minus.circle")
                                     .font(.system(size: 12))
@@ -272,7 +299,7 @@ struct AdBlockView: View {
                             }
                             .buttonStyle(.plain)
                             .help("移除来源")
-                            .accessibilityLabel("移除来源 \(item)")
+                            .accessibilityLabel("移除来源 \(row.title)")
                         }
                         .padding(.vertical, 10)
                         .padding(.horizontal, 18)
@@ -299,7 +326,7 @@ struct AdBlockView: View {
                              fallbackFill: LP.panelSolid,
                              fallbackMaterial: .thinMaterial)
 
-                    Button("添加", action: addList)
+                    Button("添加", action: addSource)
                         .buttonStyle(LPGhostButtonStyle())
                         .disabled(newList.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
@@ -346,7 +373,7 @@ struct AdBlockView: View {
                         .font(LPFont.num(11))
                         .foregroundStyle(LP.textTertiary)
                     Spacer()
-                    Button("保存白名单", action: requestSaveAllowList)
+                    Button("保存白名单", action: requestAllowListReplace)
                         .buttonStyle(LPGhostButtonStyle())
                 }
                 Text("保存会整份替换当前白名单；空行会被忽略，可在提示条中撤销。")
@@ -365,49 +392,39 @@ struct AdBlockView: View {
             .count
     }
 
-    private func addList() {
-        let value = newList.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !value.isEmpty else { return }
-        guard !engine.profile.adblock.blockLists.contains(value) else {
-            app.showToast("该来源已存在", kind: .warning)
-            return
-        }
-        engine.updateProfile(restart: true) { $0.adblock.blockLists.append(value) }
-        newList = ""
-        app.showToast("已添加来源，正在重新加载", kind: .success)
+    // MARK: - 落地（全部走 Deck 的 applyRewrite）
+
+    /// 列表类的改动只从这里出去：来源增删与白名单整份替换共用一套提示与撤销。
+    @discardableResult
+    private func commit(_ change: RewriteDeck.Change) -> RewriteDeck.Outcome {
+        let outcome = deck.applyRewrite(change)
+        app.showToast(outcome.message,
+                      kind: outcome.kind,
+                      actionTitle: outcome.undo == nil ? nil : "撤销",
+                      action: outcome.undo)
+        return outcome
     }
 
-    private func removeList(_ item: String) {
-        engine.updateProfile(restart: true) { $0.adblock.blockLists.removeAll { $0 == item } }
-        app.showToast("已移除来源", kind: .info, actionTitle: "撤销") {
-            engine.updateProfile(restart: true) { profile in
-                if !profile.adblock.blockLists.contains(item) {
-                    profile.adblock.blockLists.append(item)
-                }
-            }
-        }
+    private func addSource() {
+        let outcome = commit(.addBlockList(newList))
+        if outcome.kind == .success { newList = "" }
     }
 
-    private func requestSaveAllowList() {
+    private func requestAllowListReplace() {
         let list = allowText.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         // 整份覆盖前先确认，避免误删已有白名单。
-        if !engine.profile.adblock.allowList.isEmpty, engine.profile.adblock.allowList != list {
+        if !deck.allowList.isEmpty, deck.allowList != list {
             pendingAllowList = list
             showAllowConfirm = true
         } else {
-            applyAllowList(list)
+            commitAllowList(list)
         }
     }
 
-    private func applyAllowList(_ list: [String]) {
-        let previous = engine.profile.adblock.allowList
-        engine.updateProfile(restart: true) { $0.adblock.allowList = list }
-        app.showToast("白名单已保存（\(list.count) 条）", kind: .success, actionTitle: "撤销") {
-            engine.updateProfile(restart: true) { $0.adblock.allowList = previous }
-            app.showToast("已恢复上一份白名单", kind: .info)
-        }
+    private func commitAllowList(_ list: [String]) {
+        commit(.allowList(list))
     }
 
     private func run() {
