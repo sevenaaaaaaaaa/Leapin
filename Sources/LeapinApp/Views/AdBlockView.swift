@@ -96,7 +96,7 @@ struct AdBlockView: View {
                 .contentTransition(.numericText())
                 .lpAnimation(LPMotion.emphasized, value: value)
             Text(caption)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(LP.textTertiary)
                 .lineLimit(1)
         }
@@ -165,7 +165,7 @@ struct AdBlockView: View {
                     .font(.system(size: strong ? 13 : 12.5, weight: strong ? .semibold : .medium))
                     .foregroundStyle(LP.text)
                 Text(detail)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -185,17 +185,17 @@ struct AdBlockView: View {
             HStack(spacing: 8) {
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(probeFocused ? LP.accent : LP.textTertiary)
                     TextField("doubleclick.net", text: $probe)
                         .textFieldStyle(.plain)
-                        .font(LPFont.mono(12))
+                        .font(LPFont.mono(13))
                         .focused($probeFocused)
                         .onSubmit(run)
                     if !probe.isEmpty {
                         Button { probe = ""; result = nil } label: {
                             Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 9))
+                                .font(.system(size: 11))
                                 .foregroundStyle(LP.textTertiary)
                         }
                         .buttonStyle(.plain)
@@ -204,9 +204,7 @@ struct AdBlockView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
-                .lpGlass(in: Capsule(style: .continuous),
-                         fallbackFill: LP.panelSolid,
-                         fallbackMaterial: .thinMaterial)
+                .lpPill()
                 .overlay(
                     Capsule(style: .continuous)
                         .strokeBorder(probeFocused ? LP.accent.opacity(0.55) : .clear, lineWidth: 1.2)
@@ -223,11 +221,11 @@ struct AdBlockView: View {
                         .fill(result.blocked ? LP.danger : LP.mint)
                         .frame(width: 6, height: 6)
                     Text(result.blocked ? "已拦截" : "放行")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(LP.text)
                     if let reason = result.reason {
                         Text(reason)
-                            .font(LPFont.mono(12))
+                            .font(LPFont.mono(13))
                             .foregroundStyle(LP.textSecondary)
                             .lineLimit(1)
                     }
@@ -236,7 +234,7 @@ struct AdBlockView: View {
                         LPClipboard.copy(result.blocked ? "blocked" : "allowed")
                         app.showToast("已复制结论", kind: .info)
                     } label: {
-                        Image(systemName: "doc.on.doc").font(.system(size: 9))
+                        Image(systemName: "doc.on.doc").font(.system(size: 11))
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(LP.textTertiary)
@@ -266,7 +264,7 @@ struct AdBlockView: View {
 
             if rows.isEmpty {
                 Text("\(RewriteDeck.Kind.adblock.emptyTitle) · \(RewriteDeck.Kind.adblock.emptyDetail)")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 18)
@@ -276,17 +274,17 @@ struct AdBlockView: View {
                     ForEach(rows) { row in
                         HStack(spacing: 9) {
                             Image(systemName: row.title.hasPrefix("http") ? "link" : "doc.text")
-                                .font(.system(size: 10))
+                                .font(.system(size: 11))
                                 .foregroundStyle(LP.textTertiary)
                                 .frame(width: 14)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(row.title)
-                                    .font(LPFont.mono(12))
+                                    .font(LPFont.mono(13))
                                     .foregroundStyle(LP.text)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                                 Text(row.detail)
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 11))
                                     .foregroundStyle(LP.textTertiary)
                             }
                             Spacer(minLength: 8)
@@ -294,7 +292,7 @@ struct AdBlockView: View {
                                 commit(.removeBlockList(row.title))
                             } label: {
                                 Image(systemName: "minus.circle")
-                                    .font(.system(size: 12))
+                                    .font(.system(size: 13))
                                     .foregroundStyle(LP.textTertiary)
                             }
                             .buttonStyle(.plain)
@@ -314,24 +312,22 @@ struct AdBlockView: View {
                 HStack(spacing: 8) {
                     HStack(spacing: 7) {
                         Image(systemName: "plus")
-                            .font(.system(size: 9, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(LP.textTertiary)
                         TextField("https://… 或本地文件路径", text: $newList)
                             .textFieldStyle(.plain)
-                            .font(LPFont.mono(12))
+                            .font(LPFont.mono(13))
                     }
                     .padding(.horizontal, 11)
                     .padding(.vertical, 6)
-                    .lpGlass(radius: 10,
-                             fallbackFill: LP.panelSolid,
-                             fallbackMaterial: .thinMaterial)
+                    .lpSheet(radius: LPRadius.control)
 
                     Button("添加", action: addSource)
                         .buttonStyle(LPGhostButtonStyle())
                         .disabled(newList.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
                 Text("支持 ABP（||domain^、@@ 例外、$third-party）与 hosts 行。名单在启动时加载，10 万条以内可秒级完成。")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -351,16 +347,14 @@ struct AdBlockView: View {
             VStack(alignment: .leading, spacing: 12) {
                 ZStack(alignment: .topLeading) {
                     TextEditor(text: $allowText)
-                        .font(LPFont.mono(12))
+                        .font(LPFont.mono(13))
                         .frame(height: 148)
                         .scrollContentBackground(.hidden)
                         .padding(8)
-                        .lpGlass(radius: 14,
-                                 fallbackFill: LP.panelSolid,
-                                 fallbackMaterial: .thinMaterial)
+                        .lpSheet(radius: 12)
                     if allowText.isEmpty {
                         Text("还没有白名单。每行写一个域名，这些域名将跳过所有拦截规则。")
-                            .font(.system(size: 12))
+                            .font(.system(size: 13))
                             .foregroundStyle(LP.textTertiary)
                             .padding(.horizontal, 13)
                             .padding(.vertical, 15)
@@ -377,7 +371,7 @@ struct AdBlockView: View {
                         .buttonStyle(LPGhostButtonStyle())
                 }
                 Text("保存会整份替换当前白名单；空行会被忽略，可在提示条中撤销。")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.textTertiary)
             }
             .padding(18)

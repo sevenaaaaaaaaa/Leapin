@@ -28,19 +28,19 @@ struct CompanyWidget: View {
                 Button("管理") { app.showCompany = true }.buttonStyle(.plain).foregroundStyle(LP.accent)
             }
             if let company = model.active {
-                Text(company.method.title).font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                Text(company.method.title).font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                 ForEach(Array(company.resources.prefix(3))) { resource in
                     HStack {
                         Button { Task { await app.openCompanyResource(resource) } } label: {
                             Label(resource.title, systemImage: "arrow.up.right.square").lineLimit(1)
-                        }.buttonStyle(.plain).font(.system(size: 12))
+                        }.buttonStyle(.plain).font(.system(size: 13))
                         Spacer()
                         Button(model.checking == resource.id ? "检查中…" : "检查") { app.inspectCompanyResource(resource) }.disabled(model.checking != nil).buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(LP.accent)
                     }
                 }
             } else {
                 Text("把内网 Git、文档、开发环境放在一起。兼容已有客户端、VPN、浏览器登录和内网代理。")
-                    .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                    .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                 Button("配置公司访问") { app.showCompany = true }.buttonStyle(LPGhostButtonStyle())
             }
             Text(model.failed ? model.message ?? "请打开公司访问检查" : "保存接入方式不等于已经连接或登录。")
@@ -74,7 +74,7 @@ struct CompanyAccessView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Label("公司内网", systemImage: "building.2").font(LPFont.display(23, weight: .semibold))
+                Label("公司内网", systemImage: "building.2").font(LPFont.display(28, weight: .semibold))
                 Spacer()
                 Button("完成") { model.cancelCheck(); app.showCompany = false }.buttonStyle(LPGhostButtonStyle())
             }
@@ -90,7 +90,7 @@ struct CompanyAccessView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     if let message = localMessage ?? model.message {
-                        Text(message).font(.system(size: 12)).foregroundStyle(model.failed ? LP.danger : LP.textSecondary)
+                        Text(message).font(.system(size: 13)).foregroundStyle(model.failed ? LP.danger : LP.textSecondary)
                             .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     }
                     if baseline == nil { connectionForm }
@@ -100,7 +100,7 @@ struct CompanyAccessView: View {
                         DisclosureGroup("编辑接入配置") { connectionForm.padding(.top, 10) }.font(.system(size: 13))
                     }
                     Text("仅对当前公司列出的主机配置 TCP 访问，不添加整段网段规则。其他网站沿用现有方案；切换或暂停只影响新连接。独立终端 TUN 不由此入口配置。")
-                        .font(.system(size: 12)).foregroundStyle(LP.textTertiary).fixedSize(horizontal: false, vertical: true)
+                        .font(.system(size: 13)).foregroundStyle(LP.textTertiary).fixedSize(horizontal: false, vertical: true)
                 }.padding(.vertical, 4)
             }
             LPDivider()
@@ -143,7 +143,7 @@ struct CompanyAccessView: View {
             Text("接入方式").font(.system(size: 15, weight: .semibold))
             TextField("公司 / 团队名称", text: $draft.name).textFieldStyle(.roundedBorder)
             Picker("使用方式", selection: $draft.method) { ForEach(CompanyAccessMethod.allCases) { Text($0.title).tag($0) } }
-            Text(methodHint).font(.system(size: 12)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
+            Text(methodHint).font(.system(size: 13)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
             if draft.method == .systemVPN {
                 HStack {
                     Picker("本机 VPN", selection: $vpnID) {
@@ -161,15 +161,15 @@ struct CompanyAccessView: View {
                     if panel.runModal() == .OK { draft.application = panel.url }
                 }.buttonStyle(LPGhostButtonStyle())
                 if let application = draft.application {
-                    Text(application.deletingPathExtension().lastPathComponent).font(.system(size: 12)).lineLimit(1)
+                    Text(application.deletingPathExtension().lastPathComponent).font(.system(size: 13)).lineLimit(1)
                     Button("清除") { draft.application = nil }.buttonStyle(LPGhostButtonStyle())
                 }
             }
             TextField(draft.method == .browser ? "统一登录入口（必填）" : "登录 / 接入网址（可选）", text: $portal).textFieldStyle(.roundedBorder)
             DisclosureGroup("接入说明（不填写密码或临时令牌）") {
-                TextEditor(text: $draft.notes).font(.system(size: 12)).frame(height: 70)
+                TextEditor(text: $draft.notes).font(.system(size: 13)).frame(height: 70)
                 Text("说明会包含在导出的团队模板中。").font(.system(size: 11)).foregroundStyle(LP.textTertiary)
-            }.font(.system(size: 12))
+            }.font(.system(size: 13))
         }.disabled(unavailable).padding(16).lpPanel(padding: 0)
     }
 
@@ -181,7 +181,7 @@ struct CompanyAccessView: View {
                 TextField("网址 / 内网主机 / SMB / SSH 地址", text: $resourceAddress).textFieldStyle(.roundedBorder)
                 Button(editingResource == nil ? "添加" : "更新") { addResource() }.buttonStyle(LPGhostButtonStyle()).disabled(resourceAddress.isEmpty || unavailable)
             }
-            if !activeDraft { Text("保存并使用后，可检查和打开这些资源。").font(.system(size: 12)).foregroundStyle(LP.textSecondary) }
+            if !activeDraft { Text("保存并使用后，可检查和打开这些资源。").font(.system(size: 13)).foregroundStyle(LP.textSecondary) }
             ForEach(draft.resources) { resource in
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -190,7 +190,7 @@ struct CompanyAccessView: View {
                             Text(resource.url.absoluteString).font(LPFont.mono(11)).foregroundStyle(LP.textSecondary).lineLimit(2).textSelection(.enabled)
                         }
                         Spacer()
-                        Button("编辑") { editingResource = resource.id; resourceTitle = resource.title; resourceAddress = resource.url.absoluteString }.buttonStyle(.plain).font(.system(size: 12))
+                        Button("编辑") { editingResource = resource.id; resourceTitle = resource.title; resourceAddress = resource.url.absoluteString }.buttonStyle(.plain).font(.system(size: 13))
                         Button { draft.resources.removeAll { $0.id == resource.id } } label: { Image(systemName: "minus.circle") }.buttonStyle(.plain).accessibilityLabel("移除草稿资源 \(resource.title)")
                         if activeDraft, model.active?.resources.contains(resource) == true {
                             Button(model.checking == resource.id ? "检查中…" : "检查") { check(resource) }
@@ -204,9 +204,9 @@ struct CompanyAccessView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(step.title).fontWeight(.medium).foregroundStyle(step.problem ? LP.danger : LP.text)
                                     Text(step.detail).foregroundStyle(LP.textSecondary).textSelection(.enabled)
-                                }.font(.system(size: 12)).padding(.top, 8)
+                                }.font(.system(size: 13)).padding(.top, 8)
                             }
-                        }.font(.system(size: 12))
+                        }.font(.system(size: 13))
                     }
                     LPDivider()
                 }
@@ -237,7 +237,7 @@ struct CompanyAccessView: View {
                 }
             }
             Text("登录、MFA、设备检查和网关权限由公司官方工具完成。此入口不代填公司密码、不关闭证书校验，也不会发布公网链接。")
-                .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
         }.padding(16).lpPanel(padding: 0)
     }
 

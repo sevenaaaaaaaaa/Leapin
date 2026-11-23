@@ -20,15 +20,15 @@ struct ManagedKernelPanel: View {
             HStack {
                 Label("Mihomo 运行控制", systemImage: "cpu").font(.system(size: 15, weight: .semibold))
                 Spacer()
-                Text(managed.running ? "本地内核就绪" : "未运行").font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                Text(managed.running ? "本地内核就绪" : "未运行").font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                 Button("刷新") { Task { await refresh() } }.buttonStyle(LPGhostButtonStyle()).disabled(busy)
             }
-            Text(managed.version ?? "Mihomo").font(LPFont.mono(12)).foregroundStyle(LP.textSecondary)
+            Text(managed.version ?? "Mihomo").font(LPFont.mono(13)).foregroundStyle(LP.textSecondary)
             ForEach(policies) { policy in
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(policy.name).font(.system(size: 13, weight: .medium))
-                        Text(policy.type).font(LPFont.mono(10)).foregroundStyle(LP.textSecondary)
+                        Text(policy.type).font(LPFont.mono(11)).foregroundStyle(LP.textSecondary)
                     }
                     Spacer()
                     Menu {
@@ -39,9 +39,9 @@ struct ManagedKernelPanel: View {
                         HStack {
                             Text(policy.selected).lineLimit(1)
                             Spacer()
-                            Image(systemName: "chevron.up.chevron.down").font(.system(size: 9))
+                            Image(systemName: "chevron.up.chevron.down").font(.system(size: 11))
                         }
-                        .font(.system(size: 12)).foregroundStyle(LP.text)
+                        .font(.system(size: 13)).foregroundStyle(LP.text)
                         .padding(.horizontal, 10).padding(.vertical, 8)
                         .background(LP.text.opacity(0.04), in: RoundedRectangle(cornerRadius: 7))
                     }
@@ -55,24 +55,24 @@ struct ManagedKernelPanel: View {
                     .buttonStyle(LPGhostButtonStyle()).disabled(busy || !managed.running || SiteTarget(target) == nil)
             }
             Text("通过 Leapin 的本地代理向网站根路径发送 HEAD 请求。不会携带粘贴链接的路径参数或浏览器登录信息。")
-                .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
-            if let message { Text(message).font(.system(size: 12)).foregroundStyle(LP.textSecondary).textSelection(.enabled) }
+                .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
+            if let message { Text(message).font(.system(size: 13)).foregroundStyle(LP.textSecondary).textSelection(.enabled) }
             Text("来源 DNS 策略由 Mihomo 执行。显式 SOCKS5 UDP 关联可交给内核；它不等于全设备 UDP 接管，且不经过原生过滤与抓包。")
-                .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
             DisclosureGroup("TUN 终端接管 · 需要管理员") {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("当前图形包没有特权服务。可预检并导出启动包，在终端审阅后授权运行；不会以 root 启动图形 App。运行前先停止系统代理并退出其他全局接管模式。")
-                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                        .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                     Text("终端会话创建网卡和路由，Ctrl-C 停止自有内核；不写系统 DNS。Tailscale 地址段予以排除，共存及真实 UDP 出口仍需验证。")
-                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                        .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                     Button("预检并导出 TUN 启动包…") { exportTUN() }.buttonStyle(LPGhostButtonStyle()).disabled(busy)
                 }.padding(.top, 10)
-            }.font(.system(size: 12))
+            }.font(.system(size: 13))
             DisclosureGroup("内核运行日志") {
                 Text(logs.isEmpty ? "当前没有内核输出。" : logs)
-                    .font(LPFont.mono(12)).foregroundStyle(LP.textSecondary).textSelection(.enabled)
+                    .font(LPFont.mono(13)).foregroundStyle(LP.textSecondary).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
-            }.font(.system(size: 12))
+            }.font(.system(size: 13))
         }
         .padding(20).frame(maxWidth: .infinity, alignment: .leading).lpPanel(padding: 0)
         .task(id: engine.state) { await refresh() }

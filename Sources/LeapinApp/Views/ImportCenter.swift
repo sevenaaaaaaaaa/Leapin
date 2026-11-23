@@ -25,9 +25,9 @@ struct ImportCenter: View {
         VStack(spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("带入你的网络方案").font(LPFont.display(23, weight: .semibold))
+                    Text("带入你的网络方案").font(LPFont.display(28, weight: .semibold))
                     Text("先检查，再决定。当前配置会保留到新方案就绪。")
-                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                        .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                 }
                 Spacer()
                 Button("完成") { app.showImportCenter = false }.buttonStyle(LPGhostButtonStyle()).disabled(busy)
@@ -44,7 +44,7 @@ struct ImportCenter: View {
                 LPDivider()
                 VStack(alignment: .leading, spacing: 12) {
                     if let message {
-                        Text(message).font(.system(size: 12)).foregroundStyle(failed ? LP.danger : LP.textSecondary)
+                        Text(message).font(.system(size: 13)).foregroundStyle(failed ? LP.danger : LP.textSecondary)
                             .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                     }
                     if let candidate = app.pendingImport { primaryAction(candidate) }
@@ -83,7 +83,7 @@ struct ImportCenter: View {
                 TextField("粘贴 http(s) 订阅地址", text: $input).textFieldStyle(.roundedBorder)
                     .onSubmit { prepare() }.accessibilityLabel("订阅链接")
             } else {
-                TextEditor(text: $input).font(LPFont.mono(12)).frame(height: 180)
+                TextEditor(text: $input).font(LPFont.mono(13)).frame(height: 180)
                     .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(LP.stroke))
                     .accessibilityLabel("配置或节点文本")
             }
@@ -94,7 +94,7 @@ struct ImportCenter: View {
                 Spacer()
             }
             Text("支持 Clash / Mihomo YAML、Surge conf、Leapin JSON 与节点订阅。订阅直接下载到本机，不发送给公共转换服务。")
-                .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
         }.disabled(busy)
     }
 
@@ -113,7 +113,7 @@ struct ImportCenter: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(candidate.outcome.profile.name).font(.system(size: 18, weight: .semibold))
                     Text("\(candidate.origin) · \(candidate.outcome.report.format)")
-                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                        .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                 }
                 Spacer()
                 Button("更换来源") {
@@ -135,45 +135,45 @@ struct ImportCenter: View {
                 }.pickerStyle(.segmented)
                 Text(kernel == .native ? "使用原生 TCP 代理、DNS 与过滤能力。协议和传输必须在原生支持范围内。"
                      : "由 Mihomo 执行分流与协议；Leapin 提供本地入口。TUN、额外监听与内核 DNS 接管关闭，来源专属 DNS 策略暂未完整透传；分流修改需重新导入。")
-                    .font(.system(size: 12)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: 13)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
             }
             if !candidate.nativeBlockers.isEmpty {
                 DisclosureGroup(kernel == .mihomo
                                 ? "以下 \(candidate.nativeBlockers.count) 项原生内核做不到，已选 Mihomo 执行"
                                 : "原生不兼容的 \(candidate.nativeBlockers.count) 项") {
-                    ForEach(candidate.nativeBlockers, id: \.self) { Text($0).font(.system(size: 12)).foregroundStyle(LP.amber) }
+                    ForEach(candidate.nativeBlockers, id: \.self) { Text($0).font(.system(size: 13)).foregroundStyle(LP.amber) }
                     if kernel == .mihomo {
                         Text("Mihomo 直接运行原始 Clash 配置，这些节点按原样保留。")
-                            .font(.system(size: 12)).foregroundStyle(LP.mint)
+                            .font(.system(size: 13)).foregroundStyle(LP.mint)
                     } else if KernelExecutable.mihomo() != nil {
                         Text("换成 Mihomo 即可运行这些节点。")
-                            .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                            .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                     } else {
                         Text("未检测到 Mihomo 可执行文件：安装后才能运行这些节点。")
-                            .font(.system(size: 12)).foregroundStyle(LP.danger)
+                            .font(.system(size: 13)).foregroundStyle(LP.danger)
                     }
-                }.font(.system(size: 12))
+                }.font(.system(size: 13))
             }
             if kernel == .mihomo && !candidate.externalConversionBlockers.isEmpty {
                 Text("此来源转换存在信息损失，暂不能启用。请提供原始 Clash / Mihomo 配置，或先处理解析报告。")
-                    .font(.system(size: 12)).foregroundStyle(LP.danger)
+                    .font(.system(size: 13)).foregroundStyle(LP.danger)
             }
             if !candidate.outcome.report.issues.isEmpty {
                 DisclosureGroup("解析报告 · \(candidate.outcome.report.issues.count) 项") {
                     ForEach(candidate.outcome.report.issues) { issue in
-                        Text(Redactor.redact(issue.display)).font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                        Text(Redactor.redact(issue.display)).font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                             .fixedSize(horizontal: false, vertical: true).padding(.top, 4)
                     }
                     if kernel == .mihomo && candidate.preservesClashSource {
                         Text("Mihomo 使用原始 Clash 文本；原生解析器的协议警告不代表 Mihomo 不支持。以内核预检为准。")
-                            .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                            .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                     }
-                }.font(.system(size: 12))
+                }.font(.system(size: 13))
             }
-            Toggle("同时接入系统代理", isOn: $connectSystem).toggleStyle(.checkbox).font(.system(size: 12))
+            Toggle("同时接入系统代理", isOn: $connectSystem).toggleStyle(.checkbox).font(.system(size: 13))
                 .disabled(busy || completed)
             Text("启用会启动本地服务。若原配置已接管系统，会保持接管；失败自动恢复。仅配置预检不代表远端节点或目标网站已经可达。")
-                .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
             LPDivider()
             HStack {
                 Picker("转换导出", selection: $exportFormat) {
@@ -186,7 +186,7 @@ struct ImportCenter: View {
             Text(exportFormat == .clash && candidate.preservesClashSource
                  ? "导出保留原始 Clash 文本。受管运行时的本地端口覆盖不会写回来源。"
                  : "转换只导出内部模型可表达的字段。存在解析损失或目标不兼容项时会阻止转换；不会把缺失节点静默删除。")
-                .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
         }
     }
 
@@ -209,7 +209,7 @@ struct ImportCenter: View {
     private func count(_ title: String, _ value: Int) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text("\(value)").font(LPFont.num(22)).foregroundStyle(LP.text)
-            Text(title).font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+            Text(title).font(.system(size: 13)).foregroundStyle(LP.textSecondary)
         }
     }
     private func chooseKernel() {

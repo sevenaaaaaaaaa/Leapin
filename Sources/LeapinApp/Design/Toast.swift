@@ -37,17 +37,17 @@ struct ToastOverlay: View {
     var body: some View {
         HStack(spacing: 9) {
             Image(systemName: kind.icon)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(kind.tint)
             Text(text)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(LP.text)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             if let actionTitle, let action {
                 Button(actionTitle) { action() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(LP.accent)
                     .padding(.leading, 2)
             }
@@ -55,7 +55,7 @@ struct ToastOverlay: View {
                 onDismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(LP.textTertiary)
                     .padding(4)
                     .contentShape(Rectangle())

@@ -64,7 +64,7 @@ struct StatTile: View {
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 Image(systemName: icon)
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(tint.opacity(0.9))
             }
             Text(value)
@@ -76,7 +76,7 @@ struct StatTile: View {
                 .lpAnimation(LPMotion.emphasized, value: value)
             if let caption {
                 Text(caption)
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(LP.textTertiary)
                     .lineLimit(1)
             }
@@ -96,7 +96,7 @@ struct Badge: View {
     var color: Color = LP.textSecondary
     var body: some View {
         Text(text)
-            .font(.system(size: 9, weight: .semibold))
+            .font(.system(size: 11, weight: .semibold))
             .tracking(0.3)
             .padding(.horizontal, 5.5)
             .padding(.vertical, 2.5)
@@ -123,7 +123,7 @@ struct RuleChainCard: View {
                 Spacer(minLength: 6)
                 if let index = chain.index {
                     Text("第 \(index) / \(chain.total) 条")
-                        .font(LPFont.mono(9))
+                        .font(LPFont.mono(11))
                         .foregroundStyle(LP.textTertiary)
                 }
                 Text(chain.policy)
@@ -138,7 +138,7 @@ struct RuleChainCard: View {
                 ForEach(Array(chain.steps.enumerated()), id: \.offset) { offset, step in
                     HStack(alignment: .top, spacing: 8) {
                         Text(String(format: "%02d", offset + 1))
-                            .font(LPFont.mono(9))
+                            .font(LPFont.mono(11))
                             .foregroundStyle(LP.textTertiary)
                             .frame(width: 15, alignment: .leading)
                         VStack(alignment: .leading, spacing: 2) {
@@ -148,7 +148,7 @@ struct RuleChainCard: View {
                                 .textSelection(.enabled)
                             if let detail = step.detail, !detail.isEmpty {
                                 Text(detail)
-                                    .font(LPFont.mono(9.5))
+                                    .font(LPFont.mono(11))
                                     .foregroundStyle(LP.textTertiary)
                                     .textSelection(.enabled)
                             }
@@ -161,7 +161,7 @@ struct RuleChainCard: View {
             .padding(.vertical, 11)
             LPDivider()
             Text(chain.isFinal ? "没有命中具体规则，由兜底 MATCH 裁决" : "按首次命中裁决，后面的规则不再求值")
-                .font(LPFont.mono(9))
+                .font(LPFont.mono(11))
                 .foregroundStyle(LP.textTertiary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
@@ -192,7 +192,7 @@ struct LPSelectField<Value: Hashable>: View {
                     .foregroundStyle(LP.text)
                     .lineLimit(1)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 7.5, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(open ? LP.accent : LP.textTertiary)
                     .rotationEffect(.degrees(open ? 180 : 0))
             }
@@ -220,7 +220,7 @@ struct LPSelectField<Value: Hashable>: View {
                             Spacer(minLength: 14)
                             if options[index].0 == value {
                                 Image(systemName: "checkmark")
-                                    .font(.system(size: 9, weight: .bold))
+                                    .font(.system(size: 11, weight: .bold))
                                     .foregroundStyle(LP.accent)
                             }
                         }
@@ -252,7 +252,7 @@ struct LPLineField: View {
         TextField("", text: $text, prompt: Text(placeholder).foregroundColor(LP.textTertiary))
             .textFieldStyle(.plain)
             .focused($focused)
-            .font(.system(size: 12))
+            .font(.system(size: 13))
             .multilineTextAlignment(alignment)
             .lineLimit(1)
             .frame(width: width)
@@ -275,7 +275,7 @@ struct EmptyHint: View {
                 .font(.system(size: 22, weight: .light))
                 .foregroundStyle(LP.textTertiary.opacity(0.8))
             Text(text)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(LP.textTertiary)
                 .multilineTextAlignment(.center)
                 .lineSpacing(3)
@@ -293,7 +293,7 @@ struct FlowRow: View {
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .fill(accent.opacity(0.10))
                 Image(systemName: flow.blockedBy != nil ? "nosign" : (flow.phase == .closed ? "arrow.left.arrow.right" : "bolt.horizontal.fill"))
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(accent)
             }
             .frame(width: 21, height: 21)
@@ -305,11 +305,11 @@ struct FlowRow: View {
                     .lineLimit(1)
                 HStack(spacing: 6) {
                     Text(Fmt.clock(flow.timestamp))
-                        .font(LPFont.mono(10))
+                        .font(LPFont.mono(11))
                         .foregroundStyle(LP.textTertiary)
                     if let app = flow.sourceApp, !app.isEmpty {
                         Text(app)
-                            .font(LPFont.mono(10))
+                            .font(LPFont.mono(11))
                             .foregroundStyle(LP.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.tail)
@@ -319,11 +319,11 @@ struct FlowRow: View {
                         // "FINAL,PROXY" is the engine's兜底 rule; naming it plainly beats
                         // repeating the outbound already shown by the badge.
                         Text("兜底")
-                            .font(LPFont.mono(10))
+                            .font(LPFont.mono(11))
                             .foregroundStyle(LP.textTertiary)
                     } else if let rule = flow.matchedRule, !rule.isEmpty {
                         Text(rule)
-                            .font(LPFont.mono(10))
+                            .font(LPFont.mono(11))
                             .foregroundStyle(LP.textTertiary)
                             .lineLimit(1)
                     }
@@ -368,7 +368,7 @@ struct LabeledField<Content: View>: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(LP.textSecondary)
                 .frame(width: 104, alignment: .leading)
             content()
@@ -395,7 +395,7 @@ struct LPCopyButton: View {
             }
         } label: {
             Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(copied ? LP.mint : LP.textTertiary)
                 .frame(width: 18, height: 18)
                 .contentShape(Rectangle())

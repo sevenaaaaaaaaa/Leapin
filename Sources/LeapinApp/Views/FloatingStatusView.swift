@@ -46,7 +46,7 @@ struct FloatingStatusView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 5, style: .continuous).fill(LP.accentFill)
                 Image(systemName: "bolt.fill")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(.white)
             }
             .frame(width: 17, height: 17)
@@ -60,7 +60,7 @@ struct FloatingStatusView: View {
                     .fill(status.tone.ink)
                     .frame(width: 5, height: 5)
                 Text(status.title)
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(LP.textTertiary)
                     .lineLimit(1)
             }
@@ -71,7 +71,7 @@ struct FloatingStatusView: View {
                 controller.hide()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(LP.textTertiary)
                     .frame(width: 16, height: 16)
                     .contentShape(Rectangle())
@@ -91,7 +91,7 @@ struct FloatingStatusView: View {
                     .font(LPFont.num(13, weight: .semibold))
                     .foregroundStyle(LP.text)
                 Text("连接")
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(LP.textTertiary)
             }
         }
@@ -101,7 +101,7 @@ struct FloatingStatusView: View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 3) {
                 Image(systemName: symbol)
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(LP.accent)
                 Text(value)
                     .font(LPFont.num(12.5, weight: .semibold))
@@ -109,7 +109,7 @@ struct FloatingStatusView: View {
                     .monospacedDigit()
             }
             Text(label)
-                .font(.system(size: 9))
+                .font(.system(size: 11))
                 .foregroundStyle(LP.textTertiary)
         }
     }
@@ -119,7 +119,7 @@ struct FloatingStatusView: View {
             let recent = status.recent
             if recent.isEmpty {
                 Text("还没有连接")
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(LP.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 4)
@@ -127,13 +127,13 @@ struct FloatingStatusView: View {
                 ForEach(recent) { flow in
                     HStack(spacing: 5) {
                         Text(flow.host)
-                            .font(LPFont.mono(9.5))
+                            .font(LPFont.mono(11))
                             .foregroundStyle(LP.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Spacer(minLength: 4)
                         Text(flow.label)
-                            .font(.system(size: 8.5, weight: .medium))
+                            .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(policyColor(flow.kind))
                     }
                 }
@@ -153,9 +153,9 @@ struct FloatingStatusView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                     Text(engine.state == .running ? "停止" : "启动")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -165,7 +165,7 @@ struct FloatingStatusView: View {
                 openMainWindow()
             } label: {
                 Text("打开")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(LPGhostButtonStyle())

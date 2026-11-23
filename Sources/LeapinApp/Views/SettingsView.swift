@@ -111,7 +111,7 @@ struct SettingsView: View {
                 }
                 .padding(.top, 4)
                 Text("关闭主窗口不会退出：App 常驻菜单栏，可随时从图标或 Dock 菜单操作。")
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(LP.textTertiary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, 2)
@@ -136,7 +136,7 @@ struct SettingsView: View {
         HStack(spacing: 8) {
             LPKeyCap(keys: keys)
             Text(label)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(LP.textSecondary)
             Spacer(minLength: 0)
         }
@@ -165,7 +165,7 @@ struct SettingsView: View {
             if engine.executionKernel == .mihomo {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("当前 DNS 使用 Mihomo 来源策略，并由运行中的内核解析。修改 nameserver-policy 等策略时，请重新导入来源配置。")
-                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                        .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                     Button("查看来源方案") { app.go(to: .profiles) }.buttonStyle(LPGhostButtonStyle())
                 }
             } else {
@@ -198,17 +198,17 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     HStack(spacing: 6) {
                         Image(systemName: "key.horizontal")
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                             .foregroundStyle(LP.amber)
                         Text("根证书位置")
-                            .font(.system(size: 12))
+                            .font(.system(size: 13))
                             .foregroundStyle(LP.textSecondary)
                         Spacer()
                         Button("打开 CA") { app.installCA() }
                             .buttonStyle(LPGhostButtonStyle())
                     }
                     Text(engine.store.root.appendingPathComponent("ca/ca.pem").path)
-                        .font(LPFont.mono(10))
+                        .font(LPFont.mono(11))
                         .foregroundStyle(LP.textTertiary)
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -279,7 +279,7 @@ struct SettingsView: View {
                 }
                 HStack(spacing: 6) {
                     Text("数据目录")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.textSecondary)
                     Spacer()
                     Button("在 Finder 中打开") {
@@ -289,7 +289,7 @@ struct SettingsView: View {
                 }
                 .padding(.top, 2)
                 Text(engine.store.root.path)
-                    .font(LPFont.mono(10))
+                    .font(LPFont.mono(11))
                     .foregroundStyle(LP.textTertiary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -311,10 +311,10 @@ struct SettingsView: View {
     private var saveBar: some View {
         HStack(spacing: 12) {
             Image(systemName: validationError == nil ? "info.circle" : "exclamationmark.triangle.fill")
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(validationError == nil ? LP.textTertiary : LP.amber)
             Text(validationError ?? "保存后如代理正在运行会自动重启以应用新设置。")
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundStyle(validationError == nil ? LP.textTertiary : LP.amber)
                 .lineLimit(2)
             Spacer()
@@ -446,13 +446,13 @@ private struct FieldRow<Content: View>: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.text)
                     .lineLimit(1)
                     .frame(width: 88, alignment: .leading)
                 if let hint {
                     Text(hint)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.textTertiary)
                         .lineLimit(1)
                 }
@@ -476,11 +476,11 @@ private struct ToggleRow: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(label)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.text)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.textTertiary)
                         .lineLimit(1)
                 }
@@ -507,7 +507,7 @@ private struct FactRow: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 12) {
                 Text(label)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.text)
                     .frame(width: 88, alignment: .leading)
                 Spacer(minLength: 12)
@@ -518,7 +518,7 @@ private struct FactRow: View {
                     .textSelection(.enabled)
             }
             Text(note)
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundStyle(LP.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, 100)
@@ -563,7 +563,7 @@ private struct PlainField: View {
         TextField("", text: $text, prompt: Text(placeholder).foregroundColor(LP.textTertiary))
             .textFieldStyle(.plain)
             .focused($focused)
-            .font(LPFont.mono(12))
+            .font(LPFont.mono(13))
             .multilineTextAlignment(.trailing)
             .lineLimit(1)
             .truncationMode(.tail)
@@ -587,7 +587,7 @@ private struct LabeledLine: View {
     var body: some View {
         HStack(spacing: 6) {
             Text(label)
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundStyle(LP.textTertiary)
                 .frame(width: 30, alignment: .leading)
             Text(value)
@@ -600,7 +600,7 @@ private struct LabeledLine: View {
                     NSPasteboard.general.setString(copy, forType: .string)
                 } label: {
                     Image(systemName: "doc.on.doc")
-                        .font(.system(size: 9))
+                        .font(.system(size: 11))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(LP.textTertiary)
@@ -624,7 +624,7 @@ private struct PhonePairingCard: View {
                 pairedBody(pairing)
             } else {
                 Text("控制面还没有生成令牌。先在设置里保持控制面开启，再回到这里。")
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(LP.textTertiary)
             }
         }
@@ -637,7 +637,7 @@ private struct PhonePairingCard: View {
             VStack(alignment: .leading, spacing: 7) {
                 HStack(spacing: 6) {
                     Text("地址")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(LP.textTertiary)
                         .frame(width: 30, alignment: .leading)
                     Text("\(pairing.host):\(pairing.port)")
@@ -647,7 +647,7 @@ private struct PhonePairingCard: View {
                 }
                 HStack(spacing: 6) {
                     Text("令牌")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(LP.textTertiary)
                         .frame(width: 30, alignment: .leading)
                     Text(String(pairing.token.prefix(12)) + "…")
@@ -666,13 +666,13 @@ private struct PhonePairingCard: View {
         }
         if pairing.blockers.isEmpty {
             Text("手机上打开 Leapin →「工具」→ 扫码配对，状态 / 连接 / 策略 / 诊断四个页面立刻可用。")
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundStyle(LP.textTertiary)
         } else {
             VStack(alignment: .leading, spacing: 3) {
                 ForEach(pairing.blockers, id: \.self) { reason in
                     Label(reason, systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(LP.amber)
                 }
             }

@@ -49,7 +49,7 @@ struct GoWherePage: View {
     private var tabBar: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(WorkbenchVerb.goWhere.question)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(LP.textTertiary)
             Picker("视图", selection: $tab) {
                 ForEach(Tab.allCases) { item in

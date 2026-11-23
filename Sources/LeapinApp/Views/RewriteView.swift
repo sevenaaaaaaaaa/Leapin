@@ -77,7 +77,7 @@ struct RewriteView: View {
     private var tabBar: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(WorkbenchVerb.whatChanged.question)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(LP.textTertiary)
             Picker("视图", selection: $tab) {
                 ForEach(RewriteDeck.Kind.allCases) { kind in
@@ -110,7 +110,7 @@ struct RewriteView: View {
         VStack(spacing: 0) {
             if engine.executionKernel == .mihomo {
                 Text("Mihomo 模式下的流量由原始配置驱动，请求重写仍会生效，但分流以 Mihomo 为准。")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.textSecondary)
                     .padding(12)
             }
@@ -118,7 +118,7 @@ struct RewriteView: View {
             HStack(alignment: .top, spacing: 22) {
                 listPanel(for: kind)
                     .clipShape(RoundedRectangle(cornerRadius: LPGlass.panelRadius, style: .continuous))
-                    .lpGlass(radius: LPGlass.panelRadius, fallbackFill: LP.panel, shadow: 0.06)
+                    .lpSheet()
                 sidePanel(for: kind).frame(width: 292)
             }
             .padding(.horizontal, 32)
@@ -137,7 +137,7 @@ struct RewriteView: View {
                 Spacer()
                 if !rows.isEmpty {
                     Text("改动立即生效")
-                        .font(Font.system(size: 10))
+                        .font(Font.system(size: 11))
                         .foregroundStyle(LP.textTertiary)
                 }
             }
@@ -178,13 +178,13 @@ struct RewriteView: View {
                         .font(LPFont.display(13, weight: .medium))
                         .foregroundStyle(row.issue == nil ? LP.text : LP.danger)
                     Text(row.detail)
-                        .font(LPFont.mono(10))
+                        .font(LPFont.mono(11))
                         .foregroundStyle(LP.textTertiary)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
                     if let issue = row.issue {
                         Text(issue)
-                            .font(Font.system(size: 10))
+                            .font(Font.system(size: 11))
                             .foregroundStyle(LP.danger)
                     }
                 }
@@ -210,7 +210,7 @@ struct RewriteView: View {
     private func phaseBadge(_ text: String) -> some View {
         let isRequest = text == "请求"
         return Text(text)
-            .font(Font.system(size: 10))
+            .font(Font.system(size: 11))
             .foregroundStyle(isRequest ? LP.accent : LP.violet)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
@@ -229,7 +229,7 @@ struct RewriteView: View {
                 .font(LPFont.display(14, weight: .semibold))
                 .foregroundStyle(LP.text)
             Text(kind.emptyDetail)
-                .font(Font.system(size: 12))
+                .font(Font.system(size: 13))
                 .foregroundStyle(LP.textTertiary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 320)
@@ -299,14 +299,14 @@ struct RewriteView: View {
                 .font(LPFont.mono(11, weight: .medium))
                 .foregroundStyle(LP.accent)
             Text(detail)
-                .font(Font.system(size: 10))
+                .font(Font.system(size: 11))
                 .foregroundStyle(LP.textTertiary)
         }
     }
 
     private func note(_ text: String) -> some View {
         Text(text)
-            .font(Font.system(size: 10))
+            .font(Font.system(size: 11))
             .foregroundStyle(LP.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -323,7 +323,7 @@ struct RewriteView: View {
                               icon: RewriteDeck.Kind.script.icon)
                 Spacer()
                 Text("只读 · 只能启停")
-                    .font(Font.system(size: 10))
+                    .font(Font.system(size: 11))
                     .foregroundStyle(LP.textTertiary)
             }
             .padding(.horizontal, 16)
@@ -348,7 +348,7 @@ struct RewriteView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .clipShape(RoundedRectangle(cornerRadius: LPGlass.panelRadius, style: .continuous))
-        .lpGlass(radius: LPGlass.panelRadius, fallbackFill: LP.panel, shadow: 0.06)
+        .lpSheet()
         .padding(.horizontal, 32)
         .padding(.top, 16)
         .padding(.bottom, 24)
@@ -366,7 +366,7 @@ struct RewriteView: View {
                     .font(LPFont.mono(12, weight: .medium))
                     .foregroundStyle(LP.text)
                 Text(row.detail)
-                    .font(Font.system(size: 10))
+                    .font(Font.system(size: 11))
                     .foregroundStyle(LP.textTertiary)
             }
             Spacer(minLength: 8)
@@ -479,7 +479,7 @@ private struct RuleEditorSheet: View {
                           icon: kind.icon)
 
             TextEditor(text: $text)
-                .font(LPFont.mono(12))
+                .font(LPFont.mono(13))
                 .scrollContentBackground(.hidden)
                 .padding(8)
                 .frame(height: 76)
@@ -492,20 +492,20 @@ private struct RuleEditorSheet: View {
                 .onAppear { focused = true }
 
             if let error = validation.error {
-                Text(error).font(Font.system(size: 10)).foregroundStyle(LP.danger)
+                Text(error).font(Font.system(size: 11)).foregroundStyle(LP.danger)
             } else if let rule = validation.rule {
                 Text("\(rule.phase == .request ? "请求阶段" : "响应阶段") · \(rule.summary)")
-                    .font(Font.system(size: 10))
+                    .font(Font.system(size: 11))
                     .foregroundStyle(LP.mint)
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("模板").font(Font.system(size: 10)).foregroundStyle(LP.textTertiary)
+                Text("模板").font(Font.system(size: 11)).foregroundStyle(LP.textTertiary)
                 FlowLayout(spacing: 6) {
                     ForEach(Self.templates, id: \.title) { template in
                         Button(template.title) { text = template.line }
                             .buttonStyle(.plain)
-                            .font(Font.system(size: 10))
+                            .font(Font.system(size: 11))
                             .foregroundStyle(LP.textSecondary)
                             .padding(.horizontal, 9)
                             .padding(.vertical, 5)

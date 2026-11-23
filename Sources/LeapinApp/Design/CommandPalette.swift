@@ -194,7 +194,7 @@ struct CommandPalette: View {
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
                     Image(systemName: "command")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(LP.accent)
                     TextField("输入网站、需求或工具名称…", text: $query)
                         .textFieldStyle(.plain)
@@ -213,7 +213,7 @@ struct CommandPalette: View {
 
                 if results.isEmpty {
                     Text("暂不支持这个需求。可输入网站地址，或搜索「配置」「规则」等工具。")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.textTertiary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 26)
@@ -243,7 +243,7 @@ struct CommandPalette: View {
                     hint("esc", "关闭")
                     Spacer()
                     Text("\(results.count) 项")
-                        .font(LPFont.num(9.5))
+                        .font(LPFont.num(11))
                         .foregroundStyle(LP.textTertiary)
                 }
                 .padding(.horizontal, 14)
@@ -271,21 +271,21 @@ struct CommandPalette: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: command.icon)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .frame(width: 20)
                     .foregroundStyle(selected ? LP.accent : LP.textSecondary)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(command.title)
-                        .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                        .font(.system(size: 13, weight: selected ? .semibold : .regular))
                         .foregroundStyle(LP.text)
                     Text(command.subtitle)
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(LP.textTertiary)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Text(command.group)
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(LP.textTertiary)
                 if let shortcut = command.shortcut {
                     LPKeyCap(keys: shortcut)
@@ -306,7 +306,7 @@ struct CommandPalette: View {
     private func hint(_ key: String, _ label: String) -> some View {
         HStack(spacing: 4) {
             LPKeyCap(keys: key)
-            Text(label).font(.system(size: 9)).foregroundStyle(LP.textTertiary)
+            Text(label).font(.system(size: 11)).foregroundStyle(LP.textTertiary)
         }
     }
 

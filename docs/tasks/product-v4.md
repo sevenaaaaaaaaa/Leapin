@@ -446,4 +446,71 @@
 
 ---
 
-## M3 · iOS 语义（未开工）
+## M2.5 · v5 构图落地（新增 2026-11-23，CRD 0001）
+
+**目标**：把 `docs/design/DESIGN-v5.md` 的 W1–W3 落成可用界面。W1 先做，做完停下来评审。
+**用户怎么试**：打开窗口，5 个页面每屏只看到一个焦点带；正文不再是 9–10pt；侧栏选中行不再像报错。
+
+**为什么进计划**：M2 交的是「四动词的功能」，不是「v5 的构图」。复盘 §1 的十条一条没消——字阶、材质、轴线还是旧的。用户 2026-11-23 裁定新建 M2.5。
+
+**里程碑 DoD（对应 DESIGN-v5.md §12）**
+
+| §12 | 承接 | 怎么验 |
+| --- | --- | --- |
+| 1 一屏 ≤1 焦点带 / ≤1 主按钮 / ≤5 个一级模块 | T-15 | `qa/T-15` 静态计数 |
+| 2 最小字号 11、正文 13、mono 只给数字 | T-15 | `qa/T-15` 字号扫描 |
+| 3 对比度 AA / 焦点环可见 / 目标 ≥24pt | T-15 + 人工 | 人工走查 |
+| 4 3 秒测试 5 人里 ≥4 人 | 人工 | T-15 之后实测，脚本不替代 |
+| 5 轴线 ≤2、无居中悬浮 tab | T-15 | `qa/T-15` |
+| 6 每页只用 PageHeader / FocusBand / Module / Row 四件 | T-16…T-19 | W2 |
+| 7 同一「路」在五处出现 | T-20 | W3 |
+
+W2/W3 的任务行等 W1 评审通过后再写。现在只有 T-15。
+
+---
+
+### T-15 W1 基础：v5 token、字阶、页头、侧栏选中态
+
+- **Verdicts**：code: not run — 本会话没有独立代码评审角色，等 W1 评审 · security: skipped — 只动字号、材质、选中态，无网络与权限改动 · qa: pass — qa/T-15 8/8（脚本层；六条人工项见 qa/T-15/report.md） · doc: pass — 任务行与核对清单经 PM 于 2026-11-24 核对
+- **Shape**: solo
+- **Milestone**: M2.5
+
+**这个任务做什么**
+1. **表面与字阶**：`Theme.swift` 收敛成 v5 的四种表面（paper / sheet / ink / line），删掉 `cardTint` 与内容区玻璃用法；字阶常量按 §6.2 定死——页面标题 28 semibold、区块 15 semibold、正文 13、标签 11 mono、数字 20 mono、一句人话 15 serif italic。全仓字号 <11 的（8 / 8.5 / 9 / 9.5 / 10）一律提到 11 以上；12 提到 13。
+2. **间距与圆角**：4 / 8 / 12 / 16 / 24 / 32 / 48 七档；圆角面板 12、控件 8、状态胶囊 full。不再 6 / 10 / 16 / 20 混用。
+3. **页头组件**：新增 `Design/PageHeader.swift`，标题 + 一句状态（左）｜1 主 + 2 次（右），左对齐，不带居中悬浮 tab；5 个工作页换用它。
+4. **侧栏选中态**：ink 6% 底 + 2px 朱红左条 + 文字 primary，去掉 `accentSoft` 浅朱红底（现在读作 warning）。
+5. **模块预算**：每个工作页一级模块 ≤5、填充主按钮 ≤1；超出的收进「更多」或详情。
+
+**这个任务不做**
+- 不动任何功能行为、不改 DoD 里的数据与交互断言。
+- 不做 W2 的四页重排与 RouteLine 组件（T-16…T-19）。
+- 不做 W3 的菜单栏/浮窗重做、空态、图标、动效（T-20）。
+
+**文件所有权**
+- 修改 `Sources/LeapinApp/Design/Theme.swift`
+- 新增 `Sources/LeapinApp/Design/PageHeader.swift`
+- 修改 `Sources/LeapinApp/LeapinApp.swift`（侧栏选中态）
+- 修改 `Sources/LeapinApp/Views/` 下 MenuBarPanel、FloatingStatusView、DashboardView、ProfilesView、RulesView、RewriteView、AdBlockView、WhyPage、GoWherePage、RewriteDeck、SettingsView、CaptureView、ObservationView、DiagnosticReportView
+- 修改 `Sources/LeapinApp/Design/` 下 CommandPalette、NetworkAssistant、FloatingPanel
+- 以及 `Views/` 下其余工具页的字号统一：LearnView、NASView、SSHView、NetworkToolsView、ImportCenter、ImportReportSheet、CompanyAccessView、HomeConnectionView、ManagedKernelPanel、Shared、WorkspaceSheets（这些页只改字号，不动结构）
+- 新增 `qa/T-15/run.sh`、`qa/T-15/report.md`
+
+**DoD**
+1. `Theme` 暴露 paper / sheet / ink / line 四个表面 token 与 §6.2 的字阶常量；全仓文字字号无 <11pt（图标 glyph 白名单列在脚本里，且每条写理由）。
+2. 正文统一 13，页面标题 28，区块标题 15，标签 11 mono，数字 20 mono。
+3. 内容区不再出现玻璃或 `cardTint`；玻璃只出现在菜单栏面板、浮窗、命令面板、sheet 四处。
+4. `PageHeader` 存在并被 5 个工作页使用；页头左对齐，无居中悬浮 tab。
+5. 侧栏选中态 = ink 6% 底 + 2px 朱红左条，脚本断言不再出现 `accentSoft` 作选中底。
+6. 每个工作页一级模块 ≤5、填充主按钮 ≤1。
+7. `swift build --scratch-path /tmp/t15-scratch --disable-sandbox` exit 0 且零 warning；`swift test` 全绿；`qa/T-15/run.sh` 全 PASS。
+
+**2026-11-24 更正（第 4 条）**：原文写「PageHeader 存在并被 5 个工作页使用」，与实现不符——本仓库的页头由壳（`LeapinApp.swift`）统一渲染一次，页面只提供 `headerTitle / headerSubtitle / headerIcon` 元数据，不各自画标题。断言据此改为「壳渲染 ≥1 处 + section 元数据 ≥1 处 + 页面内重复标题 0 处」。含义未变：一屏一个页头，左对齐。
+
+---
+
+## M3 · iOS 语义（暂缓，2026-11-24 用户决定）
+
+用户 2026-11-24 裁定：**先走 v5 路线（M2.5 的 W1 → W2 → W3），M3 之后再判断要不要做、要不要提前。**
+
+所以 M3 目前没有任务行，也不占排期。它原来的目标不变：手机的首页回答「这台手机上的网络」——自己跑引擎、自己分流，Mac 只是可选配置源。等 W3 评审完，再把 M3 与「继续打磨 v5」放在一起给出对比。

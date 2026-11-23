@@ -47,18 +47,18 @@ struct LearnView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     LPEyebrow(text: "方式一 / 粘贴文本")
                     Text("应用名、Bundle ID 或域名，每行一个；逗号分隔也可以。")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
 
                     ZStack(alignment: .topLeading) {
                         TextEditor(text: $rawText)
-                            .font(LPFont.mono(12))
+                            .font(LPFont.mono(13))
                             .scrollContentBackground(.hidden)
                             .padding(8)
                         if rawText.isEmpty {
                             Text("例如：\nSpotify\ncom.spotify.client\napi.spotify.com")
-                                .font(LPFont.mono(12))
+                                .font(LPFont.mono(13))
                                 .foregroundStyle(LP.textTertiary.opacity(0.75))
                                 .padding(.horizontal, 13)
                                 .padding(.vertical, 16)
@@ -67,9 +67,7 @@ struct LearnView: View {
                         }
                     }
                     .frame(height: 150)
-                    .lpGlass(radius: 14,
-                             fallbackFill: LP.panelSolid,
-                             fallbackMaterial: .thinMaterial)
+                    .lpSheet(radius: 12)
 
                     HStack(spacing: 8) {
                         if rawText.isEmpty {
@@ -84,7 +82,7 @@ struct LearnView: View {
                             .buttonStyle(LPGhostButtonStyle())
                         Spacer(minLength: 8)
                         Text("内置目录 \(AppCatalog.builtin.count) 个应用")
-                            .font(.system(size: 12))
+                            .font(.system(size: 13))
                             .foregroundStyle(LP.textTertiary)
                     }
                 }
@@ -100,7 +98,7 @@ struct LearnView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     LPEyebrow(text: "方式二 / 截图 OCR")
                     Text("App 列表页、订阅页或分流规则页的截图都可以。")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -115,10 +113,10 @@ struct LearnView: View {
                                 .font(.system(size: 20, weight: .light))
                                 .foregroundStyle(busy ? LP.amber : LP.textTertiary)
                             Text(busy ? "识别中…" : "拖入截图")
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.system(size: 13, weight: .medium))
                                 .foregroundStyle(LP.textSecondary)
                             Text("PNG / JPEG / HEIC / TIFF")
-                                .font(.system(size: 12))
+                                .font(.system(size: 13))
                                 .foregroundStyle(LP.textTertiary)
                         }
                     }
@@ -152,7 +150,7 @@ struct LearnView: View {
 
                     if !ocrText.isEmpty {
                         Text(ocrText.prefix(120))
-                            .font(LPFont.mono(10))
+                            .font(LPFont.mono(11))
                             .foregroundStyle(LP.textTertiary)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -194,10 +192,10 @@ struct LearnView: View {
                 .font(LPFont.mono(12, weight: .medium))
                 .foregroundStyle(LP.textTertiary)
             Text(title)
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(LP.text)
             Text(detail)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(LP.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -226,17 +224,17 @@ struct LearnView: View {
                 ForEach(apps) { learned in
                     HStack(spacing: 10) {
                         Image(systemName: "app.fill")
-                            .font(.system(size: 12))
+                            .font(.system(size: 13))
                             .foregroundStyle(LP.textTertiary)
                             .frame(width: 14)
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(learned.name)
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.system(size: 13, weight: .medium))
                                 .foregroundStyle(LP.text)
                             if let bid = learned.bundleID {
                                 Text(bid)
-                                    .font(LPFont.mono(10))
+                                    .font(LPFont.mono(11))
                                     .foregroundStyle(LP.textTertiary)
                                     .lineLimit(1)
                             }
@@ -245,7 +243,7 @@ struct LearnView: View {
                         Spacer(minLength: 10)
 
                         Text(learned.domains.prefix(3).joined(separator: ", "))
-                            .font(LPFont.mono(10))
+                            .font(LPFont.mono(11))
                             .foregroundStyle(LP.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -261,7 +259,7 @@ struct LearnView: View {
             if suggestions.isEmpty {
                 HStack {
                     Text("名单没问题就可以生成建议了。")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.textTertiary)
                     Spacer()
                     Button("生成分流建议") { suggest() }
@@ -294,14 +292,14 @@ struct LearnView: View {
                     )) {
                         HStack(spacing: 9) {
                             Text(suggestion.domain)
-                                .font(LPFont.mono(12))
+                                .font(LPFont.mono(13))
                                 .foregroundStyle(LP.text)
                             Badge(text: suggestion.appName, color: LP.textSecondary)
                             Text(suggestion.rule.kind.rawValue)
-                                .font(LPFont.mono(10))
+                                .font(LPFont.mono(11))
                                 .foregroundStyle(LP.textTertiary)
                             Text(suggestion.rationale)
-                                .font(.system(size: 12))
+                                .font(.system(size: 13))
                                 .foregroundStyle(LP.textTertiary)
                                 .lineLimit(1)
                             Spacer(minLength: 10)

@@ -119,7 +119,7 @@ struct ProfilesView: View {
             }
 
             Text("先检查格式与执行内核，确认后再启用。Mihomo 方案保留原始 Clash 文本；转换格式时需检查目标能表达的范围。")
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(LP.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -141,20 +141,20 @@ struct ProfilesView: View {
 
             HStack(spacing: 7) {
                 Text("\(engine.ruleCount) 条规则")
-                    .font(LPFont.mono(12))
+                    .font(LPFont.mono(13))
                     .foregroundStyle(LP.textSecondary)
                 Text("·")
-                    .font(LPFont.mono(12))
+                    .font(LPFont.mono(13))
                     .foregroundStyle(LP.textTertiary)
                 Text(currentMeta.map { Fmt.day($0.updatedAt) } ?? "本机配置")
-                    .font(LPFont.mono(12))
+                    .font(LPFont.mono(13))
                     .foregroundStyle(LP.textTertiary)
                 Circle()
                     .fill(LP.mint)
                     .frame(width: 5, height: 5)
                     .padding(.leading, 4)
                 Text("已启用")
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(LP.textSecondary)
             }
             .accessibilityElement(children: .combine)
@@ -171,9 +171,9 @@ struct ProfilesView: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: "square.and.arrow.down")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                     Text("导入配置")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .lineLimit(1)
                         .fixedSize()
                 }
@@ -186,9 +186,9 @@ struct ProfilesView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "link")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                     Text("粘贴订阅")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .lineLimit(1)
                         .fixedSize()
                 }
@@ -208,18 +208,16 @@ struct ProfilesView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                     Text("导出")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .lineLimit(1)
                         .fixedSize()
                 }
                 .foregroundStyle(LP.text)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
-                .lpGlass(in: Capsule(style: .continuous),
-                         fallbackFill: LP.panelSolid,
-                         fallbackMaterial: .thinMaterial)
+                .lpPill()
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
@@ -252,7 +250,7 @@ struct ProfilesView: View {
                 }
                 Spacer(minLength: 8)
                 Text("本机存储 · 先预检再启用")
-                    .font(LPFont.mono(10))
+                    .font(LPFont.mono(11))
                     .tracking(0.8)
                     .foregroundStyle(LP.textTertiary)
             }
@@ -283,10 +281,10 @@ struct ProfilesView: View {
     private var emptyState: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("还没有配置")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(LP.textSecondary)
             Text("导入 Clash YAML、Surge conf 或之前导出的 Leapin JSON 即可开始。")
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(LP.textTertiary)
             Button("导入配置") { app.beginImport() }
                 .buttonStyle(LPGhostButtonStyle())
@@ -298,11 +296,11 @@ struct ProfilesView: View {
     private var noResults: some View {
         HStack(spacing: 10) {
             Text("没有匹配的配置。")
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(LP.textTertiary)
             Button("清除搜索") { search = "" }
                 .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(LP.accent)
                 .accessibilityLabel("清除搜索")
         }
@@ -314,14 +312,14 @@ struct ProfilesView: View {
         let active = meta.id == engine.profile.id
         return HStack(spacing: 12) {
             Image(systemName: active ? "doc.text.fill" : "doc.text")
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(active ? LP.mint : LP.textTertiary)
                 .frame(width: 16)
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(meta.name)
-                        .font(.system(size: 12, weight: active ? .semibold : .medium))
+                        .font(.system(size: 13, weight: active ? .semibold : .medium))
                         .foregroundStyle(LP.text)
                         .lineLimit(1)
                     if active {
@@ -329,7 +327,7 @@ struct ProfilesView: View {
                     }
                 }
                 Text("\(meta.ruleCount) 条规则 · \(Fmt.day(meta.updatedAt))")
-                    .font(LPFont.mono(10))
+                    .font(LPFont.mono(11))
                     .foregroundStyle(LP.textTertiary)
             }
 
@@ -354,7 +352,7 @@ struct ProfilesView: View {
                 pendingDelete = meta
             } label: {
                 Image(systemName: "trash")
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(LP.textTertiary)
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
@@ -413,9 +411,9 @@ struct ProfilesView: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "speedometer")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                         Text("全部测速")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .lineLimit(1)
                             .fixedSize()
                     }
@@ -433,10 +431,10 @@ struct ProfilesView: View {
             if dialableNodes.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("没有节点")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(LP.textSecondary)
                     Text("导入订阅或节点 URI 后，这里会列出每个节点的在线状态与延迟。")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.textTertiary)
                     Button("导入配置") { app.beginImport() }
                         .buttonStyle(LPGhostButtonStyle())
@@ -468,20 +466,20 @@ struct ProfilesView: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(node.name)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(LP.text)
                         .lineLimit(1)
                     Badge(text: node.type, color: LP.textTertiary)
                     if !node.groups.isEmpty {
                         Text(node.groups.joined(separator: " · "))
-                            .font(LPFont.mono(9))
+                            .font(LPFont.mono(11))
                             .foregroundStyle(LP.textTertiary)
                             .lineLimit(1)
                     }
                 }
                 if !node.server.isEmpty {
                     Text("\(node.server):\(node.port)")
-                        .font(LPFont.mono(10))
+                        .font(LPFont.mono(11))
                         .foregroundStyle(LP.textTertiary)
                         .lineLimit(1)
                 }
@@ -494,7 +492,7 @@ struct ProfilesView: View {
                 if let speed = speedResults[node.name] {
                     if let error = speed.error {
                         Text("测速失败")
-                            .font(LPFont.mono(10))
+                            .font(LPFont.mono(11))
                             .foregroundStyle(LP.danger)
                             .help(error)
                     } else {
@@ -513,7 +511,7 @@ struct ProfilesView: View {
                         ProgressView().controlSize(.mini)
                     } else {
                         Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                     }
                 }
                 .buttonStyle(LPGhostButtonStyle())
@@ -528,7 +526,7 @@ struct ProfilesView: View {
                         ProgressView().controlSize(.mini)
                     } else {
                         Image(systemName: "bolt")
-                            .font(.system(size: 10, weight: .semibold))
+                            .font(.system(size: 11, weight: .semibold))
                     }
                 }
                 .buttonStyle(LPGhostButtonStyle())
@@ -646,11 +644,11 @@ struct ProfilesView: View {
 
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "lock.shield")
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(LP.textTertiary)
                     .padding(.top, 1)
                 Text("导入在本机完成，在预览中确认后才启用；订阅只访问你粘贴的 URL，内容不会上传到其他服务器。")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -663,11 +661,11 @@ struct ProfilesView: View {
     private func sourceRow(_ name: String, _ detail: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 14) {
             Text(name)
-                .font(LPFont.mono(12))
+                .font(LPFont.mono(13))
                 .foregroundStyle(LP.textSecondary)
                 .frame(width: 130, alignment: .leading)
             Text(detail)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(LP.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)

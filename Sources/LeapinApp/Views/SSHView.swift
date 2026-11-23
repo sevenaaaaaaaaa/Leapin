@@ -56,20 +56,20 @@ struct SSHView: View {
                 HStack(alignment: .bottom, spacing: 12) {
                     field("主机 / HOST") {
                         TextField("主机名或 IP", text: $host)
-                            .font(LPFont.mono(12))
+                            .font(LPFont.mono(13))
                     }
                     .frame(minWidth: 200)
 
                     field("端口 / PORT") {
                         TextField("22", text: $port)
-                            .font(LPFont.mono(12))
+                            .font(LPFont.mono(13))
                             .multilineTextAlignment(.center)
                     }
                     .frame(width: 92)
 
                     field("用户 / USER") {
                         TextField("用户名", text: $user)
-                            .font(LPFont.mono(12))
+                            .font(LPFont.mono(13))
                     }
                     .frame(width: 158)
                 }
@@ -85,7 +85,7 @@ struct SSHView: View {
                     if useKey {
                         field("私钥 / KEY") {
                             TextField("私钥路径", text: $keyPath)
-                                .font(LPFont.mono(12))
+                                .font(LPFont.mono(13))
                         }
                         Button("选择…") { pickKey() }
                             .buttonStyle(LPGhostButtonStyle())
@@ -98,7 +98,7 @@ struct SSHView: View {
                         HStack(spacing: 7) {
                             LPSwitch(isOn: $remember, width: 32)
                             Text("记住密码（Keychain）")
-                                .font(.system(size: 12))
+                                .font(.system(size: 13))
                                 .foregroundStyle(LP.textSecondary)
                         }
                         .padding(.bottom, 7)
@@ -116,8 +116,8 @@ struct SSHView: View {
                             }
                         } label: {
                             HStack(spacing: 5) {
-                                Image(systemName: "bolt.slash").font(.system(size: 9, weight: .bold))
-                                Text("断开").font(.system(size: 12, weight: .semibold))
+                                Image(systemName: "bolt.slash").font(.system(size: 11, weight: .bold))
+                                Text("断开").font(.system(size: 13, weight: .semibold))
                             }
                         }
                         .buttonStyle(LPPrimaryButtonStyle(tint: LP.dangerFill))
@@ -126,8 +126,8 @@ struct SSHView: View {
                             connect()
                         } label: {
                             HStack(spacing: 5) {
-                                Image(systemName: "bolt.fill").font(.system(size: 9, weight: .bold))
-                                Text(connecting ? "连接中…" : "连接").font(.system(size: 12, weight: .semibold))
+                                Image(systemName: "bolt.fill").font(.system(size: 11, weight: .bold))
+                                Text(connecting ? "连接中…" : "连接").font(.system(size: 13, weight: .semibold))
                             }
                         }
                         .buttonStyle(LPPrimaryButtonStyle())
@@ -139,7 +139,7 @@ struct SSHView: View {
                     HStack(alignment: .top, spacing: 6) {
                         Circle().fill(LP.danger).frame(width: 5, height: 5).padding(.top, 5)
                         Text(errorText)
-                            .font(.system(size: 12))
+                            .font(.system(size: 13))
                             .foregroundStyle(LP.danger)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -155,7 +155,7 @@ struct SSHView: View {
         VStack(alignment: .leading, spacing: 6) {
             if let label {
                 Text(label)
-                    .font(LPFont.mono(10))
+                    .font(LPFont.mono(11))
                     .tracking(1.2)
                     .foregroundStyle(LP.textTertiary)
             }
@@ -173,7 +173,7 @@ struct SSHView: View {
         Button(action: action) {
             VStack(spacing: 5) {
                 Text(title)
-                    .font(.system(size: 12, weight: active ? .semibold : .regular))
+                    .font(.system(size: 13, weight: active ? .semibold : .regular))
                     .foregroundStyle(active ? LP.text : LP.textTertiary)
                 Rectangle()
                     .fill(active ? LP.accent : Color.clear)
@@ -203,7 +203,7 @@ struct SSHView: View {
                         app.showToast("已复制终端输出", kind: .info)
                     } label: {
                         Image(systemName: "doc.on.doc")
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                             .foregroundStyle(Color(red: 0.62, green: 0.68, blue: 0.78))
                     }
                     .buttonStyle(.plain)
@@ -214,7 +214,7 @@ struct SSHView: View {
                         output = ""
                     } label: {
                         Image(systemName: "eraser")
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                             .foregroundStyle(Color(red: 0.62, green: 0.68, blue: 0.78))
                     }
                     .buttonStyle(.plain)
@@ -241,7 +241,7 @@ struct SSHView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     Text(clean(output.isEmpty ? "连接后在此显示终端输出。支持交互式 shell（ssh -tt）。\n" : output))
-                        .font(LPFont.mono(12))
+                        .font(LPFont.mono(13))
                         .foregroundStyle(Color(red: 0.78, green: 0.86, blue: 0.95))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -261,7 +261,7 @@ struct SSHView: View {
                     .foregroundStyle(LP.mint)
                 TextField("", text: $command, prompt: Text("输入命令，回车发送").foregroundColor(Color(red: 0.42, green: 0.50, blue: 0.60)))
                     .textFieldStyle(.plain)
-                    .font(LPFont.mono(12))
+                    .font(LPFont.mono(13))
                     .foregroundStyle(Color(red: 0.85, green: 0.90, blue: 0.97))
                     .onSubmit(send)
                     .disabled(!connected)

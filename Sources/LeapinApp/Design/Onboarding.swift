@@ -28,7 +28,7 @@ struct OnboardingView: View {
             .font(.system(size: 13)).foregroundStyle(LP.text)
             LPDivider()
             Text("使用当前配置连接。Leapin 不提供代理节点；需要远程代理时，请先导入已有配置。系统代理仅适用于支持它的 App。")
-                .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 10) {
                 Button("连接网络") {
@@ -45,7 +45,7 @@ struct OnboardingView: View {
             }
             HStack(spacing: 8) {
                 LPKeyCap(keys: "⌘K")
-                Text("随时查找任务和专业工具").font(.system(size: 12)).foregroundStyle(LP.textTertiary)
+                Text("随时查找任务和专业工具").font(.system(size: 13)).foregroundStyle(LP.textTertiary)
             }
         }
         .padding(28).frame(width: 580)

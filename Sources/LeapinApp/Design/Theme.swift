@@ -33,6 +33,19 @@ enum LP {
     static let stroke = dyn(hex(0x16150F, 0.10), hex(0xFFFFFF, 0.12))
     static let strokeStrong = dyn(hex(0x16150F, 0.20), hex(0xFFFFFF, 0.20))
 
+    // MARK: v5 surfaces (DESIGN-v5 §6.1) — only three surfaces plus the hairline.
+    /// Window background: one sheet of paper.
+    static let paper = dyn(hex(0xF4EFE6), hex(0x0F0F10))
+    /// Content surface: modules, rows, inputs.
+    static let sheet = dyn(hex(0xFBF8F2), hex(0x161618))
+    /// The single focus band per screen. At most one per page.
+    static let ink = dyn(hex(0x19191B), hex(0x1C1C1F))
+    /// Hairline rule — replaces the double stroke.
+    static let line = dyn(hex(0x16150F, 0.10), hex(0xFFFFFF, 0.10))
+    /// Sidebar / list selection. Ink at 6%, never a tinted accent wash:
+    /// a pale vermilion row reads as a warning, not as "you are here".
+    static let selectionFill = dyn(hex(0x16150F, 0.06), hex(0xFFFFFF, 0.07))
+
     // Text
     static let text = dyn(hex(0x16150F), hex(0xF3F1EA))
     static let textSecondary = dyn(hex(0x5F5C53), hex(0xA6A39A))
@@ -80,7 +93,42 @@ enum LPFont {
     static func mono(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
         .system(size: size, weight: weight, design: .monospaced)
     }
-    static let overline = Font.system(size: 9, weight: .semibold)
+    static let overline = Font.system(size: 11, weight: .semibold)
+}
+
+/// v5 type scale (DESIGN-v5 §6.2). Nothing below 11pt; body is always 13.
+/// Use these instead of raw sizes so the scale is one place, not four hundred.
+enum LPType {
+    static let title = Font.system(size: 28, weight: .semibold)
+    static let section = Font.system(size: 15, weight: .semibold)
+    static let body = Font.system(size: 13)
+    static let label = Font.system(size: 11, weight: .medium, design: .monospaced)
+    static let data = Font.system(size: 20, weight: .semibold, design: .monospaced)
+    static let dataSmall = Font.system(size: 13, weight: .medium, design: .monospaced)
+    static let quote = Font.system(size: 15, design: .serif).italic()
+    /// The floor. A glyph may go below this only with a reason written in qa/T-15.
+    static let minimum: CGFloat = 11
+}
+
+/// v5 spacing scale (§6.3): 4 / 8 / 12 / 16 / 24 / 32 / 48.
+enum LPSpace {
+    static let xs: CGFloat = 4
+    static let s: CGFloat = 8
+    static let m: CGFloat = 12
+    static let l: CGFloat = 16
+    static let xl: CGFloat = 24
+    static let xxl: CGFloat = 32
+    static let xxxl: CGFloat = 48
+    static let page: CGFloat = 32
+    static let section: CGFloat = 24
+    static let module: CGFloat = 16
+}
+
+/// v5 radii (§6.3): panel 12, control 8, status pill full.
+enum LPRadius {
+    static let panel: CGFloat = 12
+    static let control: CGFloat = 8
+    static let pill: CGFloat = 999
 }
 
 // MARK: - Background
@@ -110,6 +158,45 @@ struct LPBackground: View {
 /// - glass is a surface material, not a fill: never layer an opaque colour behind it;
 /// - corner radii grow with the surface (panels 20, tiles 16, controls capsule);
 /// - interactive is only passed for elements the user can actually press.
+/// v5 content surface (DESIGN-v5 §6.1): paper + hairline, no material.
+/// Glass is reserved for overlays — menu bar panel, floating window, palette, sheet.
+struct LPSheetSurface: ViewModifier {
+    var radius: CGFloat = LPRadius.panel
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .fill(LP.sheet)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .strokeBorder(LP.line, lineWidth: 1)
+            )
+    }
+}
+
+extension View {
+    /// Put the content on paper. Use this instead of `lpGlass` anywhere the
+    /// surface belongs to the page rather than floating above it.
+    func lpSheet(radius: CGFloat = LPRadius.panel) -> some View {
+        modifier(LPSheetSurface(radius: radius))
+    }
+}
+
+/// v5 pill control surface: paper + hairline, used by chips and inline pickers.
+struct LPPillSurface: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .background(Capsule(style: .continuous).fill(LP.sheet))
+            .overlay(Capsule(style: .continuous).strokeBorder(LP.line, lineWidth: 1))
+    }
+}
+
+extension View {
+    func lpPill() -> some View { modifier(LPPillSurface()) }
+}
+
 enum LPGlass {
     static var isAvailable: Bool {
         if #available(macOS 26.0, *) { return true }
@@ -261,18 +348,18 @@ struct SectionHeader: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             if let icon {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(LP.textTertiary)   // 图标恒定中性：颜色只留给数据信号
                     .baselineOffset(-1)
             }
             Text(title)
-                .font(LPFont.display(14.5, weight: .semibold))
+                .font(LPType.section)
                 .tracking(-0.2)
                 .foregroundStyle(LP.text)
             Spacer(minLength: 8)
             if let subtitle {
                 Text(subtitle)
-                    .font(LPFont.mono(10))
+                    .font(LPFont.mono(11))
                     .foregroundStyle(LP.textTertiary)
                     .lineLimit(1)
             }
@@ -305,12 +392,12 @@ struct PageHeader: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 9) {
                     Text(title)
-                        .font(LPFont.display(22, weight: .semibold))
-                        .tracking(-0.6)
+                        .font(LPType.title)
+                        .tracking(-0.4)
                         .foregroundStyle(LP.text)
                 }
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .font(LPType.body)
                     .foregroundStyle(LP.textTertiary)
             }
             Spacer()
@@ -342,8 +429,8 @@ struct LPEyebrow: View {
 
     var body: some View {
         Text(text)
-            .font(LPFont.mono(12, weight: .medium))
-            .tracking(0.5)
+            .font(LPFont.mono(11, weight: .medium))
+            .tracking(0.8)
             .foregroundStyle(tint)
     }
 }
@@ -359,7 +446,7 @@ struct LPPrimaryButtonStyle: ButtonStyle {
             // 主操作保持不透明实色：tint 玻璃在浅底上会把朱红洗成灰，
             // 白字对比掉到 2:1 以下——可读性优先于材质一致性。
             configuration.label
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(isEnabled ? .white : LP.textTertiary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -380,7 +467,7 @@ struct LPGhostButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         LPButtonFocusRing(shape: RoundedRectangle(cornerRadius: 8, style: .continuous)) {
             configuration.label
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(LP.text)
                 .padding(.horizontal, 13)
                 .padding(.vertical, 6)

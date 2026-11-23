@@ -57,7 +57,7 @@ struct MenuBarPanel: View {
             HStack(spacing: 6) {
                 StatusDot(color: status.tone.ink, pulsing: engine.state == .running)
                 Text(status.title)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(size: 13.5, weight: .semibold))
                     .foregroundStyle(LP.text)
                     .lineLimit(1)
                 Spacer(minLength: 6)
@@ -80,7 +80,7 @@ struct MenuBarPanel: View {
 
             // §2.5 的一行事实：撞上去之前就知道，不写在免责声明里。
             Text(status.coverage.declaration)
-                .font(.system(size: 9.5))
+                .font(.system(size: 11))
                 .foregroundStyle(LP.textTertiary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
@@ -90,9 +90,9 @@ struct MenuBarPanel: View {
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                     Text(engine.state == .running ? "停止代理" : "启动代理")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                 }
                 .frame(maxWidth: .infinity)
             }
@@ -108,11 +108,11 @@ struct MenuBarPanel: View {
     private func factRow(_ label: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(label)
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundStyle(LP.textTertiary)
                 .frame(width: 26, alignment: .leading)
             Text(value)
-                .font(.system(size: 11.5))
+                .font(.system(size: 11))
                 .foregroundStyle(LP.text)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -123,7 +123,7 @@ struct MenuBarPanel: View {
     private func rate(_ symbol: String, _ text: String) -> some View {
         HStack(spacing: 3) {
             Image(systemName: symbol)
-                .font(.system(size: 8, weight: .bold))
+                .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(engine.state == .running ? LP.accent : LP.textTertiary)
             Text(text)
                 .font(LPFont.num(10.5, weight: .semibold))
@@ -181,7 +181,7 @@ struct MenuBarPanel: View {
                       action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 9.5, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(LP.textSecondary)
                 .lineLimit(1)
                 .padding(.horizontal, 5)
@@ -343,7 +343,7 @@ struct MenuBarPanel: View {
         HStack(alignment: .top, spacing: 5) {
             Image(systemName: issue.severity == .failure
                   ? "exclamationmark.triangle.fill" : "exclamationmark.circle")
-                .font(.system(size: 9))
+                .font(.system(size: 11))
                 .padding(.top, 1)
             Text(issue.text)
                 .lineLimit(3)
@@ -355,7 +355,7 @@ struct MenuBarPanel: View {
                     actionError = nil
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                         .padding(.top, 1)
                         .contentShape(Rectangle())
                 }
@@ -364,7 +364,7 @@ struct MenuBarPanel: View {
                 .accessibilityLabel("关掉这条提示")
             }
         }
-        .font(.system(size: 9.5))
+        .font(.system(size: 11))
         .foregroundStyle(issue.severity == .failure ? LP.danger : LP.amber)
     }
 
@@ -379,7 +379,7 @@ struct MenuBarPanel: View {
                     NSApp.activate(ignoringOtherApps: true)
                 } label: {
                     HStack(spacing: 5) {
-                        Text("命令面板").font(.system(size: 11.5))
+                        Text("命令面板").font(.system(size: 11))
                         Spacer(minLength: 0)
                         LPKeyCap(keys: "⌘K")
                     }
@@ -391,7 +391,7 @@ struct MenuBarPanel: View {
                     toggleFloating()
                 } label: {
                     Text(floating.isVisible ? "收起浮窗" : "实时浮窗")
-                        .font(.system(size: 11.5))
+                        .font(.system(size: 11))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(LP.textSecondary)
@@ -403,11 +403,11 @@ struct MenuBarPanel: View {
                     NSApp.activate(ignoringOtherApps: true)
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 11.5))
+                .font(.system(size: 11))
                 Spacer(minLength: 0)
                 Button("退出 Leapin") { NSApp.terminate(nil) }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 11))
                     .foregroundStyle(LP.textSecondary)
             }
         }
@@ -530,14 +530,14 @@ struct MenuBarRowLabel: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 9)).frame(width: 13)
+            Image(systemName: icon).font(.system(size: 11)).frame(width: 13)
                 .foregroundStyle(LP.textTertiary)
-            Text(title).font(.system(size: 11.5))
+            Text(title).font(.system(size: 11))
             Spacer(minLength: 6)
             Text(value).font(.system(size: 11))
                 .foregroundStyle(LP.textSecondary)
                 .lineLimit(1).truncationMode(.middle)
-            Image(systemName: "chevron.up.chevron.down").font(.system(size: 8))
+            Image(systemName: "chevron.up.chevron.down").font(.system(size: 11))
                 .foregroundStyle(LP.textTertiary)
         }
         .foregroundStyle(LP.text)

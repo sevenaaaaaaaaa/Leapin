@@ -770,10 +770,7 @@ private struct SidebarView: View {
         }
         .padding(.vertical, 6)
         .frame(width: compact ? 64 : 208)
-        .lpGlass(radius: 26,
-                 fallbackFill: LP.panel,
-                 fallbackMaterial: .ultraThinMaterial,
-                 shadow: 0.10)
+        .lpSheet(radius: 26)
     }
 
     /// 选中态只认 section 行：sheet 与导入是动作、不是页面，永远不选中。
@@ -793,29 +790,25 @@ private struct SidebarView: View {
         } label: {
             if compact {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(LP.textSecondary)
                     .frame(maxWidth: .infinity)
                     .frame(height: 30)
-                    .lpGlass(in: Capsule(style: .continuous),
-                             fallbackFill: LP.panel,
-                             fallbackMaterial: .thinMaterial)
+                    .lpPill()
             } else {
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(LP.textTertiary)
                     Text("任务或工具")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.textTertiary)
                     Spacer(minLength: 4)
                     LPKeyCap(keys: "⌘K")
                 }
                 .padding(.horizontal, 9)
                 .padding(.vertical, 6)
-                .lpGlass(in: Capsule(style: .continuous),
-                         fallbackFill: LP.panel,
-                         fallbackMaterial: .thinMaterial)
+                .lpPill()
             }
         }
         .buttonStyle(.plain)
@@ -847,7 +840,7 @@ private struct SidebarView: View {
                         .tracking(-0.2)
                         .foregroundStyle(LP.text)
                     Text("One leap. No detour.")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .tracking(0.1)
                         .foregroundStyle(LP.textTertiary)
                 }
@@ -870,17 +863,17 @@ private struct SidebarRow: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .frame(width: 18)
                     .foregroundStyle(selected ? LP.accent : LP.textSecondary)
                 if !compact {
                     Text(title)
-                        .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                        .font(.system(size: 13, weight: selected ? .semibold : .regular))
                         .foregroundStyle(selected ? LP.text : LP.textSecondary)
                     Spacer(minLength: 0)
                     if hover, let hint, !selected {
                         Text("⌘\(hint)")
-                            .font(LPFont.mono(10))
+                            .font(LPFont.mono(11))
                             .foregroundStyle(LP.textTertiary)
                     }
                 }
@@ -889,12 +882,8 @@ private struct SidebarRow: View {
             .padding(.vertical, compact ? 8 : 5)
             .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
             .background(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(selected ? LP.accent.opacity(0.13) : (hover ? LP.text.opacity(0.05) : Color.clear))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(selected ? LP.accent.opacity(0.22) : Color.clear, lineWidth: 1)
+                RoundedRectangle(cornerRadius: LPRadius.control, style: .continuous)
+                    .fill(selected ? LP.selectionFill : (hover ? LP.text.opacity(0.05) : Color.clear))
             )
             .overlay(alignment: .leading) {
                 // 紧凑栏里图标居中，左侧胶囊会压到图标；选中态由底色和强调色图标表达。
@@ -929,7 +918,7 @@ private struct StatusCard: View {
                     app.toggle()
                 } label: {
                     Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(engine.state == .running ? LP.danger : .white)
                         .frame(width: 26, height: 24)
                         .background(
@@ -946,13 +935,13 @@ private struct StatusCard: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 11)
-            .lpGlass(radius: 16, fallbackFill: LP.panel, fallbackMaterial: .thinMaterial)
+            .lpSheet(radius: 12)
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 7) {
                     StatusDot(color: stateColor, pulsing: engine.state == .running)
                     Text(engine.state.label)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(LP.text)
                     Spacer(minLength: 0)
                 }
@@ -969,9 +958,9 @@ private struct StatusCard: View {
                 } label: {
                     HStack(spacing: 5) {
                         Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 11, weight: .bold))
                         Text(engine.state == .running ? "停止代理" : "启动代理")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                         Spacer(minLength: 0)
                     }
                     .foregroundStyle(engine.state == .running ? LP.danger : LP.accent)
@@ -982,13 +971,13 @@ private struct StatusCard: View {
                 .accessibilityLabel(engine.state == .running ? "停止代理" : "启动代理")
             }
             .padding(12)
-            .lpGlass(radius: 18, fallbackFill: LP.panel, fallbackMaterial: .thinMaterial)
+            .lpSheet(radius: 12)
         }
     }
 
     private func portRow(_ label: String, _ port: UInt16) -> some View {
         HStack {
-            Text(label).font(.system(size: 10)).foregroundStyle(LP.textTertiary)
+            Text(label).font(.system(size: 11)).foregroundStyle(LP.textTertiary)
             Spacer()
             Text(":" + String(port)).font(LPFont.mono(10, weight: .medium)).foregroundStyle(LP.textSecondary)
         }
@@ -1023,7 +1012,7 @@ private struct PageHeaderBar: View {
                     app.showPalette = true
                 } label: {
                     HStack(spacing: 5) {
-                        Image(systemName: "command").font(.system(size: 9, weight: .semibold))
+                        Image(systemName: "command").font(.system(size: 11, weight: .semibold))
                         Text("⌘K").font(LPFont.mono(10, weight: .medium))
                     }
                     .foregroundStyle(LP.textSecondary)
@@ -1038,7 +1027,7 @@ private struct PageHeaderBar: View {
 
                 HStack(spacing: 8) {
                     Text("网络接管")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.textSecondary)
                     LPSwitch(isOn: Binding(
                         get: { engine.systemProxyActive },
@@ -1057,9 +1046,7 @@ private struct PageHeaderBar: View {
                     .padding(.horizontal, 10)
             }
             .frame(height: 30)
-            .lpGlass(in: Capsule(style: .continuous),
-                     fallbackFill: LP.panelSolid,
-                     fallbackMaterial: .regularMaterial)
+            .lpPill()
         }
     }
 
@@ -1080,9 +1067,7 @@ struct StatusChip: View {
                 label
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .lpGlass(in: Capsule(style: .continuous),
-                             fallbackFill: LP.panel,
-                             fallbackMaterial: .thinMaterial)
+                    .lpPill()
             }
         }
     }
@@ -1091,7 +1076,7 @@ struct StatusChip: View {
         HStack(spacing: 6) {
             StatusDot(color: color, pulsing: state == .running)
             Text(state.label)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(LP.textSecondary)
         }
     }

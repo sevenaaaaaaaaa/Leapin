@@ -80,7 +80,7 @@ struct RulesView: View {
         VStack(spacing: 0) {
             if engine.executionKernel == .mihomo {
                 Text("Mihomo 正在执行原始分流配置。此处为来源预览；修改请到线路与订阅重新导入。")
-                    .font(.system(size: 12)).foregroundStyle(LP.textSecondary).padding(12)
+                    .font(.system(size: 13)).foregroundStyle(LP.textSecondary).padding(12)
             }
             if !engine.temporaryRules.isEmpty {
                 temporaryRuleBanner
@@ -92,9 +92,7 @@ struct RulesView: View {
                 // 写入口逐个上锁：工具栏、行尾删除、⌫、临时规则清除、空态「添加规则」。
                 ruleList
                     .clipShape(RoundedRectangle(cornerRadius: LPGlass.panelRadius, style: .continuous))
-                    .lpGlass(radius: LPGlass.panelRadius,
-                             fallbackFill: LP.panel,
-                             shadow: 0.06)
+                    .lpSheet()
                 sidePanel.frame(width: 292)
             }
             .padding(.horizontal, 32)
@@ -197,8 +195,8 @@ struct RulesView: View {
                 app.showToast("配置已重新载入", kind: .info)
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "arrow.clockwise").font(.system(size: 9, weight: .bold))
-                    Text("重载").font(.system(size: 12, weight: .medium))
+                    Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .bold))
+                    Text("重载").font(.system(size: 13, weight: .medium))
                 }
             }
             .buttonStyle(LPGhostButtonStyle())
@@ -207,8 +205,8 @@ struct RulesView: View {
                 showAdd = true
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "plus").font(.system(size: 9, weight: .bold))
-                    Text("添加规则").font(.system(size: 12, weight: .semibold))
+                    Image(systemName: "plus").font(.system(size: 11, weight: .bold))
+                    Text("添加规则").font(.system(size: 13, weight: .semibold))
                 }
             }
             .buttonStyle(LPPrimaryButtonStyle())
@@ -226,7 +224,7 @@ struct RulesView: View {
                 .font(.system(size: 11))
                 .foregroundStyle(LP.textSecondary)
             Text(engine.temporaryRules.map { "\($0.value) → \($0.policy)" }.joined(separator: " · "))
-                .font(LPFont.mono(10))
+                .font(LPFont.mono(11))
                 .foregroundStyle(LP.textTertiary)
                 .lineLimit(1)
             Spacer()
@@ -362,7 +360,7 @@ struct RulesView: View {
             Spacer(minLength: 8)
             Text("首次命中裁决").foregroundStyle(LP.textTertiary)
         }
-        .font(LPFont.mono(10))
+        .font(LPFont.mono(11))
         .foregroundStyle(LP.textSecondary)
         .padding(.horizontal, 18)
         .padding(.vertical, 11)
@@ -463,10 +461,10 @@ struct RulesView: View {
                 .foregroundStyle(LP.textTertiary)
             VStack(alignment: .leading, spacing: 2) {
                 Text("学习建议")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(LP.text)
                 Text("不确定怎么分？从 App 列表或截图生成建议，再回这里逐条确认。")
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(LP.textTertiary)
             }
             Spacer(minLength: 12)
@@ -501,11 +499,11 @@ struct RulesView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 7) {
                         Text(group.name)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(LP.text)
                         Spacer()
                         Text(group.type.rawValue.uppercased())
-                            .font(LPFont.mono(10))
+                            .font(LPFont.mono(11))
                             .tracking(0.6)
                             .foregroundStyle(LP.textTertiary)
                     }
@@ -516,12 +514,12 @@ struct RulesView: View {
                     if group.type == .urlTest || group.type == .fallback || group.type == .loadBalance {
                         HStack(spacing: 6) {
                             Text("当前")
-                                .font(LPFont.mono(9))
+                                .font(LPFont.mono(11))
                                 .foregroundStyle(LP.textTertiary)
                             Text(engine.state == .running
                                  ? (engine.effectiveMember(group: group.name) ?? "—")
                                  : "未运行")
-                                .font(LPFont.mono(10))
+                                .font(LPFont.mono(11))
                                 .foregroundStyle(LP.textSecondary)
                                 .lineLimit(1)
                             Spacer(minLength: 4)
@@ -545,11 +543,11 @@ struct RulesView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 7) {
                         Text(group.name)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 13, weight: .medium))
                             .foregroundStyle(LP.text)
                         Spacer()
                         Text(group.type.uppercased())
-                            .font(LPFont.mono(10))
+                            .font(LPFont.mono(11))
                             .tracking(0.6)
                             .foregroundStyle(LP.textTertiary)
                     }
@@ -560,7 +558,7 @@ struct RulesView: View {
                         .disabled(groupBusy || Self.isLoadBalance(group.type))
                     if groupBusy {
                         Text("切换中…")
-                            .font(LPFont.mono(9))
+                            .font(LPFont.mono(11))
                             .foregroundStyle(LP.textTertiary)
                     }
                 }
@@ -631,16 +629,16 @@ struct RulesView: View {
                         HStack(spacing: 8) {
                             Circle().fill(color(for: outbound.type)).frame(width: 5, height: 5)
                             Text(outbound.name)
-                                .font(.system(size: 12))
+                                .font(.system(size: 13))
                                 .foregroundStyle(LP.text)
                             Spacer()
                             if let ms = engine.latency(for: outbound.name) {
                                 Text("\(ms) ms")
-                                    .font(LPFont.num(9.5))
+                                    .font(LPFont.num(11))
                                     .foregroundStyle(LP.textTertiary)
                             }
                             Text(outbound.type.rawValue)
-                                .font(LPFont.mono(10))
+                                .font(LPFont.mono(11))
                                 .foregroundStyle(LP.textTertiary)
                         }
                         .padding(.vertical, 3)
@@ -656,7 +654,7 @@ struct RulesView: View {
                     } else {
                         ForEach(sets) { rule in
                             Text(rule.value)
-                                .font(LPFont.mono(10))
+                                .font(LPFont.mono(11))
                                 .foregroundStyle(LP.textSecondary)
                                 .lineLimit(1)
                         }
@@ -693,12 +691,12 @@ struct RulesView: View {
         let scored = group.proxies.compactMap { name in engine.latency(for: name).map { (name, $0) } }
         if let fastest = scored.min(by: { $0.1 < $1.1 }) {
             Text("最快 \(fastest.0) \(fastest.1) ms")
-                .font(LPFont.mono(9))
+                .font(LPFont.mono(11))
                 .foregroundStyle(LP.textTertiary)
                 .lineLimit(1)
         } else {
             Text("尚未测速")
-                .font(LPFont.mono(9))
+                .font(LPFont.mono(11))
                 .foregroundStyle(LP.textTertiary)
         }
     }
@@ -719,15 +717,15 @@ struct RulesView: View {
                     Button { jump(to: item.diagnostic.index) } label: {
                         HStack(spacing: 6) {
                             Text("#\(item.diagnostic.index + 1)")
-                                .font(LPFont.mono(9))
+                                .font(LPFont.mono(11))
                                 .foregroundStyle(LP.textTertiary)
                             Text(item.rule.value)
-                                .font(LPFont.mono(10))
+                                .font(LPFont.mono(11))
                                 .foregroundStyle(LP.textSecondary)
                                 .lineLimit(1)
                             Spacer(minLength: 4)
                             Text(diagnosticLabel(item.diagnostic.kind))
-                                .font(LPFont.mono(9))
+                                .font(LPFont.mono(11))
                                 .foregroundStyle(LP.danger)
                         }
                         .contentShape(Rectangle())
@@ -776,7 +774,7 @@ struct RulesView: View {
 
     private func railNote(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 10))
+            .font(.system(size: 11))
             .foregroundStyle(LP.textTertiary)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -784,7 +782,7 @@ struct RulesView: View {
     private func shortcut(_ key: String, _ label: String) -> some View {
         HStack(spacing: 8) {
             LPKeyCap(keys: key)
-            Text(label).font(.system(size: 10)).foregroundStyle(LP.textTertiary)
+            Text(label).font(.system(size: 11)).foregroundStyle(LP.textTertiary)
         }
     }
 
@@ -806,7 +804,7 @@ struct RuleRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Text("\(index)")
-                .font(LPFont.mono(10))
+                .font(LPFont.mono(11))
                 .foregroundStyle(LP.textTertiary)
                 .frame(width: 30, alignment: .leading)
             Text(label)
@@ -816,7 +814,7 @@ struct RuleRow: View {
                 .lineLimit(1)
                 .frame(width: 66, alignment: .leading)
             Text(rule.value)
-                .font(LPFont.mono(12))
+                .font(LPFont.mono(13))
                 .foregroundStyle(LP.text)
                 .lineLimit(1)
             if rule.noResolve { Badge(text: "no-resolve", color: LP.textTertiary) }
@@ -971,10 +969,10 @@ struct AddRuleSheet: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("不做 DNS 解析")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.text)
                     Text("no-resolve，IP 规则常用")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.textTertiary)
                 }
                 Spacer(minLength: 12)
@@ -984,8 +982,8 @@ struct AddRuleSheet: View {
 
             if let validationError {
                 HStack(spacing: 6) {
-                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9))
-                    Text(validationError).font(.system(size: 12))
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11))
+                    Text(validationError).font(.system(size: 13))
                 }
                 .foregroundStyle(LP.danger)
                 .padding(.top, 8)
@@ -993,9 +991,9 @@ struct AddRuleSheet: View {
 
             if let draftWarning {
                 HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "eye.slash.fill").font(.system(size: 9))
+                    Image(systemName: "eye.slash.fill").font(.system(size: 11))
                     Text(draftWarning)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .foregroundStyle(LP.textSecondary)
@@ -1004,7 +1002,7 @@ struct AddRuleSheet: View {
 
             if !trimmedValue.isEmpty {
                 Text("\(kind.rawValue.uppercased()), \(trimmedValue), \(policy)" + (noResolve ? ", no-resolve" : ""))
-                    .font(LPFont.mono(10))
+                    .font(LPFont.mono(11))
                     .foregroundStyle(LP.textTertiary)
                     .lineLimit(1)
                     .padding(.top, 10)

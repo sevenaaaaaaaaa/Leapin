@@ -13,7 +13,7 @@ struct SceneConfigurationView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Label(scene.title, systemImage: scene.icon).font(LPFont.display(23, weight: .semibold))
+                Label(scene.title, systemImage: scene.icon).font(LPFont.display(28, weight: .semibold))
                 Spacer()
                 Button("关闭") { app.sceneToConfigure = nil }.buttonStyle(LPGhostButtonStyle()).disabled(app.networkBusy)
             }
@@ -25,7 +25,7 @@ struct SceneConfigurationView: View {
                 ForEach(app.engine.profiles) { meta in Text(meta.name).tag(meta.id.uuidString) }
             }
             Text("场景使用所选方案的分流、节点、DNS 与过滤设置。需要专用规则时，请先导入或编辑相应方案。未运行服务时，切换只选定配置，连接后生效。")
-                .font(.system(size: 12)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: 13)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
             LPDivider()
             HStack {
                 Button(app.networkBusy ? "正在切换…" : "保存并切换") {
@@ -51,24 +51,24 @@ struct BookmarksView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("常用网站").font(LPFont.display(23, weight: .semibold))
+                Text("常用网站").font(LPFont.display(28, weight: .semibold))
                 Spacer()
                 Button("导入书签…") { importing = true }.buttonStyle(LPGhostButtonStyle())
                 Button("完成") { app.showBookmarks = false }.buttonStyle(LPGhostButtonStyle())
             }
             Text("固定到总览，直接打开或检查网络。支持浏览器导出的 HTML 和 Chromium 书签 JSON，仅在本机解析。")
-                .font(.system(size: 12)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: 13)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
             if let preview {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("\(preview.source) · 待导入 \(preview.additions.count) · 重复 \(preview.duplicates) · 跳过 \(preview.skipped)")
                         .font(.system(size: 13, weight: .medium))
                     Text("仅保留 HTTP / HTTPS 网站；不导入脚本、文件链接或含登录凭据的地址。文件夹作为标签保留。")
-                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                        .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                     ScrollView {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(Array(preview.additions.prefix(100))) { item in
                                 Text("\(item.folder.map { $0 + " / " } ?? "")\(item.title) · \(item.url.absoluteString)")
-                                    .font(.system(size: 12)).lineLimit(2).textSelection(.enabled)
+                                    .font(.system(size: 13)).lineLimit(2).textSelection(.enabled)
                             }
                             if preview.additions.count > 100 { Text("预览前 100 条，将合并全部 \(preview.additions.count) 条。") }
                         }.frame(maxWidth: .infinity, alignment: .leading)
@@ -94,7 +94,7 @@ struct BookmarksView: View {
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
                                     Text(item.folder.map { $0 + " · " + (item.url.host ?? "") } ?? item.url.host ?? "网站")
-                                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary).lineLimit(1)
+                                        .font(.system(size: 13)).foregroundStyle(LP.textSecondary).lineLimit(1)
                                 }
                                 Spacer()
                                 Button("打开") { NSWorkspace.shared.open(item.url) }.buttonStyle(LPGhostButtonStyle())
@@ -108,7 +108,7 @@ struct BookmarksView: View {
                     }
                 }.frame(height: 260)
             }
-            if let message { Text(message).font(.system(size: 12)).foregroundStyle(LP.textSecondary).textSelection(.enabled) }
+            if let message { Text(message).font(.system(size: 13)).foregroundStyle(LP.textSecondary).textSelection(.enabled) }
             if store.canUndoImport {
                 Button("撤销本次导入") {
                     do { try store.undoImport(); message = "已移除本次导入的网站，保留原有及后来添加的书签。" }
@@ -152,7 +152,7 @@ struct KernelCapabilitiesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             HStack {
-                Text("协议与执行能力").font(LPFont.display(23, weight: .semibold))
+                Text("协议与执行能力").font(LPFont.display(28, weight: .semibold))
                 Spacer()
                 Button("完成") { app.showCapabilities = false }.buttonStyle(LPGhostButtonStyle())
             }
@@ -171,17 +171,17 @@ struct KernelCapabilitiesView: View {
                         Text(row.2).foregroundStyle(LP.textSecondary)
                     }
                 }
-            }.font(.system(size: 12))
+            }.font(.system(size: 13))
             LPDivider()
             Text(managed.version ?? (KernelExecutable.mihomo() == nil ? "本机未发现 Mihomo" : "已发现 Mihomo，正在读取版本…"))
-                .font(LPFont.mono(12)).textSelection(.enabled)
+                .font(LPFont.mono(13)).textSelection(.enabled)
             HStack {
                 Button("选择 Mihomo 可执行文件…") { chooseExecutable() }.buttonStyle(LPGhostButtonStyle())
                 Button("导入并检查配置") { app.showCapabilities = false; app.beginImport() }.buttonStyle(LPPrimaryButtonStyle())
             }
-            if let message { Text(message).font(.system(size: 12)).foregroundStyle(LP.danger) }
+            if let message { Text(message).font(.system(size: 13)).foregroundStyle(LP.danger) }
             Link("查看 Mihomo 官方协议与控制文档", destination: URL(string: "https://wiki.metacubex.one/")!)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
         }
         .padding(26).frame(width: 760).foregroundStyle(LP.text).background(LP.bg)
         .task { await managed.discover() }

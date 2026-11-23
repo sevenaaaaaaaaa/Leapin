@@ -116,12 +116,12 @@ struct WhyPage: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 Text(WorkbenchVerb.why.question)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.textTertiary)
                 Spacer(minLength: 8)
                 Button("改成走公司…") { openRuleEditor() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(LP.accent)
                     .disabled(assistant.busy || engine.executionKernel != .native)
                     .help(ruleEntryHelp)
@@ -258,7 +258,7 @@ private struct RuleDraftEditor: View {
                 .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(LP.text)
             Text("生成一条只含这个 host 的规则，保存后就在「为什么」里用新规则重测同一个主机。")
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .foregroundStyle(LP.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             TextField("主机或完整网址", text: $host)
@@ -268,7 +268,7 @@ private struct RuleDraftEditor: View {
                 .background(LP.text.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(LP.stroke))
             HStack(spacing: 10) {
-                Text("走哪条").font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                Text("走哪条").font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                 Picker("出口", selection: $policy) {
                     ForEach(policies, id: \.self) { name in
                         Text(name).tag(name)
@@ -279,7 +279,7 @@ private struct RuleDraftEditor: View {
                 Spacer(minLength: 0)
             }
             if let error {
-                Text(error).font(.system(size: 12)).foregroundStyle(LP.danger)
+                Text(error).font(.system(size: 13)).foregroundStyle(LP.danger)
             }
             HStack(spacing: 10) {
                 Text("写的是 host 精确规则，不动其他规则；保存后可撤销。")

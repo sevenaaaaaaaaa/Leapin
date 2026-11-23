@@ -53,9 +53,9 @@ struct NASView: View {
                     } label: {
                         HStack(spacing: 5) {
                             Image(systemName: scanning ? "stop.circle" : "antenna.radiowaves.left.and.right")
-                                .font(.system(size: 9, weight: .bold))
+                                .font(.system(size: 11, weight: .bold))
                             Text(scanning ? "停止扫描" : "开始扫描")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.system(size: 13, weight: .semibold))
                         }
                     }
                     .buttonStyle(LPPrimaryButtonStyle())
@@ -65,18 +65,16 @@ struct NASView: View {
 
                     HStack(spacing: 6) {
                         Image(systemName: "keyboard")
-                            .font(.system(size: 10))
+                            .font(.system(size: 11))
                             .foregroundStyle(LP.textTertiary)
                         TextField("", text: $manualHost, prompt: Text("手动输入主机名 / IP").foregroundColor(LP.textTertiary))
                             .textFieldStyle(.plain)
-                            .font(LPFont.mono(12))
+                            .font(LPFont.mono(13))
                             .onSubmit(addManual)
                     }
                     .padding(.horizontal, 12)
                     .frame(height: 30)
-                    .lpGlass(in: Capsule(style: .continuous),
-                             fallbackFill: LP.panelSolid,
-                             fallbackMaterial: .thinMaterial)
+                    .lpPill()
                     .frame(width: 250)
 
                     Button("添加", action: addManual)
@@ -89,7 +87,7 @@ struct NASView: View {
                         .fill(scanning ? LP.amber : LP.textTertiary)
                         .frame(width: 5, height: 5)
                     Text(scanning ? "正在扫描局域网中的 SMB 广播…" : "未发现设备？点开始扫描，或手动输入 NAS 的 IP / 主机名。")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(scanning ? LP.amber : LP.textTertiary)
                 }
             }
@@ -121,16 +119,16 @@ struct NASView: View {
                                 .frame(width: 2, height: 26)
 
                             Image(systemName: "externaldrive")
-                                .font(.system(size: 12))
+                                .font(.system(size: 13))
                                 .foregroundStyle(LP.textSecondary)
                                 .frame(width: 16)
 
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(device.name)
-                                    .font(.system(size: 12, weight: .medium))
+                                    .font(.system(size: 13, weight: .medium))
                                     .foregroundStyle(LP.text)
                                 Text("\(device.host):\(device.port) · \(device.service)")
-                                    .font(LPFont.mono(10))
+                                    .font(LPFont.mono(11))
                                     .foregroundStyle(LP.textTertiary)
                             }
 
@@ -141,7 +139,7 @@ struct NASView: View {
                             }
                             if selected == device {
                                 Text("已选择")
-                                    .font(LPFont.mono(10))
+                                    .font(LPFont.mono(11))
                                     .tracking(1)
                                     .foregroundStyle(LP.textTertiary)
                             }
@@ -177,27 +175,25 @@ struct NASView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 12) {
                         GridRow {
-                            Text("共享名").font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                            Text("共享名").font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                             field($share, "home / Media / Backup", mono: false)
                         }
                         GridRow {
-                            Text("用户名").font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                            Text("用户名").font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                             field($user, "用户名", mono: true)
                         }
                         GridRow {
-                            Text("密码").font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                            Text("密码").font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                             HStack(spacing: 10) {
                                 SecureField("密码", text: $password)
                                     .textFieldStyle(.plain)
                                     .font(.system(size: 13))
                                     .padding(.horizontal, 12)
                                     .frame(width: 220, height: 30)
-                                    .lpGlass(in: Capsule(style: .continuous),
-                                             fallbackFill: LP.panelSolid,
-                                             fallbackMaterial: .thinMaterial)
+                                    .lpPill()
                                 Toggle("记住（钥匙串）", isOn: $remember)
                                     .toggleStyle(.checkbox)
-                                    .font(.system(size: 12))
+                                    .font(.system(size: 13))
                                     .foregroundStyle(LP.textSecondary)
                             }
                         }
@@ -210,10 +206,10 @@ struct NASView: View {
                         } label: {
                             HStack(spacing: 5) {
                                 Image(systemName: "externaldrive.badge.plus")
-                                    .font(.system(size: 9, weight: .bold))
+                                    .font(.system(size: 11, weight: .bold))
                                     .foregroundStyle(LP.accent)
                                 Text(busy ? "挂载中…" : "挂载")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .font(.system(size: 13, weight: .semibold))
                             }
                         }
                         .buttonStyle(LPGhostButtonStyle())
@@ -242,7 +238,7 @@ struct NASView: View {
 
                     if !password.isEmpty {
                         Text("凭据只保存在本机钥匙串（可选），不会写进配置文件或日志。")
-                            .font(.system(size: 12))
+                            .font(.system(size: 13))
                             .foregroundStyle(LP.textTertiary)
                     }
                 }
@@ -253,12 +249,12 @@ struct NASView: View {
                         .font(.system(size: 20, weight: .light))
                         .foregroundStyle(LP.textTertiary)
                     Text("还没有选择设备")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(LP.textSecondary)
                     Text(devices.isEmpty
                          ? "先在「发现 NAS」中扫描，或手动输入主机名添加设备；选中后这里会出现共享名与凭据表单。"
                          : "在上方设备列表中点选一台，再填写共享名与凭据。")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: 460, alignment: .leading)
@@ -297,7 +293,7 @@ struct NASView: View {
 
     private func note(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12))
+            .font(.system(size: 13))
             .foregroundStyle(LP.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 12)
@@ -307,12 +303,10 @@ struct NASView: View {
     private func field(_ text: Binding<String>, _ placeholder: String, mono: Bool) -> some View {
         TextField("", text: text, prompt: Text(placeholder).foregroundColor(LP.textTertiary))
             .textFieldStyle(.plain)
-            .font(mono ? LPFont.mono(12) : .system(size: 13))
+            .font(mono ? LPFont.mono(13) : .system(size: 13))
             .padding(.horizontal, 12)
             .frame(width: 260, height: 30)
-            .lpGlass(in: Capsule(style: .continuous),
-                     fallbackFill: LP.panelSolid,
-                     fallbackMaterial: .thinMaterial)
+            .lpPill()
     }
 
     // MARK: Actions

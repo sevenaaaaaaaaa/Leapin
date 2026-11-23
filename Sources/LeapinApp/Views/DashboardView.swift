@@ -116,7 +116,7 @@ private struct DashboardContent: View {
                 HStack {
                     Text("随手可用").font(.system(size: 15, weight: .semibold))
                     Spacer()
-                    Text("⌘K 查找更多工具").font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                    Text("⌘K 查找更多工具").font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                 }
                 VStack(alignment: .leading, spacing: 10) {
                     VStack(spacing: 0) {
@@ -158,12 +158,12 @@ private struct DashboardContent: View {
                     Image(systemName: "cpu").foregroundStyle(LP.textSecondary)
                     // 配置名已经在「当前配置」里，这里只留内核：同一屏不重复同一个事实。
                     Text("内核：\(model.kernel.title)")
-                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary).lineLimit(1)
+                        .font(.system(size: 13)).foregroundStyle(LP.textSecondary).lineLimit(1)
                     Spacer()
                     Button("支持哪些协议？") { app.showCapabilities = true }.buttonStyle(.plain)
-                        .font(.system(size: 12, weight: .medium)).foregroundStyle(LP.accent)
+                        .font(.system(size: 13, weight: .medium)).foregroundStyle(LP.accent)
                     Button("设置") { app.go(to: .settings) }.buttonStyle(.plain)
-                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                        .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                 }.padding(.top, 4)
             }.pagePadding()
         }
@@ -205,16 +205,16 @@ private struct DashboardContent: View {
             HStack(alignment: .center, spacing: 12) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("你的网络，随需而行。")
-                        .font(LPFont.display(26, weight: .semibold)).tracking(-0.5)
+                        .font(LPFont.display(28, weight: .semibold)).tracking(-0.5)
                     HStack(spacing: 7) {
                         // 状态行读 store 的标题（与面板同一个 tone、同一句话）；store 还没被
                         // 任何一面推过帧时（title 为空）才退回引擎自己的状态文案。
                         StatusDot(color: status.tone.ink, pulsing: model.state == .running)
                         Text(status.title.isEmpty ? model.state.label : status.title)
-                            .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
-                        Text("·").font(.system(size: 12)).foregroundStyle(LP.textTertiary)
+                            .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
+                        Text("·").font(.system(size: 13)).foregroundStyle(LP.textTertiary)
                         Text(activeScene?.title ?? "尚未选择场景")
-                            .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                            .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                     }
                 }
                 Spacer(minLength: 8)
@@ -223,7 +223,7 @@ private struct DashboardContent: View {
                 }.buttonStyle(LPGhostButtonStyle()).disabled(app.networkBusy || app.engine.configurationBusy || model.state == .starting)
             }
             if let message = app.networkMessage {
-                Text(message).font(.system(size: 12)).foregroundStyle(app.networkFailed ? LP.danger : LP.textSecondary)
+                Text(message).font(.system(size: 13)).foregroundStyle(app.networkFailed ? LP.danger : LP.textSecondary)
             }
         }
     }
@@ -247,10 +247,10 @@ private struct DashboardContent: View {
             }
             HStack(spacing: 6) {
                 Image(systemName: status.coverage.isCoveringTraffic ? "checkmark.shield" : "exclamationmark.shield")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(status.coverage.isCoveringTraffic ? LP.mint : LP.amber)
                 Text(status.coverage.declaration)
-                    .font(.system(size: 11.5))
+                    .font(.system(size: 11))
                     .foregroundStyle(LP.textSecondary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
@@ -338,13 +338,13 @@ private struct DashboardContent: View {
                         LPKeyCap(keys: "⌘\(verb.shortcut)")
                     }
                     Text(stateLine(for: verb))
-                        .font(.system(size: 11.5))
+                        .font(.system(size: 11))
                         .foregroundStyle(LP.textSecondary)
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(LP.textTertiary)
                     .padding(.top, 3)
             }
@@ -384,7 +384,7 @@ private struct DashboardContent: View {
                 Spacer()
                 if let activeScene {
                     Button("调整当前场景") { app.sceneToConfigure = activeScene }.buttonStyle(.plain)
-                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                        .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                 }
             }
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {
@@ -392,9 +392,9 @@ private struct DashboardContent: View {
                     Button { app.switchScene(scene) } label: {
                         VStack(spacing: 8) {
                             Image(systemName: scene.icon).font(.system(size: 18))
-                            Text(scene.title).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                            Text(scene.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
                             Text(scenes.profileID(for: scene) == nil ? "设置方案" : activeScene == scene ? (model.state == .running ? "使用中" : "已选择") : "可切换")
-                                .font(.system(size: 10)).foregroundStyle(activeScene == scene ? LP.accent : LP.textTertiary)
+                                .font(.system(size: 11)).foregroundStyle(activeScene == scene ? LP.accent : LP.textTertiary)
                         }
                         .foregroundStyle(activeScene == scene ? LP.accent : LP.text)
                         .frame(maxWidth: .infinity).padding(.vertical, 14)
@@ -416,7 +416,7 @@ private struct DashboardContent: View {
             HStack {
                 Label("常用书签", systemImage: "bookmark").font(.system(size: 15, weight: .semibold))
                 Spacer()
-                Button("管理") { app.showBookmarks = true }.buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(LP.accent)
+                Button("管理") { app.showBookmarks = true }.buttonStyle(.plain).font(.system(size: 13)).foregroundStyle(LP.accent)
             }
             if bookmarks.items.isEmpty {
                 Text("把常用网站放在这里，打开、检查，一步可达。")
@@ -430,7 +430,7 @@ private struct DashboardContent: View {
                             .font(.system(size: 13)).foregroundStyle(LP.text).lineLimit(1)
                         Spacer()
                         Button("检查") { app.openTask(bookmark.url.absoluteString) }.buttonStyle(.plain)
-                            .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                            .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                     }
                 }
             }
@@ -453,7 +453,7 @@ private struct DashboardContent: View {
             ForEach(Array(actions.enumerated()), id: \.offset) { _, action in
                 Button(action.0) { action.1() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.accent)
             }
         }
@@ -463,7 +463,7 @@ private struct DashboardContent: View {
 
     private func textAction(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Label(title, systemImage: icon).font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+            Label(title, systemImage: icon).font(.system(size: 13)).foregroundStyle(LP.textSecondary)
         }.buttonStyle(.plain)
     }
     private func copyTerminal() {

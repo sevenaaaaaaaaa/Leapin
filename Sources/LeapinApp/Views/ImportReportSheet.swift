@@ -44,7 +44,7 @@ struct ImportReportSheet: View {
                     .font(LPFont.display(15, weight: .semibold))
                     .foregroundStyle(LP.text)
                 Text(report.summary)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -89,15 +89,15 @@ struct ImportReportSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Image(systemName: "bolt.slash")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(LP.amber)
                 Text("\(report.notDialable.count) 个出站暂不可拨号")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(LP.text)
                 Spacer(minLength: 0)
             }
             Text(report.notDialable.joined(separator: "  ·  "))
-                .font(LPFont.mono(10))
+                .font(LPFont.mono(11))
                 .foregroundStyle(LP.textSecondary)
                 .lineLimit(3)
                 .textSelection(.enabled)
@@ -123,10 +123,10 @@ struct ImportReportSheet: View {
             if report.issues.isEmpty {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.mint)
                     Text("所有字段都已识别，没有跳过任何内容。")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.textSecondary)
                     Spacer()
                 }
@@ -152,7 +152,7 @@ struct ImportReportSheet: View {
     private func issueRow(index: Int, issue: ImportIssue) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Text(String(format: "%02d", index + 1))
-                .font(LPFont.mono(10))
+                .font(LPFont.mono(11))
                 .foregroundStyle(LP.textTertiary)
                 .frame(width: 20, alignment: .trailing)
                 .padding(.top, 1)
@@ -161,12 +161,12 @@ struct ImportReportSheet: View {
             VStack(alignment: .leading, spacing: 4) {
                 Badge(text: kindLabel(issue.kind), color: kindColor(issue.kind))
                 Text(issue.display)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.text)
                     .fixedSize(horizontal: false, vertical: true)
                 if !issue.item.isEmpty, issue.item != issue.message {
                     Text(issue.item)
-                        .font(LPFont.mono(10))
+                        .font(LPFont.mono(11))
                         .foregroundStyle(LP.textTertiary)
                         .lineLimit(1)
                 }
@@ -187,9 +187,9 @@ struct ImportReportSheet: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                     Text(copied ? "已复制" : "复制报告")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                 }
             }
             .buttonStyle(LPGhostButtonStyle())

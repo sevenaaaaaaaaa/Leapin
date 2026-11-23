@@ -118,13 +118,13 @@ struct CaptureView: View {
                                     LPEyebrow(text: "请求详情 / Request")
                                     Spacer(minLength: 6)
                                     Text("esc")
-                                        .font(LPFont.mono(10))
+                                        .font(LPFont.mono(11))
                                         .foregroundStyle(LP.textTertiary)
                                     Button {
                                         selected = nil
                                     } label: {
                                         Image(systemName: "xmark")
-                                            .font(.system(size: 9, weight: .bold))
+                                            .font(.system(size: 11, weight: .bold))
                                             .foregroundStyle(LP.textSecondary)
                                     }
                                     .buttonStyle(.plain)
@@ -153,9 +153,7 @@ struct CaptureView: View {
                     }
                 }
             }
-            .lpGlass(radius: LPGlass.panelRadius,
-                     fallbackFill: LP.panel,
-                     shadow: 0.06)
+            .lpSheet()
             .padding(.horizontal, 32)
             .padding(.top, 16)
             .padding(.bottom, 24)
@@ -226,8 +224,8 @@ struct CaptureView: View {
                 }
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: paused ? "play.fill" : "pause.fill").font(.system(size: 9, weight: .bold))
-                    Text(paused ? "继续" : "暂停").font(.system(size: 12, weight: .medium))
+                    Image(systemName: paused ? "play.fill" : "pause.fill").font(.system(size: 11, weight: .bold))
+                    Text(paused ? "继续" : "暂停").font(.system(size: 13, weight: .medium))
                 }
             }
             .buttonStyle(LPGhostButtonStyle())
@@ -238,7 +236,7 @@ struct CaptureView: View {
 
             HStack(spacing: 7) {
                 Text("HTTPS 解密")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.textSecondary)
                 LPSwitch(isOn: Binding(
                     get: { engine.profile.general.mitmEnabled },
@@ -258,9 +256,9 @@ struct CaptureView: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "waveform.path.ecg")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                     Text("观测")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                 }
             }
             .buttonStyle(LPGhostButtonStyle())
@@ -268,8 +266,8 @@ struct CaptureView: View {
 
             Button { exportHAR() } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "square.and.arrow.up").font(.system(size: 9, weight: .bold))
-                    Text("导出 HAR").font(.system(size: 12, weight: .medium))
+                    Image(systemName: "square.and.arrow.up").font(.system(size: 11, weight: .bold))
+                    Text("导出 HAR").font(.system(size: 13, weight: .medium))
                 }
             }
             .buttonStyle(LPGhostButtonStyle())
@@ -277,8 +275,8 @@ struct CaptureView: View {
 
             Button { showClearConfirm = true } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "trash").font(.system(size: 9, weight: .bold))
-                    Text("清空").font(.system(size: 12, weight: .medium))
+                    Image(systemName: "trash").font(.system(size: 11, weight: .bold))
+                    Text("清空").font(.system(size: 13, weight: .medium))
                 }
             }
             .buttonStyle(LPGhostButtonStyle())
@@ -309,7 +307,7 @@ struct CaptureView: View {
                     statusFilter = .all
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundStyle(LP.accent)
             }
         }
@@ -344,7 +342,7 @@ struct CaptureView: View {
                     Text(engine.profile.general.captureEnabled
                          ? "把应用流量指向 127.0.0.1:\(engine.profile.general.mixedPort)，明文请求会逐条落在这里；HTTPS 需开启解密。"
                          : "到设置页打开「抓包」后再回来。")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -449,7 +447,7 @@ struct CaptureView: View {
                 .frame(width: 2, height: 15)
                 .lpAnimation(LPMotion.emphasized, value: freshID)
             Text(request.method)
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
                 .frame(width: 32)
                 .padding(.vertical, 3)
                 .background(methodColor(request.method).opacity(0.10), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
@@ -458,16 +456,16 @@ struct CaptureView: View {
                 HStack(spacing: 5) {
                     if request.blocked {
                         Image(systemName: "hand.raised.fill")
-                            .font(.system(size: 9))
+                            .font(.system(size: 11))
                             .foregroundStyle(LP.danger)
                     }
                     Text(request.host)
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 13, weight: .medium))
                         .foregroundStyle(LP.text)
                         .lineLimit(1)
                 }
                 Text(path(request.url))
-                    .font(LPFont.mono(10))
+                    .font(LPFont.mono(11))
                     .foregroundStyle(LP.textTertiary)
                     .lineLimit(1)
             }
@@ -484,7 +482,7 @@ struct CaptureView: View {
                     .frame(width: 34, alignment: .trailing)
             }
             Text(Fmt.duration(request.durationMs))
-                .font(LPFont.num(10))
+                .font(LPFont.num(11))
                 .foregroundStyle(LP.textTertiary)
                 .frame(width: 52, alignment: .trailing)
         }
@@ -510,7 +508,7 @@ struct CaptureView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         HStack(alignment: .top) {
                             Badge(text: req.method, color: methodColor(req.method))
-                            Text(req.url).font(LPFont.mono(12)).textSelection(.enabled).lineLimit(2)
+                            Text(req.url).font(LPFont.mono(13)).textSelection(.enabled).lineLimit(2)
                             Spacer(minLength: 6)
                             Menu {
                                 Button("复制 URL") {
@@ -531,7 +529,7 @@ struct CaptureView: View {
                                 }
                             } label: {
                                 Image(systemName: "doc.on.doc")
-                                    .font(.system(size: 10, weight: .medium))
+                                    .font(.system(size: 11, weight: .medium))
                             }
                             .menuStyle(.borderlessButton)
                             .menuIndicator(.hidden)
@@ -546,15 +544,15 @@ struct CaptureView: View {
                             }
                             if let mime = req.mimeType {
                                 Text(mime)
-                                    .font(LPFont.mono(9.5))
+                                    .font(LPFont.mono(11))
                                     .foregroundStyle(LP.textTertiary)
                                     .lineLimit(1)
                             }
                             Text(Fmt.clock(req.timestamp))
-                                .font(LPFont.mono(9.5))
+                                .font(LPFont.mono(11))
                                 .foregroundStyle(LP.textTertiary)
                             Text(Fmt.duration(req.durationMs))
-                                .font(LPFont.num(9.5))
+                                .font(LPFont.num(11))
                                 .foregroundStyle(LP.textTertiary)
                             Spacer(minLength: 6)
                             if req.blocked { Badge(text: "已拦截", color: LP.danger) }
@@ -562,13 +560,13 @@ struct CaptureView: View {
                         HStack(spacing: 10) {
                             if let app = req.sourceApp, !app.isEmpty {
                                 Label(app, systemImage: "app.dashed")
-                                    .font(LPFont.mono(10))
+                                    .font(LPFont.mono(11))
                                     .foregroundStyle(LP.textSecondary)
                                     .lineLimit(1)
                             }
                             if let ip = req.sourceIP, !ip.isEmpty {
                                 Label(ip, systemImage: "point.3.connected.trianglepath.dotted")
-                                    .font(LPFont.mono(10))
+                                    .font(LPFont.mono(11))
                                     .foregroundStyle(LP.textTertiary)
                             }
                             Spacer(minLength: 4)

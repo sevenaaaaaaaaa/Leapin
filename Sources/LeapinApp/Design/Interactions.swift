@@ -55,11 +55,11 @@ struct LPSearchField: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(focus.wrappedValue ? LP.accent : LP.textTertiary)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(.system(size: 13))
                 .focused(focus)
                 .onExitCommand { text = "" }
             if !text.isEmpty {
@@ -67,7 +67,7 @@ struct LPSearchField: View {
                     text = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(LP.textTertiary)
                 }
                 .buttonStyle(.plain)
@@ -102,7 +102,7 @@ struct LPChip: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Text(title).font(.system(size: 10, weight: selected ? .semibold : .regular))
+                Text(title).font(.system(size: 11, weight: selected ? .semibold : .regular))
                     .lineLimit(1)
                 if let count {
                     Text("\(count)").font(LPFont.num(9.5, weight: .medium)).opacity(0.75)
@@ -187,11 +187,11 @@ struct LPEmptyState: View {
                 .font(.system(size: 26, weight: .light))
                 .foregroundStyle(LP.textTertiary)
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(LP.textSecondary)
             if let message {
                 Text(message)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.textTertiary)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)

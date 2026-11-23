@@ -217,15 +217,15 @@ struct NetworkTaskPanel: View {
                     Text(title(task)).font(.system(size: 15, weight: .semibold))
                     Spacer()
                     Text(assistant.busy ? "执行中" : assistant.applied ? "已应用" : "任务计划")
-                        .font(LPFont.mono(10)).foregroundStyle(LP.textSecondary)
+                        .font(LPFont.mono(11)).foregroundStyle(LP.textSecondary)
                 }
                 plan(task)
                 if !assistant.evidence.isEmpty {
                     LPDivider()
                     ForEach(assistant.evidence) { item in
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(item.title).font(.system(size: 12, weight: .semibold))
-                            Text(item.value).font(LPFont.mono(12)).textSelection(.enabled)
+                            Text(item.title).font(.system(size: 13, weight: .semibold))
+                            Text(item.value).font(LPFont.mono(13)).textSelection(.enabled)
                                 .foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -236,7 +236,7 @@ struct NetworkTaskPanel: View {
                         else { Image(systemName: assistant.failed ? "exclamationmark.circle" : "checkmark.circle") }
                         Text(message).fixedSize(horizontal: false, vertical: true)
                     }
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(assistant.failed ? LP.danger : LP.textSecondary)
                     .accessibilityElement(children: .combine)
                 }
@@ -284,8 +284,8 @@ struct NetworkTaskPanel: View {
             steps(["作用范围：仅 \(target.host)，不含子域名；所有端口", "在当前配置最前面添加一条直连规则", "保留其他规则和现有连接，随时撤销本次修改"])
             DisclosureGroup("查看具体变更") {
                 Text("+ DOMAIN,\(target.host),DIRECT\n写入当前配置并立即应用于新连接。\n不会移除广告过滤、DNS 拦截或接管未经过代理的 App。")
-                    .font(LPFont.mono(12)).foregroundStyle(LP.textSecondary).textSelection(.enabled).padding(.top, 8)
-            }.font(.system(size: 12))
+                    .font(LPFont.mono(13)).foregroundStyle(LP.textSecondary).textSelection(.enabled).padding(.top, 8)
+            }.font(.system(size: 13))
         case .connect:
             steps(["启动本地网络服务", "成功后自动接入 macOS 系统代理", "失败时显示原因，保留重试入口"])
             caption("使用当前配置。仅支持系统代理的 App 会经过 Leapin；连接完成不代表所有网站都可访问。")
@@ -359,7 +359,7 @@ struct NetworkTaskPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(values.enumerated()), id: \.offset) { index, text in
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(String(format: "%02d", index + 1)).font(LPFont.mono(10)).foregroundStyle(LP.textTertiary)
+                    Text(String(format: "%02d", index + 1)).font(LPFont.mono(11)).foregroundStyle(LP.textTertiary)
                     Text(text).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -367,7 +367,7 @@ struct NetworkTaskPanel: View {
     }
 
     private func caption(_ text: String) -> some View {
-        Text(text).font(.system(size: 12)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
+        Text(text).font(.system(size: 13)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -397,7 +397,7 @@ struct DiagnosticsWorkspace: View {
             VStack(alignment: .leading, spacing: 20) {
                 if !embedded {
                     Text("检查一个目标，或调整一条规则。")
-                        .font(LPFont.display(22, weight: .semibold)).foregroundStyle(LP.text)
+                        .font(LPFont.display(28, weight: .semibold)).foregroundStyle(LP.text)
                 }
                 // 本地检查的结果是一张报告卡，而探测 tab 不渲染报告卡：在这里留着入口
                 // 只会让人点了看不到任何结果（T-14 评审 O2）。
@@ -405,20 +405,20 @@ struct DiagnosticsWorkspace: View {
                     HStack(spacing: 12) {
                         Button("检查本地代理") { assistant.inspectLocal() }.buttonStyle(LPPrimaryButtonStyle()).disabled(assistant.busy)
                         Button("排查抓包与解密") { assistant.inspectLocal(capture: true) }.buttonStyle(LPGhostButtonStyle()).disabled(assistant.busy)
-                        Text("本地检查不发起外部请求").font(.system(size: 12)).foregroundStyle(LP.textTertiary)
+                        Text("本地检查不发起外部请求").font(.system(size: 13)).foregroundStyle(LP.textTertiary)
                     }
                 }
                 TaskComposer(assistant: assistant, focused: $focused)
                 if assistant.task == nil, let message = assistant.message {
                     Text(message)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(assistant.failed ? LP.danger : LP.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 NetworkTaskPanel(assistant: assistant)
                 if scope == .probes {
                     Text("命中链、DNS trace 与直连 / 代理耗时都在上面；完整报告与重复请求检查在「诊断」tab。")
-                        .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
+                        .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if scope == .full, let report = assistant.report {
@@ -482,7 +482,7 @@ private struct TaskComposer: View {
             }
             LPDivider()
             Text("本地任务助手 · 输入 example.com 检查网站，或输入「让 example.com 直连」预览规则。")
-                .font(.system(size: 12)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: 13)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
             if assistant.receipt != nil, assistant.task == nil {
                 Button("撤销上次规则修改") { assistant.undo() }.buttonStyle(LPGhostButtonStyle())
             }

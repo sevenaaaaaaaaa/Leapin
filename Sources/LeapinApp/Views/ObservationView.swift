@@ -127,7 +127,7 @@ struct ObservationView: View {
 
                 if case .failed = engine.state {
                     Text(engine.lastError.map(friendlyError) ?? "端口可能被占用，查看设置中的日志后重试。")
-                        .font(LPFont.mono(10))
+                        .font(LPFont.mono(11))
                         .foregroundStyle(LP.danger)
                         .lineLimit(2)
                         .padding(.top, 8)
@@ -142,9 +142,9 @@ struct ObservationView: View {
                 } label: {
                     HStack(spacing: 7) {
                         Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.system(size: 13, weight: .bold))
                         Text(engine.state == .running ? "停止代理" : "启动代理")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                     }
                     .frame(width: 112)
                     .padding(.vertical, 5)
@@ -167,9 +167,7 @@ struct ObservationView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 20)
-        .lpGlass(radius: LPGlass.panelRadius,
-                 fallbackFill: LP.panel,
-                 shadow: 0.08)
+        .lpSheet()
         .overlay(alignment: .topLeading) {
             // A 2pt signal rule instead of a glow: the brand appears once, quietly.
             Capsule()
@@ -203,7 +201,7 @@ struct ObservationView: View {
     private func toggleChip(_ label: String, isOn: Bool, set: @escaping (Bool) -> Void) -> some View {
         HStack(spacing: 6) {
             Text(label)
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .foregroundStyle(isOn ? LP.textSecondary : LP.textTertiary)
             LPSwitch(isOn: Binding(get: { isOn }, set: set), width: 32)
         }
@@ -256,16 +254,16 @@ struct ObservationView: View {
                     .frame(width: 2, height: 26)
 
                 Image(systemName: step.icon)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(LP.accent)
                     .frame(width: 18)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(step.title)
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(LP.text)
                     Text(step.message)
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(LP.textTertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -276,7 +274,7 @@ struct ObservationView: View {
                     LPMotion.run(LPMotion.quick) { _ = dismissedHints.insert(step.id) }
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(LP.textTertiary)
                         .padding(5)
                         .contentShape(Rectangle())
@@ -390,13 +388,13 @@ struct ObservationView: View {
                 .frame(height: 34)
 
                 HStack(spacing: 8) {
-                    Text("60 秒前").font(LPFont.mono(10)).foregroundStyle(LP.textTertiary)
+                    Text("60 秒前").font(LPFont.mono(11)).foregroundStyle(LP.textTertiary)
                     Spacer()
                     Text("峰值 \(Fmt.bytes(Int(rateCeiling)))/s")
-                        .font(LPFont.mono(10))
+                        .font(LPFont.mono(11))
                         .foregroundStyle(LP.textTertiary)
                     Spacer()
-                    Text("现在").font(LPFont.mono(10)).foregroundStyle(LP.textTertiary)
+                    Text("现在").font(LPFont.mono(11)).foregroundStyle(LP.textTertiary)
                 }
             }
             .accessibilityElement(children: .ignore)
@@ -461,7 +459,7 @@ struct ObservationView: View {
                 LPEyebrow(text: "本地端点 / Endpoints")
                 Spacer()
                 Text("点击复制")
-                    .font(LPFont.mono(10))
+                    .font(LPFont.mono(11))
                     .foregroundStyle(LP.textTertiary)
             }
             .padding(.bottom, 10)
@@ -480,10 +478,10 @@ struct ObservationView: View {
 
             HStack(spacing: 9) {
                 Image(systemName: "checkmark.shield")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.mint)
                 Text("本机流量不离开 127.0.0.1，除非命中规则")
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundStyle(LP.textTertiary)
                 Spacer(minLength: 0)
                 Button("安装 CA") { app.installCA() }
@@ -510,7 +508,7 @@ struct ObservationView: View {
                     .foregroundStyle(copyable ? LP.textSecondary : LP.textTertiary)
                     .frame(width: 42, alignment: .leading)
                 Text(note)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.textTertiary)
                     .lineLimit(1)
                 Spacer(minLength: 6)
@@ -535,17 +533,17 @@ struct ObservationView: View {
                 LPEyebrow(text: "分流解释器 / Resolve")
                 Spacer()
                 Image(systemName: "point.topleft.down.curvedto.point.bottomright.up")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(LP.textTertiary)
             }
 
             HStack(spacing: 9) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundStyle(probeFocused ? LP.accent : LP.textTertiary)
                 TextField("例如 api.spotify.com", text: $probeHost)
                     .textFieldStyle(.plain)
-                    .font(LPFont.mono(12))
+                    .font(LPFont.mono(13))
                     .focused($probeFocused)
                     .onSubmit(runProbe)
                 if !probeHost.isEmpty {
@@ -555,7 +553,7 @@ struct ObservationView: View {
                         probeVerdict = nil
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12))
+                            .font(.system(size: 13))
                             .foregroundStyle(LP.textTertiary)
                     }
                     .buttonStyle(.plain)
@@ -563,8 +561,8 @@ struct ObservationView: View {
                 }
                 Button(action: runProbe) {
                     HStack(spacing: 4) {
-                        Text("判断").font(.system(size: 12, weight: .semibold))
-                        Image(systemName: "arrow.right").font(.system(size: 12, weight: .bold))
+                        Text("判断").font(.system(size: 13, weight: .semibold))
+                        Image(systemName: "arrow.right").font(.system(size: 13, weight: .bold))
                     }
                     .foregroundStyle(probeReady ? LP.accent : LP.textTertiary)
                 }
@@ -598,7 +596,7 @@ struct ObservationView: View {
                         Badge(text: probe.policy,
                               color: probe.policy.uppercased() == "REJECT" ? LP.danger : LP.textSecondary)
                         Text(probe.matchedRule?.raw ?? "无规则命中（MATCH 兜底）")
-                            .font(LPFont.mono(10))
+                            .font(LPFont.mono(11))
                             .foregroundStyle(LP.textSecondary)
                             .lineLimit(1)
                         Spacer(minLength: 4)
@@ -606,9 +604,9 @@ struct ObservationView: View {
                     }
                     if let verdict = probeVerdict, verdict.blocked {
                         HStack(spacing: 5) {
-                            Image(systemName: "nosign").font(.system(size: 12, weight: .bold))
+                            Image(systemName: "nosign").font(.system(size: 13, weight: .bold))
                             Text("去广告拦截：\(verdict.reason ?? "")")
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.system(size: 11, weight: .medium))
                         }
                         .foregroundStyle(LP.danger)
                     }
@@ -617,7 +615,7 @@ struct ObservationView: View {
                             HStack(spacing: 6) {
                                 Rectangle().fill(LP.strokeStrong).frame(width: 3, height: 3)
                                 Text(line)
-                                    .font(LPFont.mono(10))
+                                    .font(LPFont.mono(11))
                                     .foregroundStyle(LP.textTertiary)
                                     .lineLimit(2)
                             }
@@ -635,17 +633,17 @@ struct ObservationView: View {
                 Spacer(minLength: 0)
             } else if !app.isRunning {
                 HStack(spacing: 6) {
-                    Image(systemName: "info.circle").font(.system(size: 12))
+                    Image(systemName: "info.circle").font(.system(size: 13))
                     Text("启动代理后可用；判断在本地完成，不会发出请求。")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                 }
                 .foregroundStyle(LP.textTertiary)
                 Spacer(minLength: 0)
             } else {
                 HStack(spacing: 6) {
-                    Image(systemName: "return").font(.system(size: 12))
+                    Image(systemName: "return").font(.system(size: 13))
                     Text("输入后按 ↩ 立即判断，只在本地计算。")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                 }
                 .foregroundStyle(LP.textTertiary)
                 Spacer(minLength: 0)
@@ -657,12 +655,12 @@ struct ObservationView: View {
 
             HStack(spacing: 6) {
                 Text("RULE → RULE-SET → GEOIP → MATCH")
-                    .font(LPFont.mono(10))
+                    .font(LPFont.mono(11))
                     .tracking(0.8)
                     .foregroundStyle(LP.textTertiary)
                 Spacer()
                 Text("按首次命中裁决")
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(LP.textTertiary.opacity(0.9))
             }
         }
@@ -676,7 +674,7 @@ struct ObservationView: View {
             runProbe()
         } label: {
             Text(host)
-                .font(LPFont.mono(10))
+                .font(LPFont.mono(11))
                 .foregroundStyle(LP.textSecondary)
                 .padding(.horizontal, 7)
                 .padding(.vertical, 4)
@@ -697,7 +695,7 @@ struct ObservationView: View {
                 if !engine.flows.isEmpty {
                     Button("打开抓包") { app.go(to: .capture) }
                         .buttonStyle(.plain)
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(LP.textSecondary)
                 }
             }
@@ -721,7 +719,7 @@ struct ObservationView: View {
                     Text(app.isRunning
                          ? "代理已接管，第一条请求出现后这里会逐条记录。"
                          : "代理未启动，把系统流量指向 127.0.0.1:\(engine.profile.general.mixedPort) 后即可记录。")
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundStyle(LP.textTertiary)
                     Spacer(minLength: 8)
                     if app.isRunning {
