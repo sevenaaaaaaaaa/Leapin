@@ -70,13 +70,18 @@ public struct NetworkRuleChange: Sendable {
     public let profileID: UUID
     public let before: [Rule]
     public let after: [Rule]
+    /// The outbound the added rule points at. Comes from the caller — never hard-coded here:
+    /// "why → change the route" may pick a company group, not only DIRECT (T-12).
+    public let policy: String
 
-    public init(profile: Profile, target: SiteTarget) {
+    /// `policy` is the outbound/group name the new exact-host rule will use. The rule itself is
+    /// built by `RuleDraft`, so "add one host rule" has exactly one implementation (T-05's DoD).
+    public init(profile: Profile, target: SiteTarget, policy: String = "DIRECT") {
         profileID = profile.id
         before = profile.rules
-        let rule = Rule(kind: .domain, value: target.host, policy: "DIRECT",
-                        raw: "DOMAIN,\(target.host),DIRECT")
-        after = [rule] + before.filter { $0 != rule }
+        self.policy = policy
+        after = RuleDraft(host: target.host, policy: policy, source: .manual)
+            .makeRuleSetEntry(existing: before)
     }
 
     public func canUndo(in profile: Profile) -> Bool {
