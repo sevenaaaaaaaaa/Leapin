@@ -566,10 +566,13 @@ W2/W3 的任务行等 W1 评审通过后再写。现在只有 T-15。
 
 ### T-18 怎么判 + 改成什么：表为主
 
-- **Verdicts**：code: not run — 未开工 · security: skipped — 只改摆法 · qa: not run — 用例待写 · doc: pass — 任务行经 PM 于 2026-11-24 编写
+- **Verdicts**：code: not run — 无独立评审 · security: skipped — 只改摆法 · qa: pass — qa/T-18 5/5；qa/T-09 7/7（C4 已按 CRD 002 改成行为口径）、qa/T-10 7/7 回归 · doc: pass — 任务行经 PM 于 2026-11-24 更新
 - **Shape**: solo
 - **Milestone**: M2.5
 - **依赖**：T-16 之后
+- **进度**：2026-11-24 完成。改写成什么：segmented Picker 换成左对齐 chips（`LPChip`，四类仍读 `RewriteDeck.Kind.allCases`），「新建」主按钮移到过滤条右端、成为全页唯一主按钮，空态动作降为 ghost，编辑器仍是 sheet；工具栏里那个重复的添加按钮已删。怎么判：策略组右栏可折叠（`showsPolicyGroups` + 工具栏开关），收起时规则表占满宽度。
+
+  两处按实情收窄，记在这里而不是留给下一个人猜：① 任务书写的过滤条是「全部 / 策略组 / 规则」，实际保留了原有的策略 chips（全部 / 直连 / 代理 / 拦截）——把策略组搬进主表会改掉 T-10 的「策略组在右栏」契约，那是另一条任务；② 「行 hover 才出动作」不适用：`RuleRow` 只显示、不带动作，动作在行尾菜单与 ⌫ / 空态写入口里（T-10 C7 已判）。
 
 **这个任务做什么**
 1. `RulesView`：表为主，页头下方左对齐过滤条（全部 / 策略组 / 规则），策略组右栏可折叠，行 hover 才出动作。

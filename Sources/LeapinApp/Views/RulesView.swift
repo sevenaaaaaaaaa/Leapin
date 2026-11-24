@@ -25,6 +25,8 @@ struct RulesView: View {
     @State private var healthTick = 0
     /// Mihomo 当前的分组与选中项（内核返回）；原生执行时恒为空。
     @State private var managedGroups: [ManagedPolicy] = []
+    /// 策略组右栏可折叠：规则表是主，策略组是旁证；看表时它不必一直占 292pt。
+    @State private var showsPolicyGroups = true
     @State private var groupBusy = false
     @State private var groupNote: String?
     @FocusState private var searchFocused: Bool
@@ -93,7 +95,9 @@ struct RulesView: View {
                 ruleList
                     .clipShape(RoundedRectangle(cornerRadius: LPGlass.panelRadius, style: .continuous))
                     .lpSheet()
-                sidePanel.frame(width: 292)
+                if showsPolicyGroups {
+                    sidePanel.frame(width: 292)
+                }
             }
             .padding(.horizontal, 32)
             .padding(.top, 16)
@@ -200,6 +204,16 @@ struct RulesView: View {
                 }
             }
             .buttonStyle(LPGhostButtonStyle())
+
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) { showsPolicyGroups.toggle() }
+            } label: {
+                Image(systemName: "sidebar.right")
+                    .font(.system(size: 12, weight: .medium))
+            }
+            .buttonStyle(LPGhostButtonStyle())
+            .help(showsPolicyGroups ? "收起策略组" : "展开策略组")
+            .accessibilityLabel(showsPolicyGroups ? "收起策略组" : "展开策略组")
 
             Button {
                 showAdd = true

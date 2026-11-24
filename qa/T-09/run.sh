@@ -108,19 +108,22 @@ fi
 # ---------------------------------------------------------------- C4 四 tab
 kind_cases=$(grep -cF 'case rewrite, mock, script, adblock' "$DECK" || true)
 kind_titles=$(grep -cE 'return "(重写|Mock|脚本|去广告)"' "$DECK" || true)
+# 2026-11-24 口径改（CRD 002 第 2 条，用户选 A）：不再锁控件形态，只判「四个入口
+# 存在、可切换、有选中态」。T-18 把 segmented 换成左对齐 chips 后，这条要跟着走行为。
 picker=$(grep -cF 'ForEach(RewriteDeck.Kind.allCases)' "$VIEW" || true)
 segmented=$(grep -cF '.pickerStyle(.segmented)' "$VIEW" || true)
+chips=$(grep -cF 'LPChip(title: kind.title, selected: tab == kind)' "$VIEW" || true)
 tab_rewrite=$(grep -cF 'case .rewrite: listTab(for: .rewrite)' "$VIEW" || true)
 tab_mock=$(grep -cF 'case .mock: listTab(for: .mock)' "$VIEW" || true)
 tab_script=$(grep -cF 'case .script: scriptTab' "$VIEW" || true)
 tab_adblock=$(grep -cF 'case .adblock:' "$VIEW" || true)
 embed=$(grep -cF 'AdBlockView(embedded: true' "$VIEW" || true)
-if [ "$kind_cases" -eq 1 ] && [ "$kind_titles" -eq 4 ] && [ "$picker" -eq 1 ] && [ "$segmented" -eq 1 ] \
+if [ "$kind_cases" -eq 1 ] && [ "$kind_titles" -eq 4 ] && [ "$picker" -eq 1 ] && [ "$segmented" -eq 0 ] && [ "$chips" -eq 1 ] \
    && [ "$tab_rewrite" -eq 1 ] && [ "$tab_mock" -eq 1 ] && [ "$tab_script" -eq 1 ] \
    && [ "$tab_adblock" -eq 1 ] && [ "$embed" -eq 1 ]; then
-    pass C4 "Deck 定义四类（${kind_cases} 组 case，${kind_titles} 个标题）；RewriteView 顶部 segmented Picker 读 Kind.allCases（picker ${picker}、segmented ${segmented}）；四个分支齐全（重写 ${tab_rewrite} / Mock ${tab_mock} / 脚本 ${tab_script} / 去广告 ${tab_adblock}），去广告分支复用 AdBlockView(embedded: true)（${embed}）"
+    pass C4 "Deck 定义四类（${kind_cases} 组 case，${kind_titles} 个标题）；四个入口读 Kind.allCases（picker ${picker}），选中态用的是左对齐 chip（chips ${chips}），不再有 segmented（${segmented}）；四个分支齐全（重写 ${tab_rewrite} / Mock ${tab_mock} / 脚本 ${tab_script} / 去广告 ${tab_adblock}），去广告分支复用 AdBlockView(embedded: true)（${embed}）"
 else
-    fail C4 "四 tab 不全：Kind case ${kind_cases}（1）、标题 ${kind_titles}（4）、picker ${picker}（1）、segmented ${segmented}（1）、重写 ${tab_rewrite}、Mock ${tab_mock}、脚本 ${tab_script}、去广告 ${tab_adblock}（各 1）、embedded ${embed}（1）"
+    fail C4 "四 tab 不全：Kind case ${kind_cases}（1）、标题 ${kind_titles}（4）、picker ${picker}（1）、chips ${chips}（1）、segmented ${segmented}（0）、重写 ${tab_rewrite}、Mock ${tab_mock}、脚本 ${tab_script}、去广告 ${tab_adblock}（各 1）、embedded ${embed}（1）"
 fi
 
 # ---------------------------------------------------------------- C5 脚本 tab 只读 + 启停

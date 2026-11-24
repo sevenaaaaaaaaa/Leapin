@@ -34,17 +34,6 @@ struct RewriteView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .navigationTitle(WorkbenchVerb.whatChanged.title)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                if tab == .rewrite || tab == .mock {
-                    Button {
-                        addRule(for: tab)
-                    } label: {
-                        Label(tab == .mock ? "添加 Mock" : "添加规则", systemImage: "plus")
-                    }
-                }
-            }
-        }
         .onAppear { consumePendingLine() }
         .onChange(of: app.pendingRewriteLine) { _, _ in consumePendingLine() }
         .sheet(item: $editing) { target in
@@ -73,24 +62,32 @@ struct RewriteView: View {
 
     // MARK: - Tabs
 
-    /// 一句用户原话 + 四个 tab。页头已经写了页面名，这里只补动词的问题。
+    /// 页头下方一条左对齐的过滤条：四类各一个 chip，右边是这一页唯一的主按钮。
+    /// 原来的 segmented 把「选哪一类」画成第二条导航，居中悬浮在页头下面，和页面标题抢层级；
+    /// chip 是过滤器，不是导航——它只筛同一张表。
     private var tabBar: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(WorkbenchVerb.whatChanged.question)
-                .font(.system(size: 13))
-                .foregroundStyle(LP.textTertiary)
-            Picker("视图", selection: $tab) {
-                ForEach(RewriteDeck.Kind.allCases) { kind in
-                    Text(kind.title).tag(kind)
+        HStack(spacing: 6) {
+            ForEach(RewriteDeck.Kind.allCases) { kind in
+                LPChip(title: kind.title, selected: tab == kind) {
+                    LPMotion.run(LPMotion.press) { tab = kind }
                 }
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: 420)
+            Spacer(minLength: 12)
+            if tab == .rewrite || tab == .mock {
+                Button {
+                    addRule(for: tab)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus").font(.system(size: 11, weight: .bold))
+                        Text(tab == .mock ? "新建 Mock" : "新建规则").font(.system(size: 13, weight: .semibold))
+                    }
+                }
+                .buttonStyle(LPPrimaryButtonStyle())
+            }
         }
         .padding(.horizontal, 32)
-        .padding(.top, 16)
-        .padding(.bottom, 12)
+        .padding(.top, 14)
+        .padding(.bottom, 10)
     }
 
     @ViewBuilder private var content: some View {
@@ -237,8 +234,7 @@ struct RewriteView: View {
                 Button(kind == .mock ? "添加第一条 Mock" : "添加第一条规则") {
                     addRule(for: kind)
                 }
-                .buttonStyle(LPPrimaryButtonStyle())
-                .frame(width: 180)
+                .buttonStyle(LPGhostButtonStyle())
                 .padding(.top, 4)
             }
         }

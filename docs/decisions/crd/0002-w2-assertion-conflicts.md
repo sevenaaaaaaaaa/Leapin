@@ -33,7 +33,8 @@ M2 的 QA 断言盯着**实现形态**（哪个控件、哪个函数名），而
 - #6 四事实进焦点带：`qa/T-08` C2 从数 `factCell(` 改为数 `RouteFact(`，落 `03a90aa`，7/7。
 - #5 首屏 ≤5 块：T-17 折叠区落 `f7a89f5`；`qa/T-17` 的 C3 改成结构判据（折叠开关前只能有 4 个顶层块 + 六类折叠项必须出现在 `if showMore {` 之后），对 `03a90aa` 红、对 `f7a89f5` 绿，6/6。
 - #4 `qa/T-08` C3 不用改：它断言 `WorkbenchVerb.allCases` / `dispatch(.section(…))` / `stateLine`，不锁 `verbCard`；四入口换成 chips 仍绿。
-- #2 `qa/T-09` C4、#3 `qa/T-07` C2：留到 T-18 / T-19 动 tab 时同批改——现在那两个 `Picker` 还是 segmented，提前改没有可红的对象。
+- #2 `qa/T-09` C4：**已改**（T-18，2026-11-24）。断言从「锁 segmented」换成「四个入口读 `Kind.allCases` + 选中态是 chip + 不再有 segmented」，并对 `99090da` 做过红测（segmented 1、chips 0 → FAIL）。
+- #3 `qa/T-07` C2：留到 T-19 动「为什么」页的 Picker 时同批改——那一页现在还是 segmented，提前改没有可红的对象。
 
 ## 追加（2026-11-24，PM）
 
