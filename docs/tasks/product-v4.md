@@ -646,6 +646,30 @@ W2/W3 的任务行等 W1 评审通过后再写。现在只有 T-15。
 4. 新增动效都通过 `LPMotion` / `lpAnimation`（reduce motion 生效）。
 5. `swift build` exit 0；`qa/T-20/run.sh` 全 PASS；qa/T-01…T-04 仍绿。
 
+### T-21 W3 收尾：onboarding 与图标里的「路」
+
+- **Verdicts**：code: not run — 无独立评审 · security: skipped — 只改摆法 · qa: pass — qa/T-21 5/5 · doc: pass — 任务行经 PM 于 2026-11-24 更新
+- **Shape**: solo
+- **Milestone**: M2.5
+- **依赖**：T-16（RouteLine）、T-20（常驻层的缩略）
+- **进度**：2026-11-24 完成。onboarding 标题下加了一条三节点的路（请求 → 判据 → 出口），文案只讲机制、不读实时状态；应用图标改成「一条路」母题（墨底 squircle + 三个点 + 一条线，中间点朱红），生成脚本落在 `scripts/make-icon.py`，色值与 `Theme.swift` 同源，产物是 16–1024 全套 `.icns` 加 1024 源图。
+
+**这个任务做什么**
+1. `OnboardingView`：标题下面加一条「你的请求 → 命中规则 → 出口」的 `RouteLine`，让第一次打开就看到产品怎么想事情；文案不许写成实时状态（那是假的）。
+2. 应用图标：把「一条路」做成图标母题——墨底、三个点、一条线，中间那个点用朱红。生成 1024 源图与完整 `.icns`，替换 `Assets/AppIcon.icns` / `AppIcon.png`。
+3. 图标与 onboarding 里的路都从同一套 token 取色（`LP.ink`、`LP.accent`），不在图标里另调一套色。
+
+**文件所有权**
+- 修改 `Sources/LeapinApp/Design/Onboarding.swift`
+- 修改 `Assets/AppIcon.icns`、`Assets/AppIcon.png`
+- 新增 `qa/T-21/run.sh`
+
+**DoD**
+1. onboarding 里有一条 `RouteLine`（三节点：请求 / 判据 / 出口），文案是解释性的，不含任何实时数值。
+2. `Assets/AppIcon.icns` 含 16–1024 的完整尺寸集，且与 `AppIcon.png` 同源（同一张 1024 图缩出来的）。
+3. 图标主色取自 `LP.ink` / `LP.accent` 的同一组值（脚本里写明色值来源）。
+4. `swift build` exit 0；`qa/T-21/run.sh` 全 PASS。
+
 ---
 
 ## M3 · iOS 语义（暂缓，2026-11-24 用户决定）

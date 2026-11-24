@@ -20,6 +20,14 @@ struct OnboardingView: View {
                     .font(.system(size: 14)).foregroundStyle(LP.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // 同一「路」的第一次亮相：不写任何实时数字，只讲这台机器怎么想事情。
+            RouteLine(nodes: [
+                .init("你的请求", subtitle: "任意一个网站"),
+                .init("命中规则", subtitle: "按配置判一次"),
+                .init("出口", subtitle: "直连或节点", state: .current),
+            ], onInk: false)
+                .padding(.vertical, 2)
+
             VStack(alignment: .leading, spacing: 14) {
                 Label("连接网络：启动服务，再自动接入系统代理", systemImage: "network")
                 Label("网站打不开：检查规则、DNS 与网站响应", systemImage: "stethoscope")
