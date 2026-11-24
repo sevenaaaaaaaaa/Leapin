@@ -539,11 +539,12 @@ W2/W3 的任务行等 W1 评审通过后再写。现在只有 T-15。
 
 ### T-17 走哪：三段式重排
 
-- **Verdicts**：code: not run — 无独立评审 · security: skipped — 只改摆法 · qa: pass — qa/T-17 6/6，qa/T-08 7/7 回归 · doc: pass — 任务行经 PM 于 2026-11-24 核对
+- **Verdicts**：code: not run — 无独立评审 · security: skipped — 只改摆法 · qa: pass — qa/T-17 7/7（含 chips 的 C7）、qa/T-08 7/7 回归（458 条单测） · doc: pass — 任务行经 PM 于 2026-11-24 核对
 - **Shape**: solo
 - **Milestone**: M2.5
 - **依赖**：T-16 之后（shares nothing；组件须先存在）
 - **进度**：2026-11-24 完成。首屏是 4 块——焦点带 / 四动词 / 场景 / 「更多」开关，加页头共 5 个一级模块；书签、随手可用、常用工具、公司与回家、页脚、五个快捷动作都收进 `moreToggle` 后面。
+  PM 接手余下三项，同日做完：六个场景卡收成 chips（`sceneChip`，Capsule 底，切换仍走 `app.switchScene`）；删掉焦点带接管后无人调用的 `statusBar` / `factStrip` / `factCell` / `factDivider` 与 `textAction`（约 100 行）；证据区的「最近决策」栏按 **ADR 001** 暂不做——仓库里没有决策历史的数据源，硬做只能编。
 
 **这个任务做什么**
 1. 首屏改三段式：页头 / 焦点带（一条路 + 四个事实 + 「切到 X」一个主操作）/ 证据区两栏（最近决策 7 : 场景 5）。

@@ -76,6 +76,17 @@ else
     fail C6 "采样纪律被破坏（Timer $timer 处）"
 fi
 
+# 场景要 chips，不要六张大卡：chip 是 Capsule 底的一行，点一下仍走 app.switchScene。
+chip_fn=$(grep -cF 'private func sceneChip(' "$DASH" || true)
+chip_capsule=$(awk '/private func sceneChip\(/,/^    }$/' "$DASH" | grep -cF 'Capsule()' || true)
+chip_switch=$(awk '/private func sceneChip\(/,/^    }$/' "$DASH" | grep -cF 'app.switchScene(scene)' || true)
+old_grid=$(grep -cF 'Array(repeating: GridItem(.flexible(), spacing: 8), count: 6)' "$DASH" || true)
+if [ "$chip_fn" -eq 1 ] && [ "$chip_capsule" -ge 1 ] && [ "$chip_switch" -ge 1 ] && [ "$old_grid" -eq 0 ]; then
+    pass C7 "场景是 chips：sceneChip 1 处、Capsule 底 ${chip_capsule} 处、切换仍走 app.switchScene；旧的六列大卡网格已删（${old_grid}）"
+else
+    fail C7 "场景形态不符：sceneChip ${chip_fn}（1）、Capsule ${chip_capsule}（≥1）、switchScene ${chip_switch}（≥1）、旧六列网格 ${old_grid}（0）"
+fi
+
 echo "----------------------------------------------------------------"
 echo "T-17 结果：$PASSED PASS / $FAILED FAIL"
 echo "=================================================================="

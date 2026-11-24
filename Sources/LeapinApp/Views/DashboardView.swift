@@ -296,94 +296,6 @@ private struct DashboardContent: View {
         .accessibilityLabel(connected ? "暂停接管" : "连接网络")
     }
 
-    private var statusBar: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("你的网络，随需而行。")
-                        .font(LPFont.display(28, weight: .semibold)).tracking(-0.5)
-                    HStack(spacing: 7) {
-                        // 状态行读 store 的标题（与面板同一个 tone、同一句话）；store 还没被
-                        // 任何一面推过帧时（title 为空）才退回引擎自己的状态文案。
-                        StatusDot(color: status.tone.ink, pulsing: model.state == .running)
-                        Text(status.title.isEmpty ? model.state.label : status.title)
-                            .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
-                        Text("·").font(.system(size: 13)).foregroundStyle(LP.textTertiary)
-                        Text(activeScene?.title ?? "尚未选择场景")
-                            .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
-                    }
-                }
-                Spacer(minLength: 8)
-                Button(connected ? "暂停接管" : app.networkBusy ? "准备中…" : "连接网络") {
-                    if connected { Task { await app.pauseNetwork() } } else { app.connectNetwork() }
-                }.buttonStyle(LPGhostButtonStyle()).disabled(app.networkBusy || app.engine.configurationBusy || model.state == .starting)
-            }
-            if let message = app.networkMessage {
-                Text(message).font(.system(size: 13)).foregroundStyle(app.networkFailed ? LP.danger : LP.textSecondary)
-            }
-        }
-    }
-
-    // MARK: 五个事实
-
-    /// 当前配置 / 当前出口 / 速率 / 拦截数，加底下「接管范围」一行（PRODUCT-v4 §2.5）。
-    ///
-    /// 五项的取值只用 `ResidentStatus` 自己的字段与格式化文本（`rates.summary`、
-    /// `coverage.declaration`），所以菜单栏面板与这屏显示的是同一串字，不是两套算法。
-    private var factStrip: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 14) {
-                factCell("当前配置", profileText)
-                factDivider
-                factCell("当前出口", exitText)
-                factDivider
-                factCell("速率", status.rates.summary, numeric: true)
-                factDivider
-                factCell("拦截数", "\(status.blocked)", numeric: true)
-            }
-            HStack(spacing: 6) {
-                Image(systemName: status.coverage.isCoveringTraffic ? "checkmark.shield" : "exclamationmark.shield")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(status.coverage.isCoveringTraffic ? LP.mint : LP.amber)
-                Text(status.coverage.declaration)
-                    .font(.system(size: 11))
-                    .foregroundStyle(LP.textSecondary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            .help(status.coverage.declaration)
-            .accessibilityElement(children: .combine)
-        }
-        .lpPanel()
-    }
-
-    private func factCell(_ label: String, _ value: String, numeric: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(label)
-                .font(LPFont.mono(10, weight: .medium))
-                .tracking(0.9)
-                .foregroundStyle(LP.textTertiary)
-                .lineLimit(1)
-            Text(value)
-                .font(numeric ? LPFont.num(15, weight: .semibold) : .system(size: 14, weight: .semibold))
-                .foregroundStyle(LP.text)
-                .monospacedDigit()
-                .lineLimit(1)
-                // 速率那一行（「↓ 1.2 MB/s · ↑ 12 KB/s」）比列宽长：宁可缩一点，也别
-                // 把箭头或单位截掉——首屏的数字必须读得出来。
-                .minimumScaleFactor(0.75)
-                .truncationMode(.middle)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .help(value)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(label)：\(value)")
-    }
-
-    private var factDivider: some View {
-        Rectangle().fill(LP.stroke).frame(width: 1, height: 30)
-    }
-
     /// 与菜单栏面板同一写法：空配置显示「—」。
     private var profileText: String {
         status.profileName.isEmpty ? "—" : status.profileName
@@ -474,7 +386,7 @@ private struct DashboardContent: View {
     // MARK: 场景条
 
     private var sceneRail: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 LPEyebrow("场景 / SCENES")
                 Spacer()
@@ -483,26 +395,42 @@ private struct DashboardContent: View {
                         .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
                 }
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 6), spacing: 8) {
+            // 六个场景收成 chips：原来的六张大卡（18pt 图标 + 三行文案 + 14pt 竖内边距）
+            // 占掉首屏近三分之一高度，信息量只有「名字 + 一个状态词」。chip 一行能扫完，
+            // 一屏只看一个问题的前提下，证据区不该比答案还重。
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 148), spacing: 8)], alignment: .leading, spacing: 8) {
                 ForEach(NetworkScene.allCases) { scene in
-                    Button { app.switchScene(scene) } label: {
-                        VStack(spacing: 8) {
-                            Image(systemName: scene.icon).font(.system(size: 18))
-                            Text(scene.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                            Text(scenes.profileID(for: scene) == nil ? "设置方案" : activeScene == scene ? (model.state == .running ? "使用中" : "已选择") : "可切换")
-                                .font(.system(size: 11)).foregroundStyle(activeScene == scene ? LP.accent : LP.textTertiary)
-                        }
-                        .foregroundStyle(activeScene == scene ? LP.accent : LP.text)
-                        .frame(maxWidth: .infinity).padding(.vertical, 14)
-                        .background(activeScene == scene ? LP.accent.opacity(0.09) : LP.text.opacity(0.035),
-                                    in: RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(activeScene == scene ? LP.accent.opacity(0.3) : LP.stroke))
-                        .contentShape(Rectangle())
-                    }.buttonStyle(LPCardButtonStyle(radius: 12)).disabled(app.networkBusy)
-                        .help(scene.detail).accessibilityLabel("\(scene.title)，\(scenes.profileID(for: scene) == nil ? "未绑定方案" : "切换场景")")
+                    sceneChip(scene)
                 }
             }
         }
+    }
+
+    private func sceneChip(_ scene: NetworkScene) -> some View {
+        let active = activeScene == scene
+        let bound = scenes.profileID(for: scene) != nil
+        return Button { app.switchScene(scene) } label: {
+            HStack(spacing: 6) {
+                Image(systemName: scene.icon).font(.system(size: 11, weight: .medium))
+                Text(scene.title).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                Spacer(minLength: 4)
+                Text(active ? (model.state == .running ? "使用中" : "已选择") : (bound ? "可切换" : "设置方案"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(active ? LP.accent : LP.textTertiary)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(active ? LP.accent : LP.text)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(active ? LP.accent.opacity(0.10) : LP.text.opacity(0.04), in: Capsule())
+            .overlay(Capsule().strokeBorder(active ? LP.accent.opacity(0.35) : LP.stroke, lineWidth: 0.5))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(LPCardButtonStyle(radius: 12))
+        .disabled(app.networkBusy)
+        .help(scene.detail)
+        .accessibilityLabel("\(scene.title)，\(bound ? "切换场景" : "未绑定方案")")
     }
 
     // MARK: 快捷操作
@@ -557,11 +485,6 @@ private struct DashboardContent: View {
         .padding(.vertical, 10)
     }
 
-    private func textAction(_ title: String, icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: icon).font(.system(size: 13)).foregroundStyle(LP.textSecondary)
-        }.buttonStyle(.plain)
-    }
     private func copyTerminal() {
         let port = model.profile.general.mixedPort
         LPClipboard.copy("export http_proxy=http://127.0.0.1:\(port) https_proxy=http://127.0.0.1:\(port) all_proxy=socks5h://127.0.0.1:\(port) no_proxy=localhost,127.0.0.1,::1")
