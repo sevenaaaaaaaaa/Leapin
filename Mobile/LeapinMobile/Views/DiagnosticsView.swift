@@ -1,9 +1,12 @@
 import SwiftUI
+import Network
 import LeapinCore
 import LeapinControl
 
 struct DiagnosticsView: View {
     @Environment(ConsoleStore.self) private var store
+    private var local: LocalProxyEngine { .shared }
+    @State private var portReachable: Bool?
 
     private enum Tool: String, CaseIterable {
         case ruleMatch = "分流判定"
@@ -26,6 +29,8 @@ struct DiagnosticsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    localCard
+                    if store.endpoint == nil { unpairedNote }
                     Picker("工具", selection: $tool) {
                         ForEach(Tool.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                     }
@@ -43,7 +48,8 @@ struct DiagnosticsView: View {
                         }
                     }
                     .buttonStyle(LPButtonStyle())
-                    .disabled(isRunning)
+                    .opacity(store.endpoint == nil ? 0.45 : 1)
+                    .disabled(isRunning || store.endpoint == nil)
 
                     if let failure {
                         LPPanel {
@@ -65,6 +71,60 @@ struct DiagnosticsView: View {
             .navigationBarTitleDisplayMode(.large)
             .scrollDismissesKeyboard(.interactively)
         }
+    }
+
+    // MARK: - 本机连通性（不需要 Mac）
+
+    private var localCard: some View {
+        LPSection(header: "本机连通性",
+                  footer: "这些检查只用这台手机：引擎在 App 内监听回环端口。") {
+            LPListRow(title: "引擎",
+                      value: local.isRunning ? "127.0.0.1:" + String(local.port) : "未启动",
+                      mono: local.isRunning)
+            LPListRow(title: "端口可达", value: portLabel, isLast: false) {
+                Button("测一次") { Task { await checkPort() } }
+                    .font(.system(size: 15))
+                    .foregroundStyle(LP.accent)
+                    .buttonStyle(.plain)
+                    .disabled(!local.isRunning)
+            }
+            LPListRow(title: "经引擎取 example.com", subtitle: local.lastCheck, isLast: true) {
+                Button(local.isChecking ? "…" : "自检") { Task { await local.selfCheck() } }
+                    .font(.system(size: 15))
+                    .foregroundStyle(LP.accent)
+                    .buttonStyle(.plain)
+                    .disabled(!local.isRunning || local.isChecking)
+            }
+        }
+    }
+
+    private var portLabel: String {
+        guard local.isRunning else { return "—" }
+        guard let ok = portReachable else { return "未测" }
+        return ok ? "通" : "不通"
+    }
+
+    private var unpairedNote: some View {
+        LPPanel {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("下面三个工具需要 Mac：分流判定、DNS 与 HTTP 探测都由 Mac 的引擎回答。")
+                    .font(LPFont.caption)
+                    .foregroundStyle(LP.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("未配对时，用上面的「本机连通性」确认这台手机的引擎是活的。")
+                    .font(LPFont.micro)
+                    .foregroundStyle(LP.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("配对 Mac") { store.pairingSheetShown = true }
+                    .font(.system(size: 15))
+                    .foregroundStyle(LP.accent)
+                    .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func checkPort() async {
+        portReachable = await PortProbe.canConnect(port: LocalProxyEngine.defaultPort)
     }
 
     private var inputCard: some View {
@@ -306,6 +366,49 @@ struct DiagnosticsView: View {
             guard !url.isEmpty else { failure = "请填写 URL"; return }
             probe = await store.httpProbe(url: url)
             if probe == nil { failure = store.lastError ?? "探测失败" }
+        }
+    }
+}
+
+
+/// 一次 TCP 连接就能回答「端口活着吗」，且不经过系统代理设置。
+enum PortProbe {
+    @MainActor
+    static func canConnect(port: UInt16, timeout: TimeInterval = 2) async -> Bool {
+        await withCheckedContinuation { continuation in
+            let state = ProbeState()
+            let connection = NWConnection(host: "127.0.0.1",
+                                          port: NWEndpoint.Port(rawValue: port) ?? 51003,
+                                          using: .tcp)
+            connection.stateUpdateHandler = { status in
+                switch status {
+                case .ready:
+                    if state.finish() { continuation.resume(returning: true) }
+                    connection.cancel()
+                case .failed, .cancelled:
+                    if state.finish() { continuation.resume(returning: false) }
+                default:
+                    break
+                }
+            }
+            connection.start(queue: .global())
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) {
+                if state.finish() {
+                    continuation.resume(returning: false)
+                    connection.cancel()
+                }
+            }
+        }
+    }
+
+    private final class ProbeState: @unchecked Sendable {
+        private let lock = NSLock()
+        private var done = false
+        func finish() -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            if done { return false }
+            done = true
+            return true
         }
     }
 }

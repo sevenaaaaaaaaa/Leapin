@@ -4,6 +4,7 @@ import LeapinControl
 /// 策略: one section per group, one row per member, a checkmark on the active one.
 struct PoliciesView: View {
     @Environment(ConsoleStore.self) private var store
+    private var local: LocalProxyEngine { .shared }
     @State private var pending: PendingSelection?
 
     struct PendingSelection: Identifiable {
@@ -15,7 +16,9 @@ struct PoliciesView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                if store.policies.isEmpty {
+                if store.endpoint == nil {
+                    unpairedCard
+                } else if store.policies.isEmpty {
                     emptyState
                 } else {
                     VStack(alignment: .leading, spacing: 22) {
@@ -92,6 +95,40 @@ struct PoliciesView: View {
                 }
             }
         }
+    }
+
+    /// 未配对时不是空白：讲清本机怎么走，并给一个能立刻做的动作。
+    private var unpairedCard: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            LPSection(header: "未配对时的走法",
+                      footer: "规则与出口来自 Mac 的配置；配对后这里会出现分组与当前出口。") {
+                LPListRow(title: "分流", value: "全部直连", isLast: false)
+                LPListRow(title: "引擎",
+                          value: local.isRunning ? "127.0.0.1:" + String(local.port) : "未启动",
+                          mono: local.isRunning,
+                          isLast: true) {
+                    Button(local.isChecking ? "…" : "自检") { Task { await local.selfCheck() } }
+                        .font(.system(size: 15))
+                        .foregroundStyle(LP.accent)
+                        .buttonStyle(.plain)
+                        .disabled(!local.isRunning || local.isChecking)
+                }
+            }
+
+            if let check = local.lastCheck {
+                Text(check)
+                    .font(LPFont.micro)
+                    .foregroundStyle(LP.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 16)
+            }
+
+            Button("配对 Mac") { store.pairingSheetShown = true }
+                .buttonStyle(LPButtonStyle())
+                .padding(.horizontal, 16)
+        }
+        .padding(.top, 8)
+        .padding(.bottom, 24)
     }
 
     private var emptyState: some View {

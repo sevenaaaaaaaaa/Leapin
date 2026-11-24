@@ -7,6 +7,7 @@ struct ConnectionsView: View {
     @Environment(ConsoleStore.self) private var store
     private var local: LocalProxyEngine { .shared }
     @State private var query = ""
+    @State private var showGuide = false
 
     /// The phone's own traffic when its engine runs, the Mac's list otherwise.
     private var source: [ControlConnection] {
@@ -45,6 +46,7 @@ struct ConnectionsView: View {
             .navigationBarTitleDisplayMode(.large)
             .searchable(text: $query, prompt: "搜索域名、App 或策略")
             .refreshable { await store.refresh() }
+            .sheet(isPresented: $showGuide) { LocalProxyGuide() }
         }
     }
 
@@ -71,17 +73,25 @@ struct ConnectionsView: View {
             Image(systemName: "arrow.left.arrow.right")
                 .font(.system(size: 30, weight: .light))
                 .foregroundStyle(LP.textTertiary)
-            Text("还没有连接记录")
+            Text(local.isRunning ? "还没有流量经过本机引擎" : "本机引擎没在跑")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(LP.text)
             Text(local.isRunning
-                 ? "本机引擎正在运行，但还没有流量经过它"
-                 : "启动「代理」，或连接 Mac 后访问网站")
+                 ? "系统代理还没指向 127.0.0.1:" + String(local.port) + "。填好后，经过它的连接会出现在这里。"
+                 : "先在「状态」页打开本机引擎，再把系统代理指过来。")
                 .font(.system(size: 13))
                 .foregroundStyle(LP.textTertiary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 32)
+            if local.isRunning {
+                Button("怎么设置系统代理") { showGuide = true }
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(LP.accent)
+                    .buttonStyle(.plain)
+            }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 120)
+        .padding(.top, 100)
     }
 }

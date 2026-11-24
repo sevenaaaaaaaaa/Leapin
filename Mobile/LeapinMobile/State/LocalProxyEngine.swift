@@ -73,6 +73,10 @@ final class LocalFlowLog: FlowRecording, @unchecked Sendable {
 final class LocalProxyEngine {
     static let shared = LocalProxyEngine()
 
+    /// 固定端口：用户要把它手填进系统的 Wi-Fi 代理设置，随机端口做不到。
+    /// 51003 与 docs/MOBILE-STANDALONE.md 的记录一致。
+    static let defaultPort: UInt16 = 51003
+
     private(set) var isRunning = false
     private(set) var port: UInt16 = 0
     private(set) var lastError: String?
@@ -97,8 +101,11 @@ final class LocalProxyEngine {
         if ProcessInfo.processInfo.environment["LEAPIN_MOBILE_LOCAL_PROXY"] == "1" {
             start()
             Task { await selfCheck() }
+            return
         }
         #endif
+        // 打开 App 就开引擎：首页第一问是「开没开」，默认答案应当是「开着」。
+        start()
     }
 
     func start() {
@@ -106,7 +113,7 @@ final class LocalProxyEngine {
         let config = DNSConfig(mode: .system, upstreams: [], fallback: [], cacheTTL: 120)
         let resolver = DNSResolver(config: config)
         do {
-            let server = try ProxyServer(options: .init(port: 0, allowLAN: false),
+            let server = try ProxyServer(options: .init(port: Self.defaultPort, allowLAN: false),
                                          router: DirectRouter(),
                                          resolver: resolver,
                                          blocker: nil,

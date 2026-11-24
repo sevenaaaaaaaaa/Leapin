@@ -30,7 +30,7 @@ struct ToolsView: View {
     @State private var probeError: String?
     @State private var probing = false
 
-    @State private var localProxy = LocalProxyEngine()
+    private var localProxy: LocalProxyEngine { .shared }
     private var tunnel: TunnelManager { .shared }
 
     var body: some View {
@@ -48,17 +48,24 @@ struct ToolsView: View {
                             .tint(LP.accent)
                         }
 
-                        LPListRow(title: "系统接管",
-                                  subtitle: tunnel.lastError ?? (tunnel.isInstalled ? nil : "需要 network-extension 权限"),
-                                  value: nil, isLast: true) {
-                            Toggle("", isOn: Binding(
-                                get: { tunnel.status == .connected },
-                                set: { on in
-                                    if on { Task { await tunnel.start() } } else { tunnel.stop() }
-                                }
-                            ))
-                            .labelsHidden()
-                            .tint(LP.accent)
+                        if tunnel.isInstalled {
+                            LPListRow(title: "系统接管",
+                                      subtitle: tunnel.lastError ?? tunnel.statusText,
+                                      isLast: true) {
+                                Toggle("", isOn: Binding(
+                                    get: { tunnel.status == .connected },
+                                    set: { on in
+                                        if on { Task { await tunnel.start() } } else { tunnel.stop() }
+                                    }
+                                ))
+                                .labelsHidden()
+                                .tint(LP.accent)
+                            }
+                        } else {
+                            // 未安装时不摆一个装了也用不了的开关：这一行只说明原因与替代。
+                            LPListRow(title: "系统接管",
+                                      subtitle: "未安装 · 需要付费开发者账号的 network-extension 权限；没有它也能用上面的本机代理",
+                                      isLast: true) { EmptyView() }
                         }
                     }
 

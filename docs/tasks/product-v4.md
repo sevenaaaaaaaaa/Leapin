@@ -677,3 +677,147 @@ W2/W3 的任务行等 W1 评审通过后再写。现在只有 T-15。
 用户 2026-11-24 裁定：**先走 v5 路线（M2.5 的 W1 → W2 → W3），M3 之后再判断要不要做、要不要提前。**
 
 所以 M3 目前没有任务行，也不占排期。它原来的目标不变：手机的首页回答「这台手机上的网络」——自己跑引擎、自己分流，Mac 只是可选配置源。等 W3 评审完，再把 M3 与「继续打磨 v5」放在一起给出对比。
+
+**2026-11-24 晚解冻**：W3 收口、1.16.0 出厂后用户裁定开 M3。上面这段暂缓记录保留，任务行从 T-22 起。
+
+## M3 · iOS 语义（2026-11-24 开工）
+
+**目标**：首页从「Mac 控制台」变成「这台手机上的网络」，不装接管。
+**依据**：`docs/PRODUCT-v4.md` §4 M3 的五条 DoD；`docs/MOBILE-STANDALONE.md` 的三层结构与签名门槛。
+**用户怎么试**：不连 Mac 打开 App → 看到本机引擎开着、`127.0.0.1:51003`、自检通过 → 点「把这台手机的 Wi-Fi 代理指过来」→ 照引导做完 → Safari 访问 example.com → 首页/连接页显示这条请求经过本机引擎。
+
+**里程碑 DoD（承接 PRODUCT-v4 §4 M3）**
+
+| PRODUCT-v4 M3 DoD | 承接 | 怎么验 |
+| --- | --- | --- |
+| 1 首页第一屏回答三问：引擎开没开 / 有没有被系统使用 / Mac 在不在线 | T-22 | `qa/T-22` 三块断言 + 截图 |
+| 2 Mac 未配对时首页可用，不是空态 + 配对按钮 | T-22 | `qa/T-22` 未配对路径 + 截图 |
+| 3 未配对时策略 / 连接 / 诊断给出原因与替代动作 | T-24 | `qa/T-24` 三页断言 |
+| 4 不存在任何暗示「VPN 已连接」的文案或状态 | T-24 | `qa/T-24` 文案扫描 |
+| 5 首页与 Mac 端对同一配置的命名一致 | T-24 | `qa/T-24` 词表对照 |
+| （验收）五屏截图 + 真机步骤 | T-25 | `qa/T-25` + `report.md` |
+
+---
+
+### T-22 首页语义：状态页做首页，第一屏三问
+
+- **Verdicts**：code: not run — 无独立评审角色 · security: skipped — 只改导航顺序与首页布局，无网络与权限 · qa: pass — qa/T-22 8/8 · doc: pass — 任务行与验收脚本经 PM 于 2026-11-24 核对
+- **Shape**: solo
+- **Milestone**: M3
+- **依赖**：无
+
+**这个任务做什么**
+1. 默认 tab 从「工具」改成「状态」；tab 顺序改为 状态 / 连接 / 策略 / 诊断 / 工具（工具最后，它是工具不是首页）。
+2. 状态页第一屏三块，按顺序回答三问：
+   - **本机引擎**：开/关、`127.0.0.1:<port>`、自检按钮、最近一次自检结果；
+   - **系统使用**：这台手机的系统代理有没有指向本机——「未设置 / 已验证」两态，并写明 iOS 没有自动接管；
+   - **Mac**：在线 / 离线 / 未配对，一行说清。
+3. 未配对（`store.endpoint == nil`）时整页可用：三块都显示本机真实数据，配对是次动作而不是唯一动作。
+4. 大标题从「总览」改成「这台手机的网路」。
+
+**这个任务不做**
+- 不改引擎、不改端口（T-23 做固定端口）。
+- 不动连接 / 策略 / 诊断三页的内容（T-24）。
+
+**文件所有权**
+- 修改 `Mobile/LeapinMobile/LeapinMobileApp.swift`（初始 tab 与顺序）
+- 修改 `Mobile/LeapinMobile/Views/DashboardView.swift`
+- 新增 `qa/T-22/run.sh`
+
+**DoD**
+1. App 启动落在状态页：源码初始 selection 指向状态 tab；`qa/T-22` 断言存在。
+2. 首屏三块标题齐（本机引擎 / 系统使用 / Mac），且端口以等宽字体出现在「本机引擎」块。
+3. 未配对时三块仍有本机数据源（`LocalProxyEngine` 字段），页面上不存在「配对」作为唯一动作的结构。
+4. `xcodebuild … -sdk iphonesimulator build` exit 0；`qa/T-22/run.sh` 全 PASS；`docs/shots/m3-home.png` 一张。
+
+---
+
+### T-23 本机代理：固定 51003 + 一步接入引导
+
+- **Verdicts**：code: not run — 无独立评审角色 · security: skipped — 回环监听，不开放局域网 · qa: pass — qa/T-23 7/7 · doc: pass — 任务行与验收脚本经 PM 于 2026-11-24 核对
+- **Shape**: solo
+- **Milestone**: M3
+- **依赖**：T-22（共享 `DashboardView.swift`，串行）
+
+**这个任务做什么**
+1. `LocalProxyEngine` 端口固定 **51003**（现在 `port: 0` 由系统随机分配，用户没法手填进系统代理）；端口被占用时报错并说明，不静默换端口。
+2. 打开 App 自动启动本机引擎（失败时在首页显示原因与一个「重试」）。
+3. 首页加主按钮「把这台手机的 Wi-Fi 代理指过来」→ 引导 sheet：
+   - 一键复制 `127.0.0.1:51003`；
+   - 五步说明：设置 → 无线局域网 → 当前网络 ⓘ → 配置代理 → 手动 → 服务器 `127.0.0.1` / 端口 `51003` → 存储；
+   - 「我已设置好，跑一次自检」：成功 → 「已验证：流量经过本机引擎」，并显示这次请求的主机与字节数；失败 → 原因 + 回滚提示（把代理关掉）。
+4. 自检成功后首页「系统使用」块从「未设置」变成「已验证」，并显示自检时间。
+
+**这个任务不做**
+- 不做 NetworkExtension 接管（需要付费开发者账号，M3 明确不装接管）。
+- 不改 Mac 同步逻辑。
+
+**文件所有权**
+- 修改 `Mobile/LeapinMobile/State/LocalProxyEngine.swift`
+- 新增 `Mobile/LeapinMobile/Views/LocalProxyGuide.swift`
+- 修改 \`Mobile/LeapinMobile/Views/ToolsView.swift\`（\`@State\` 新建引擎改成 \`.shared\`；与 T-24 共享此文件，T-23 先）
+- 修改 `Mobile/LeapinMobile/Views/DashboardView.swift`（唯一改动点：接按钮与状态）
+- 新增 `qa/T-23/run.sh`
+
+**DoD**
+1. 端口常量 51003：`start()` 后 `port == 51003`；占用时 `lastError` 非空（`qa/T-23` 与单测双重断言）。
+2. 首页存在「把这台手机的 Wi-Fi 代理指过来」入口，点开是引导 sheet，含复制按钮与五步文案。
+3. 自检按钮复用 `selfCheck()`，成功后「系统使用」显示「已验证」。
+4. `xcodebuild` exit 0；`qa/T-23` 全 PASS；`docs/shots/m3-guide.png` 一张。
+
+---
+
+### T-24 未配对三页与措辞：原因 + 替代动作，去掉 VPN 暗示
+
+- **Verdicts**：code: not run — 无独立评审角色 · security: skipped — 只改文案与空态 · qa: pass — qa/T-24 9/9 · doc: pass — 任务行与验收脚本经 PM 于 2026-11-24 核对
+- **Shape**: solo
+- **Milestone**: M3
+- **依赖**：T-22（共享 `LeapinMobileApp.swift`，串行）
+
+**这个任务做什么**
+1. **连接**页未配对：显示本机引擎的连接列表（`LocalProxyEngine.localConnections`），顶部一句「这些是本机引擎的连接；Mac 的连接需要配对」。
+2. **策略**页未配对：说明「未配对时本机全部按 DIRECT 走」+ 本机自检入口 + 配对的次按钮，不停在空白。
+3. **诊断**页未配对：本机自检 + 端口可达性（对本机 `127.0.0.1:51003` 发一次 CONNECT），不是空白。
+4. 「系统接管」改成说明行：未安装时显示「未安装（需要付费开发者账号的 network-extension 权限）」，**不做可点的开关**；只有已安装才出现开关。
+5. 文案扫描：未安装/未配对场景不出现「VPN 已连接 / 已开启 / 已接管」这类暗示；「已接管」只允许出现在 `status == .connected` 的分支里。
+6. 命名与 Mac 对齐：配置、出口、规则沿用 Mac 端的词，不新造同义词（`策略` 只作为页面名，不再指「规则」）。
+
+**这个任务不做**
+- 不改引擎、不加新页面。
+- 不处理 Android。
+
+**文件所有权**
+- 修改 `Mobile/LeapinMobile/Views/ConnectionsView.swift`
+- 修改 `Mobile/LeapinMobile/Views/PoliciesView.swift`
+- 修改 `Mobile/LeapinMobile/Views/DiagnosticsView.swift`
+- 修改 `Mobile/LeapinMobile/Views/ToolsView.swift`
+- 修改 `Mobile/LeapinMobile/LeapinMobileApp.swift`（未配对横幅文案）
+- 修改 \`Mobile/LeapinMobile/Views/SettingsView.swift\`（删「不代理手机流量」的旧说法）
+- 新增 `qa/T-24/run.sh`
+
+**DoD**
+1. 三页在 `endpoint == nil` 时都有内容与本机数据源（`qa/T-24` 各一断言）。
+2. 系统接管未安装时不是可切换开关（断言 Toggle 只在 `isInstalled` 分支）。
+3. 文案扫描：未安装场景 0 处「已接管 / VPN 已连接」；「已接管」仅出现在 connected 分支。
+4. 词表对照：iOS 用词与 Mac 端一致（配置 / 出口 / 规则），断言词表落在文件里。
+5. `xcodebuild` exit 0；`qa/T-24` 全 PASS；三页截图。
+
+---
+
+### T-25 M3 汇总验收：模拟器走查与文案扫描
+
+- **Verdicts**：code: not run — 无独立评审角色 · security: skipped — 只读仓库与模拟器 · qa: pass — qa/T-25 6/6（复用 T-22…T-24 三份子脚本） · doc: pass — 任务行与验收脚本经 PM 于 2026-11-24 核对
+- **Shape**: solo
+- **Milestone**: M3
+- **依赖**：T-22、T-23、T-24 全部完成
+
+**这个任务做什么**
+1. `qa/T-25/run.sh`：跑 T-22…T-24 的三份脚本（复用，不重写），再补五条汇总断言（默认页 = 状态、端口 51003、引导入口存在、三页未配对非空、文案扫描）。
+2. `qa/T-25/report.md`：真机步骤（Wi-Fi 代理怎么填、怎么回滚）+ 模拟器五屏截图清单。
+3. 截图：`docs/shots/m3-home.png`、`m3-guide.png`、`m3-connections.png`、`m3-policies.png`、`m3-diagnostics.png`。
+
+**DoD**
+1. `qa/T-25` 全 PASS（含复用三份子脚本）。
+2. 五张截图存在且与当前构建一致（截图时间晚于最后一次改动）。
+3. `report.md` 写清真机步骤与「模拟器验不了什么」（Wi-Fi 代理是系统设置，模拟器没有独立无线局域网设置）。
+4. `xcodebuild` exit 0。

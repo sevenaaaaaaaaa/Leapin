@@ -48,7 +48,7 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.bordered)
 
-                    Text("Leapin Mobile 只读取你自己 Mac 的控制面，不代理手机流量。手机上的系统级 VPN 需要 NetworkExtension 权限，这版没有包含。")
+                    Text("本机引擎在这台手机里跑，监听 127.0.0.1:51003；把系统代理指过来就能让流量经过它。系统级接管需要 NetworkExtension 权限（付费开发者账号），这版没有包含。Mac 是可选的配置源。")
                         .font(LPFont.micro)
                         .foregroundStyle(LP.textTertiary)
                         .padding(.horizontal, 2)

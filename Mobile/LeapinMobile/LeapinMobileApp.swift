@@ -47,39 +47,37 @@ struct ConsoleTabs: View {
     }
 
     var body: some View {
+        // 首页是「这台手机的网络」（状态）。工具排在最后：它是工具，不是首页。
         TabView(selection: $selection) {
-            ToolsView()
-                .tabItem { Label("工具", systemImage: "wrench.and.screwdriver") }
-                .tag(0)
-
             DashboardView()
                 .tabItem { Label("状态", systemImage: "gauge.with.dots.needle.50percent") }
-                .tag(1)
+                .tag(0)
 
             ConnectionsView()
                 .tabItem { Label("连接", systemImage: "arrow.left.arrow.right") }
-                .tag(2)
+                .tag(1)
 
             PoliciesView()
                 .tabItem { Label("策略", systemImage: "square.stack.3d.up") }
-                .tag(3)
+                .tag(2)
 
             DiagnosticsView()
                 .tabItem { Label("诊断", systemImage: "stethoscope") }
+                .tag(3)
+
+            ToolsView()
+                .tabItem { Label("工具", systemImage: "wrench.and.screwdriver") }
                 .tag(4)
         }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            VStack(spacing: 8) {
-                if let error = store.lastError {
-                    ErrorBanner(message: error) { store.clearError() }
-                }
-                if store.endpoint == nil, selection != 0 {
-                    UnpairedBanner()
-                }
+        // 未配对不再用顶部横幅：三页各自在内容里说明（策略页的「未配对时的走法」等）。
+        // 错误条放在 tab bar 上方，避免压住导航栏标题与右侧按钮。
+        .overlay(alignment: .bottom) {
+            if let error = store.lastError {
+                ErrorBanner(message: error) { store.clearError() }
+                    .padding(.horizontal, LP.gutter)
+                    .padding(.bottom, 96)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            .padding(.horizontal, LP.gutter)
-            .padding(.top, 2)
-            .padding(.bottom, 6)
         }
         .animation(.easeInOut(duration: 0.18), value: store.lastError)
         // One sheet for the whole app: any page can ask to pair without owning a
@@ -90,34 +88,6 @@ struct ConsoleTabs: View {
         }
     }
 
-}
-
-/// Thin strip above a console page while no Mac is paired: the page still shows
-/// its real structure, this only explains why the numbers are empty.
-private struct UnpairedBanner: View {
-    @Environment(ConsoleStore.self) private var store
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "desktopcomputer")
-                .font(.system(size: 11))
-                .foregroundStyle(LP.textTertiary)
-            Text("未连接 Mac，下面是本机与空数据")
-                .font(LPFont.micro)
-                .foregroundStyle(LP.textSecondary)
-            Spacer(minLength: 4)
-            Button("扫码配对") { store.pairingSheetShown = true }
-                .font(LPFont.micro.weight(.semibold))
-                .foregroundStyle(LP.accent)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(LP.panelRaised, in: RoundedRectangle(cornerRadius: LP.radiusSmall, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: LP.radiusSmall, style: .continuous)
-                .strokeBorder(LP.stroke, lineWidth: 1)
-        )
-    }
 }
 
 struct ErrorBanner: View {
