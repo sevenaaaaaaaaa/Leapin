@@ -27,6 +27,9 @@ struct RouteLine: View {
     var axis: Axis = .horizontal
     /// True when the line sits inside an ink focus band.
     var onInk: Bool = true
+    /// 常驻层用的紧凑形态：不显示副标题、点更小、连接线更短。
+    /// 默认 false —— 首屏与「为什么」页的既有调用一个字都不用改。
+    var compact: Bool = false
 
     var body: some View {
         switch axis {
@@ -67,14 +70,14 @@ struct RouteLine: View {
     }
 
     private func nodeView(_ node: Node) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: compact ? 6 : 10) {
             dot(node.state)
             VStack(alignment: .leading, spacing: 2) {
                 Text(node.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: compact ? 12 : 14, weight: .semibold))
                     .foregroundStyle(labelColor(node.state))
                     .lineLimit(1)
-                if let subtitle = node.subtitle {
+                if let subtitle = node.subtitle, !compact {
                     Text(subtitle)
                         .font(.system(size: 11))
                         .foregroundStyle(subColor)
@@ -82,18 +85,19 @@ struct RouteLine: View {
                 }
             }
         }
-        .fixedSize(horizontal: true, vertical: false)
+        // 紧凑形态允许被压缩：常驻层只有 280pt，宁可截断也不把面板撑破。
+        .fixedSize(horizontal: !compact, vertical: false)
     }
 
     private var connectorView: some View {
         Rectangle()
             .fill(connector)
             .frame(height: 1)
-            .frame(minWidth: 24, maxWidth: .infinity)
+            .frame(minWidth: compact ? 10 : 24, maxWidth: .infinity)
             .overlay(alignment: .trailing) {
-                Circle().fill(connector).frame(width: 5, height: 5)
+                Circle().fill(connector).frame(width: compact ? 4 : 5, height: compact ? 4 : 5)
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, compact ? 8 : 14)
     }
 
     // MARK: vertical
@@ -129,11 +133,13 @@ struct RouteLine: View {
     private func dot(_ state: NodeState) -> some View {
         Circle()
             .fill(dotColor(state))
-            .frame(width: 8, height: 8)
-            .padding(.top, 4)
+            .frame(width: compact ? 6 : 8, height: compact ? 6 : 8)
+            .padding(.top, compact ? 3 : 4)
             .background {
                 if state == .current || state == .alert {
-                    Circle().fill(LP.accent.opacity(0.18)).frame(width: 16, height: 16).offset(y: 4)
+                    Circle().fill(LP.accent.opacity(0.18))
+                        .frame(width: compact ? 12 : 16, height: compact ? 12 : 16)
+                        .offset(y: compact ? 3 : 4)
                 }
             }
     }

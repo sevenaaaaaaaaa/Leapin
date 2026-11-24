@@ -21,6 +21,14 @@ struct FloatingStatusView: View {
         VStack(alignment: .leading, spacing: 8) {
             header
             speedRow
+            // 同一条「路」的缩略：浮窗回答「现在走哪」，不只是一组速度数字。
+            RouteLine(nodes: [
+                .init("你"),
+                .init(judgeShort, state: resident.status.exit == nil ? .idle : .current),
+                .init(exitShort),
+            ], axis: .horizontal, onInk: false, compact: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .lpAnimation(LPMotion.quick, value: judgeShort)
             Divider().overlay(LP.stroke)
             recentList
             footer
@@ -81,6 +89,16 @@ struct FloatingStatusView: View {
         }
     }
 
+    private var judgeShort: String {
+        guard engine.state == .running else { return "尚未接管" }
+        return status.exitGroup ?? "规则模式"
+    }
+
+    private var exitShort: String {
+        guard engine.state == .running, let exit = status.exit else { return "—" }
+        return exit
+    }
+
     private var speedRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             rate(label: "下载", value: status.rates.downText, symbol: "arrow.down")
@@ -124,7 +142,8 @@ struct FloatingStatusView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 4)
             } else {
-                ForEach(recent) { flow in
+                // 设计只给两条：浮窗是第三级信息，再多就变成另一个窗口了。
+                ForEach(recent.prefix(2)) { flow in
                     HStack(spacing: 5) {
                         Text(flow.host)
                             .font(LPFont.mono(11))

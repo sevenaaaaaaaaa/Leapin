@@ -42,7 +42,7 @@ struct MenuBarPanel: View {
             footer
         }
         .padding(14)
-        .frame(width: 276)
+        .frame(width: 280)
         .task { await liveLoop() }
         .onChange(of: engine.state.label) { _, _ in Task { await refresh() } }
         .onChange(of: engine.profile.id) { _, _ in Task { await refresh() } }
@@ -65,6 +65,16 @@ struct MenuBarPanel: View {
                     .font(LPFont.mono(10.5, weight: .semibold))
                     .foregroundStyle(latencyColor)
             }
+
+            // 同一「路」的缩略：常驻层不能只剩一行状态词，头和尾都要看得见。
+            RouteLine(nodes: [
+                .init("你"),
+                .init(judgeShort, state: engine.state == .running ? .current : .idle),
+                .init(exitShort),
+            ], axis: .horizontal, onInk: false, compact: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help("现在：\(judgeShort) → \(exitShort)")
+            .lpAnimation(LPMotion.quick, value: judgeShort)
 
             factRow("配置", status.profileName.isEmpty ? "—" : status.profileName)
             factRow("出口", exitText)
@@ -103,6 +113,17 @@ struct MenuBarPanel: View {
         }
         .padding(10)
         .background(LP.text.opacity(0.04), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+
+    /// 缩略里只放能一眼扫完的词：未接管就说未接管，别把一句状态文案塞进 280pt。
+    private var judgeShort: String {
+        guard engine.state == .running else { return "尚未接管" }
+        return status.exitGroup ?? "规则模式"
+    }
+
+    private var exitShort: String {
+        guard engine.state == .running, let exit = status.exit else { return "—" }
+        return exit
     }
 
     private func factRow(_ label: String, _ value: String) -> some View {

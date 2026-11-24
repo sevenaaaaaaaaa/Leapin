@@ -617,6 +617,35 @@ W2/W3 的任务行等 W1 评审通过后再写。现在只有 T-15。
 3. 四个 tab 全部可达，指标与诊断的既有断言（qa/T-11、qa/T-12）仍绿。
 4. `swift build` exit 0；`qa/T-19/run.sh` 全 PASS。
 
+### T-20 W3：常驻层的「路」缩略与空态
+
+- **Verdicts**：code: not run — 无独立评审 · security: skipped — 只改摆法 · qa: pass — qa/T-20 6/6；qa/T-01 7/7（C4 的宽度改钉设计值 280）、qa/T-02 5/5、qa/T-03 4/4、qa/T-04 5/5 回归 · doc: pass — 任务行经 PM 于 2026-11-24 更新
+- **Shape**: solo
+- **Milestone**: M2.5
+- **依赖**：T-16（RouteLine 组件）、T-17（首屏已经有一条同样结构的「路」）
+- **进度**：2026-11-24 完成。`RouteLine` 加了 `compact` 形态（默认 false，既有调用零改动）；菜单栏面板从 276 收到设计的 280，并把「你 → 判据 → 出口」缩略放进「现在」块；浮窗在速率下面加同一条缩略，最近列表收成 2 条。未接管时两处缩略都写「尚未接管」与「—」，没有新增主按钮。过渡走 `lpAnimation(LPMotion.quick)`，reduce motion 打开时直接落位。
+
+  一条断言冲突（第七处，已记进 CRD 002 追加）：`qa/T-01` C4 把面板宽度钉成 276，与设计 §9 的 280 冲突；已改成钉 280，并对 `99090da` 核对过（那份 276，新断言会红）。
+
+**这个任务做什么**
+1. `MenuBarPanel`：宽度收到 280；「现在」块里加一条 `RouteLine` 缩略（你 → 判据 → 出口），与首屏同一份数据。
+2. `FloatingStatusView`：速率下面加同一条缩略；最近列表收成 2 条。
+3. 空态：未接管时缩略显示「尚未接管」与「—」，不摆大号主按钮。
+4. 动效：新增的显隐过渡走 `LPMotion`（reduce motion 打开时直接落位）。
+
+**文件所有权**
+- 修改 `Sources/LeapinApp/Design/RouteLine.swift`（加 `compact` 形态，默认 false，既有调用不变）
+- 修改 `Sources/LeapinApp/Views/MenuBarPanel.swift`
+- 修改 `Sources/LeapinApp/Views/FloatingStatusView.swift`
+- 新增 `qa/T-20/run.sh`
+
+**DoD**
+1. 面板与浮窗各有一条 `RouteLine` 缩略，三项都读 `ResidentStatusStore.shared.status`（不新造数据源）。
+2. 面板宽 280pt；浮窗最近列表最多 2 条。
+3. 缩略在未接管时显示「尚未接管」与「—」，两处常驻面各自最多一个主按钮。
+4. 新增动效都通过 `LPMotion` / `lpAnimation`（reduce motion 生效）。
+5. `swift build` exit 0；`qa/T-20/run.sh` 全 PASS；qa/T-01…T-04 仍绿。
+
 ---
 
 ## M3 · iOS 语义（暂缓，2026-11-24 用户决定）

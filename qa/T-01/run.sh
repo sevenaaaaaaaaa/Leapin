@@ -85,7 +85,9 @@ expected=$(printf '%s\n' 'nowCard' 'switchCard' 'if showsIssues { issueCard }' '
 top_n=$(printf '%s\n' "$top" | grep -c '[^[:space:]]' || true)
 cond=$(grep -cF 'if showsIssues' "$PANEL" || true)
 width=$(grep -oE '\.frame\(width: [0-9]+\)' "$PANEL" | head -1 | grep -oE '[0-9]+')
-if [ "$top" = "$expected" ] && [ "$top_n" -eq 4 ] && [ "$cond" -ge 1 ] && [ "${width:-999}" -eq 276 ] && [ "${width:-999}" -le 280 ]; then
+# 2026-11-24：设计 §9 把常驻面板定成 280 宽，T-20 照做。旧断言钉死 276 —— 这是
+# 又一处「把实现形态当判据」；改成钉设计值 280，别的宽度仍然红。
+if [ "$top" = "$expected" ] && [ "$top_n" -eq 4 ] && [ "$cond" -ge 1 ] && [ "${width:-999}" -eq 280 ]; then
     pass C4 "body 顶层恰 ${top_n} 项且顺序为 $(printf '%s' "$top" | tr '\n' '|')；'if showsIssues' 命中 ${cond} 次（issueCard 条件渲染）；面板 .frame(width: ${width}) ≤ 280"
 else
     fail C4 "body 顶层实得 ${top_n} 项：[$(printf '%s' "$top" | tr '\n' '|')]（期望 4 项 nowCard|switchCard|if showsIssues { issueCard }|footer）；'if showsIssues' 命中 ${cond} 次；宽度 ${width:-未找到}"
