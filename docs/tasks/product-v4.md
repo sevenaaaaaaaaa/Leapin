@@ -594,10 +594,13 @@ W2/W3 的任务行等 W1 评审通过后再写。现在只有 T-15。
 
 ### T-19 为什么：查询条 + 垂直 trace
 
-- **Verdicts**：code: not run — 未开工 · security: skipped — 只改摆法 · qa: not run — 用例待写 · doc: pass — 任务行经 PM 于 2026-11-24 编写
+- **Verdicts**：code: not run — 无独立评审 · security: skipped — 只改摆法 · qa: pass — qa/T-19 5/5；qa/T-07 9/9（C2、C9 改成行为口径）、qa/T-11 8/8、qa/T-12 7/7 回归 · doc: pass — 任务行经 PM 于 2026-11-24 更新
 - **Shape**: solo
 - **Milestone**: M2.5
 - **依赖**：T-16 之后；与 T-17/T-18 不共享文件，可并行
+- **进度**：2026-11-24 完成。页头下方加了查询条（`LPSearchField`）+ 竖过来的 `RouteLine`（`axis: .vertical`、`onInk: false`）+ 右侧判定详情：输入 host 就地取 `engine.explain(host:)`，改一个字 trace 就重画，页面里没有 `app.go(to:)`，不跳页。空态是「一句事实 + 三个示例 chip」，整页 0 个主按钮。四个 tab 的 segmented Picker 换成左对齐 chips，`mounted` 挂载表与 opacity 显隐照旧（切 tab 不销毁已挂载页面）。
+
+  一处按实情收窄：任务书说「四个 tab 的既有能力不丢：指标 / 诊断 / 连接 / 规则」，实际这一页的第四个 tab 是「探测」不是「规则」（规则在「怎么判」页）。没有新增第五个 tab，四个既有能力原样保留。
 
 **这个任务做什么**
 1. `WhyPage` 改成「查询条 + 垂直 trace + 右侧详情」：trace 用 `RouteLine(.vertical)` 表达命中链。

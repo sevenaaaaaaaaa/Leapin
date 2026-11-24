@@ -55,19 +55,22 @@ fi
 tab_cases=$(grep -cF 'case connections, metrics, probes, diagnostics' "$WHY" || true)
 tab_titles=$(grep -cE 'return "(连接|指标|探测|诊断)"' "$WHY" || true)
 tab_picker=$(grep -cF 'ForEach(Tab.allCases)' "$WHY" || true)
-tab_binding=$(grep -cF 'Picker("视图", selection: selection)' "$WHY" || true)
+# 2026-11-24 口径改（CRD 002 第 3 条，用户选 A）：不锁 Picker 控件，改判
+# 「四个入口存在 + 有选中态 + 不再有 segmented」。T-19 把 tab 换成左对齐 chips。
+tab_chips=$(grep -cF 'LPChip(title: item.title, selected: tab == item)' "$WHY" || true)
+tab_segmented=$(grep -cF '.pickerStyle(.segmented)' "$WHY" || true)
 init_default=$(grep -cF 'init(initialTab: Tab = .connections)' "$WHY" || true)
 init_applied=$(grep -cF '_tab = State(initialValue: initialTab)' "$WHY" || true)
 branch_connections=$(grep -cF 'case .connections:' "$WHY" || true)
 branch_metrics=$(grep -cF 'case .metrics:' "$WHY" || true)
 branch_probes=$(grep -cF 'case .probes:' "$WHY" || true)
 branch_diagnostics=$(grep -cF 'case .diagnostics:' "$WHY" || true)
-if [ "$tab_cases" -eq 1 ] && [ "$tab_titles" -eq 4 ] && [ "$tab_picker" -ge 1 ] && [ "$tab_binding" -eq 1 ] \
+if [ "$tab_cases" -eq 1 ] && [ "$tab_titles" -eq 4 ] && [ "$tab_picker" -ge 1 ] && [ "$tab_chips" -eq 1 ] && [ "$tab_segmented" -eq 0 ] \
    && [ "$init_default" -eq 1 ] && [ "$init_applied" -eq 1 ] \
    && [ "$branch_connections" -ge 1 ] && [ "$branch_metrics" -ge 1 ] && [ "$branch_probes" -ge 1 ] && [ "$branch_diagnostics" -ge 1 ]; then
-    pass C2 "四 tab 一行定义（${tab_cases}）、四个中文标题（${tab_titles}）、Picker 绑 selection（${tab_binding}）、allCases 遍历 ${tab_picker} 处；initialTab 默认 .connections（${init_default}）且写进 _tab 初值（${init_applied}）；四个分支都在（连接 ${branch_connections} / 指标 ${branch_metrics} / 探测 ${branch_probes} / 诊断 ${branch_diagnostics}）"
+    pass C2 "四 tab 一行定义（${tab_cases}）、四个中文标题（${tab_titles}）、入口读 allCases ${tab_picker} 处、选中态是左对齐 chip（${tab_chips} 处）、不再有 segmented（${tab_segmented}）；initialTab 默认 .connections（${init_default}）且写进 _tab 初值（${init_applied}）；四个分支都在（连接 ${branch_connections} / 指标 ${branch_metrics} / 探测 ${branch_probes} / 诊断 ${branch_diagnostics}）"
 else
-    fail C2 "四 tab 不符：case 行 ${tab_cases}（1）、标题 ${tab_titles}（4）、allCases ${tab_picker}（≥1）、Picker 绑定 ${tab_binding}（1）、init 默认 ${init_default}（1）、_tab 初值 ${init_applied}（1）、分支 连接 ${branch_connections} / 指标 ${branch_metrics} / 探测 ${branch_probes} / 诊断 ${branch_diagnostics}（各 ≥1）"
+    fail C2 "四 tab 不符：case 行 ${tab_cases}（1）、标题 ${tab_titles}（4）、allCases ${tab_picker}（≥1）、chips ${tab_chips}（1）、segmented ${tab_segmented}（0）、init 默认 ${init_default}（1）、_tab 初值 ${init_applied}（1）、分支 连接 ${branch_connections} / 指标 ${branch_metrics} / 探测 ${branch_probes} / 诊断 ${branch_diagnostics}（各 ≥1）"
 fi
 
 # ---------------------------------------------------------------- C3 连接 tab = CaptureView(initialSearch: seed, isActive:)
@@ -174,14 +177,21 @@ opacity_line=$(grep -cF '.opacity(tab == item ? 1 : 0)' "$WHY" || true)
 hit_line=$(grep -cF '.allowsHitTesting(tab == item)' "$WHY" || true)
 mount_init=$(grep -cF '_mounted = State(initialValue: [initialTab])' "$WHY" || true)
 mount_insert=$(grep -cF 'mounted.insert(new)' "$WHY" || true)
-binding_prop=$(grep -cF 'private var selection: Binding<Tab>' "$WHY" || true)
+# 2026-11-24：tab 入口从 Binding 换成 chips 的 select(_:)，机制不变（挂载先于赋值）。
+# 断言改判「函数在，且 mounted.insert 发生在 tab = new 之前」，不锁属性名。
+mount_fn=$(grep -cF 'private func select(_ new: Tab)' "$WHY" || true)
+sel_block=$(awk '/private func select\(_ new: Tab\)/,/^    }$/' "$WHY")
+insert_pos=$(printf '%s\n' "$sel_block" | grep -n 'mounted.insert(new)' | head -1 | cut -d: -f1)
+set_pos=$(printf '%s\n' "$sel_block" | grep -n 'tab = new' | head -1 | cut -d: -f1)
+mount_order=0
+[ -n "$insert_pos" ] && [ -n "$set_pos" ] && [ "$insert_pos" -lt "$set_pos" ] && mount_order=1
 suppressed=$(grep -cF 'guard isActive else { return }' "$CAP" || true)
 if [ "$old_switch" -eq 0 ] && [ "$zstack" -eq 1 ] && [ "$mounted_guard" -eq 1 ] && [ "$opacity_line" -eq 1 ] \
-   && [ "$hit_line" -eq 1 ] && [ "$mount_init" -eq 1 ] && [ "$mount_insert" -eq 1 ] && [ "$binding_prop" -eq 1 ] \
+   && [ "$hit_line" -eq 1 ] && [ "$mount_init" -eq 1 ] && [ "$mount_insert" -eq 1 ] && [ "$mount_fn" -eq 1 ] && [ "$mount_order" -eq 1 ] \
    && [ "$suppressed" -eq 1 ]; then
-    pass C9 "切 tab 不销毁：WhyPage 里已无 switch tab（${old_switch}），四个 tab 叠在 ZStack（${zstack}）里按 mounted 挂载（${mounted_guard}）+ opacity 显隐（${opacity_line}）+ 隐藏层不吃点击（${hit_line}）；mounted 从 initialTab 起手（${mount_init}）、选中时只增不减（${mount_insert}，经 selection 绑定 ${binding_prop}）→ 切走再回来不会重建 CaptureView，它的 @State（search / appliedInitialSearch / 选中行）原样留着；隐藏 tab 也不抢全局搜索焦点（CaptureView 里 ${suppressed} 处 isActive 守卫）"
+    pass C9 "切 tab 不销毁：WhyPage 里已无 switch tab（${old_switch}），四个 tab 叠在 ZStack（${zstack}）里按 mounted 挂载（${mounted_guard}）+ opacity 显隐（${opacity_line}）+ 隐藏层不吃点击（${hit_line}）；mounted 从 initialTab 起手（${mount_init}）、选中时只增不减（${mount_insert}，经 select(_:) ${mount_fn} 处，且挂载先于赋值 ${mount_order}）→ 切走再回来不会重建 CaptureView，它的 @State（search / appliedInitialSearch / 选中行）原样留着；隐藏 tab 也不抢全局搜索焦点（CaptureView 里 ${suppressed} 处 isActive 守卫）"
 else
-    fail C9 "切 tab 仍会销毁/重建：switch tab ${old_switch}（0）、ZStack ${zstack}（1）、mounted 判据 ${mounted_guard}（1）、opacity ${opacity_line}（1）、hitTesting ${hit_line}（1）、mounted 初值 ${mount_init}（1）、mounted.insert ${mount_insert}（1）、selection 绑定 ${binding_prop}（1）、isActive 守卫 ${suppressed}（1）"
+    fail C9 "切 tab 仍会销毁/重建：switch tab ${old_switch}（0）、ZStack ${zstack}（1）、mounted 判据 ${mounted_guard}（1）、opacity ${opacity_line}（1）、hitTesting ${hit_line}（1）、mounted 初值 ${mount_init}（1）、mounted.insert ${mount_insert}（1）、select(_:) ${mount_fn}（1）、挂载先于赋值 ${mount_order}（1）、isActive 守卫 ${suppressed}（1）"
 fi
 
 # ---------------------------------------------------------------- 汇总

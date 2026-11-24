@@ -1,6 +1,7 @@
 import SwiftUI
 import LeapinCore
 import LeapinRuntime
+import LeapinPolicy
 
 /// 「为什么」动词页：连接 / 指标 / 探测 / 诊断 四个 tab。
 ///
@@ -47,6 +48,10 @@ struct WhyPage: View {
     /// 连接 tab 的初始过滤词。只有真的取到 host 才会变，取不到就一直是空串。
     @State private var seed = ""
 
+    /// 页头下方查询条的输入。输入即算，不跳页：trace 由它派生。
+    @State private var query = ""
+    @FocusState private var queryFocused: Bool
+
     /// 同一次挂载里是否已经取过：本地守卫，和 `RouteContext.take` 的「每个动词一次」叠着用。
     @State private var consumedRoute = false
 
@@ -78,6 +83,8 @@ struct WhyPage: View {
         VStack(spacing: 0) {
             tabBar
             Rectangle().fill(LP.stroke).frame(height: 1)
+            verdictStrip
+            Rectangle().fill(LP.stroke).frame(height: 1)
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -100,15 +107,11 @@ struct WhyPage: View {
         seed = subject.host
     }
 
-    /// 选中一个 tab 的同时把它标记为已挂载。
-    ///
-    /// 用绑定而不是 `.onChange(of: tab)`：挂载要发生在 body 重算之前，否则第一次点开的 tab
-    /// 会先空一帧再出现。
-    private var selection: Binding<Tab> {
-        Binding(get: { tab }, set: { new in
-            mounted.insert(new)
-            tab = new
-        })
+    /// 选中一个 tab 的同时把它标记为已挂载（挂载要发生在 body 重算之前，
+    /// 否则第一次点开的 tab 会先空一帧再出现）。
+    private func select(_ new: Tab) {
+        mounted.insert(new)
+        tab = new
     }
 
     /// 一句用户原话 + 四个 tab + 一个原地改路入口。页头已经写了页面名，这里只补动词的问题。
@@ -126,14 +129,15 @@ struct WhyPage: View {
                     .disabled(assistant.busy || engine.executionKernel != .native)
                     .help(ruleEntryHelp)
             }
-            Picker("视图", selection: selection) {
+            // 左对齐的 chips：四个 tab 是同一张表的四个面，不是第二条导航。
+            HStack(spacing: 6) {
                 ForEach(Tab.allCases) { item in
-                    Text(item.title).tag(item)
+                    LPChip(title: item.title, selected: tab == item) {
+                        LPMotion.run(LPMotion.press) { select(item) }
+                    }
                 }
+                Spacer(minLength: 12)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: 420)
         }
         .padding(.horizontal, 32)
         .padding(.top, 16)
@@ -167,6 +171,113 @@ struct WhyPage: View {
         // 探测 = 工作区的检查面（命中链 / DNS trace / 直连与代理耗时）；诊断 = 再加报告与导出。
         case .probes: DiagnosticsWorkspace(assistant: assistant, scope: .probes, embedded: true, isActive: item == tab)
         case .diagnostics: DiagnosticsWorkspace(assistant: assistant, scope: .full, embedded: true, isActive: item == tab)
+        }
+    }
+
+    // MARK: - 查询条 + 垂直 trace（v5 §9）
+
+    /// 页头下方就回答「这台去哪」：一条查询条、一条竖过来的路、一段判定详情。
+    /// 输入即算，不跳页——trace 是从 query 派生的，改一个字它就原地重画。
+    private var verdictStrip: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                LPSearchField(text: $query,
+                              placeholder: "输入域名或 IP，看它落在哪条规则、哪个出口",
+                              width: 360,
+                              focus: $queryFocused)
+                Spacer(minLength: 8)
+            }
+            if let match = routeMatch {
+                HStack(alignment: .top, spacing: 24) {
+                    RouteLine(nodes: traceNodes, axis: .vertical, onInk: false)
+                        .frame(maxWidth: 420, alignment: .leading)
+                    verdictDetail(match)
+                    Spacer(minLength: 0)
+                }
+                .padding(16)
+                .background(LP.panel, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(LP.stroke, lineWidth: 0.5))
+            } else {
+                // 空态：一句事实 + 三个示例 chip。没有按钮，更没有大号橙色按钮——
+                // 这一屏的问题是「查什么」，能填进去的只有域名。
+                HStack(spacing: 8) {
+                    Text(hostText.isEmpty
+                         ? "输入一个域名，看它落在哪条规则、走哪个出口。"
+                         : "这个输入不像域名或 IP。")
+                        .font(.system(size: 13))
+                        .foregroundStyle(LP.textSecondary)
+                    if hostText.isEmpty {
+                        ForEach(Self.examples, id: \.self) { example in
+                            LPChip(title: example, selected: false) { query = example }
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .padding(.horizontal, 32)
+        .padding(.vertical, 12)
+    }
+
+    /// 示例必须是真能解析的站点：随手里填的一个「公司内网」会被 SiteTarget 判成非法输入，
+    /// 空态的示例 chip 反手给出一句错误提示，比不放示例更糟。
+    private static let examples = ["github.com", "api.openai.com", "example.com"]
+
+    /// 输入里能取出 host 才算数；取不出（空、带空格、不是 http/https 形态）就当没输入。
+    private var hostText: String {
+        SiteTarget(query)?.host ?? ""
+    }
+
+    /// 规则引擎只认 host；读不到 host 时返回 nil，界面据此显示空态而不是编一条判定。
+    private var routeMatch: RuleMatch? {
+        let host = hostText
+        guard !host.isEmpty else { return nil }
+        return engine.explain(host: host)
+    }
+
+    private var traceNodes: [RouteLine.Node] {
+        let host = hostText
+        let match = routeMatch
+        let ruleText: String
+        if let rule = match?.matchedRule {
+            ruleText = "\(rule.kind.rawValue.uppercased()) \(rule.value)"
+        } else {
+            ruleText = "没有规则命中"
+        }
+        let policy = match?.policy ?? "DIRECT"
+        return [
+            .init(host, subtitle: "要访问的站点"),
+            .init(ruleText,
+                  subtitle: match?.matchedRule == nil ? "落到默认策略" : "第一条命中的规则",
+                  state: .current),
+            .init(policy, subtitle: "出口策略"),
+        ]
+    }
+
+    @ViewBuilder private func verdictDetail(_ match: RuleMatch?) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("判定详情")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(LP.textTertiary)
+            if let rule = match?.matchedRule {
+                Text(rule.raw)
+                    .font(LPFont.mono(11))
+                    .foregroundStyle(LP.textSecondary)
+                    .lineLimit(3)
+                    .frame(maxWidth: 320, alignment: .leading)
+            } else {
+                Text("没有规则命中，按默认策略走。")
+                    .font(.system(size: 13))
+                    .foregroundStyle(LP.textSecondary)
+            }
+            if let trace = match?.trace.last {
+                Text(trace)
+                    .font(.system(size: 11))
+                    .foregroundStyle(LP.textTertiary)
+                    .lineLimit(2)
+                    .frame(maxWidth: 320, alignment: .leading)
+            }
         }
     }
 
