@@ -29,6 +29,8 @@ struct DiagnosticsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    LPPageHeader(title: "诊断",
+                                 status: store.endpoint == nil ? "本机连通性 · 未配对" : "Mac 判定与探测")
                     localCard
                     if store.endpoint == nil { unpairedNote }
                     Picker("工具", selection: $tool) {
@@ -67,8 +69,7 @@ struct DiagnosticsView: View {
             }
             .background(LP.groupedBackground)
             .contentMargins(.bottom, 84, for: .scrollContent)
-            .navigationTitle("诊断")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .scrollDismissesKeyboard(.interactively)
         }
     }

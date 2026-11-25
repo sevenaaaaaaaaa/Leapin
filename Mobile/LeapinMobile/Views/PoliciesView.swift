@@ -16,6 +16,12 @@ struct PoliciesView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
+                LPPageHeader(title: "策略",
+                             status: store.endpoint == nil
+                                ? "未配对 · 全部直连"
+                                : "\(store.policies.count) 个策略组")
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
                 if store.endpoint == nil {
                     unpairedCard
                 } else if store.policies.isEmpty {
@@ -30,10 +36,9 @@ struct PoliciesView: View {
                     .padding(.top, 8)
                 }
             }
-            .background(LP.groupedBackground)
-            .contentMargins(.bottom, 84, for: .scrollContent)
-            .navigationTitle("策略")
-            .navigationBarTitleDisplayMode(.large)
+            .background(LP.canvas)
+            .contentMargins(.bottom, 120, for: .scrollContent)
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {

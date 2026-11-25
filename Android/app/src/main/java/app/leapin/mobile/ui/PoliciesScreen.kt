@@ -41,10 +41,13 @@ fun PoliciesScreen(store: ConsoleStore, scope: CoroutineScope) {
     }
 
     if (store.policies.isEmpty()) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("没有策略组", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = LP.text)
-                Text("在 Mac 的配置里添加代理组后会自动出现", fontSize = 12.sp, color = LP.textTertiary)
+        Column(Modifier.fillMaxSize().padding(horizontal = LP.gutter)) {
+            Box(Modifier.padding(top = 10.dp)) { PageHeader("策略", "未配对 · 全部直连") }
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("没有策略组", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = LP.text)
+                    Text("在 Mac 的配置里添加代理组后会自动出现", fontSize = 12.sp, color = LP.textTertiary)
+                }
             }
         }
         return
@@ -56,6 +59,7 @@ fun PoliciesScreen(store: ConsoleStore, scope: CoroutineScope) {
         ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        item { PageHeader("策略", "${store.policies.size} 个策略组") }
         items(store.policies, key = { it.name }) { group ->
             PolicyCard(group) { member -> pending = group.name to member }
         }

@@ -28,6 +28,12 @@ struct ConnectionsView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
+                LPPageHeader(title: "连接",
+                             status: local.isRunning
+                                ? "本机 \(filtered.count) 条"
+                                : (store.endpoint == nil ? "未配对 · 只看本机" : "来自 Mac \(filtered.count) 条"))
+                    .padding(.horizontal, 16)
+                    .padding(.top, 6)
                 if filtered.isEmpty {
                     emptyState
                 } else {
@@ -40,10 +46,9 @@ struct ConnectionsView: View {
                     .padding(.top, 8)
                 }
             }
-            .background(LP.groupedBackground)
-            .contentMargins(.bottom, 84, for: .scrollContent)
-            .navigationTitle("连接")
-            .navigationBarTitleDisplayMode(.large)
+            .background(LP.canvas)
+            .contentMargins(.bottom, 120, for: .scrollContent)
+            .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "搜索域名、App 或策略")
             .refreshable { await store.refresh() }
             .sheet(isPresented: $showGuide) { LocalProxyGuide() }

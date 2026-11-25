@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.leapin.mobile.ConsoleStore
+import app.leapin.mobile.LocalProxy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -45,6 +46,25 @@ fun DashboardScreen(store: ConsoleStore, scope: CoroutineScope) {
             .padding(horizontal = LP.gutter, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        PageHeader(
+            "这台手机的网络",
+            if (LocalProxy.isRunning) "引擎运行中 · 127.0.0.1:${LocalProxy.port}" else "本机引擎未启动",
+        )
+
+        FocusBand(eyebrow = "现在") {
+            RouteLine(listOf("你", "本机引擎", "直连"), 1)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Fact("连接", "${status?.activeConnections ?: 0}", modifier = Modifier.weight(1f))
+                Fact("规则", "${status?.ruleCount ?: 0}", modifier = Modifier.weight(1f))
+                Fact("运行", formatDuration(status?.uptimeSeconds ?: 0.0), mono = false, modifier = Modifier.weight(1f))
+                Fact("引擎", if (LocalProxy.isRunning) "运行中" else "已停止", mono = false, modifier = Modifier.weight(1f))
+            }
+            OnInkButton(
+                text = if (LocalProxy.isRunning) "停止本机引擎" else "启动本机引擎",
+                onClick = { if (LocalProxy.isRunning) LocalProxy.stop() else LocalProxy.start() },
+            )
+        }
+
         val state = status?.engineState ?: "unknown"
         Panel {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

@@ -38,6 +38,11 @@ object LP {
     val danger: Color @Composable get() = if (isSystemInDarkTheme()) Color(0xFFFF6B74) else Color(0xFFB32636)
     val violet: Color @Composable get() = if (isSystemInDarkTheme()) Color(0xFFB0A3FF) else Color(0xFF5446B8)
 
+    /** v5 ink：每屏最多一个焦点带，与桌面 / iOS 同一组值。 */
+    val ink: Color @Composable get() = if (isSystemInDarkTheme()) Color(0xFF1C1C1F) else Color(0xFF19191B)
+    val onInk: Color @Composable get() = Color(0xFFF4EFE6)
+    val onInkSecondary: Color @Composable get() = Color(0xFFF4EFE6).copy(alpha = 0.62f)
+
     val canvas: Color @Composable get() = MaterialTheme.colorScheme.background
     val panel: Color @Composable get() = MaterialTheme.colorScheme.surface
     val text: Color @Composable get() = MaterialTheme.colorScheme.onSurface

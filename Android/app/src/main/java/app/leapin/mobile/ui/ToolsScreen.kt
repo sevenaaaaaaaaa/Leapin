@@ -86,6 +86,8 @@ fun ToolsScreen(store: ConsoleStore, scope: CoroutineScope, onConnect: () -> Uni
             .padding(horizontal = LP.gutter, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        PageHeader("工具", "本机探针与配置")
+
         Panel {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {

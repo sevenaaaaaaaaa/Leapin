@@ -37,6 +37,7 @@ struct ToolsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
+                    LPPageHeader(title: "工具", status: "本机探针与配置")
                     LPSection(header: "本机", footer: localProxy.lastCheck ?? "代理在本机监听回环端口；系统接管需要付费开发者账号的 network-extension 权限。") {
                         LPListRow(title: "代理",
                                   subtitle: localProxy.isRunning ? "127.0.0.1:" + String(localProxy.port) : "未启动") {
@@ -146,8 +147,7 @@ struct ToolsView: View {
             }
             .background(LP.groupedBackground)
             .contentMargins(.bottom, 84, for: .scrollContent)
-            .navigationTitle("工具")
-            .navigationBarTitleDisplayMode(.large)
+            .navigationBarTitleDisplayMode(.inline)
             .task {
                 localAddress = Self.wifiAddress()
                 if publicAddress == nil { await loadPublicAddress() }

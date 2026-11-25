@@ -13,6 +13,11 @@ enum LP {
 
     static let canvas = adaptive(light: 0xF6F4EF, dark: 0x101012)
     static let panel = adaptive(light: 0xFCFBF8, dark: 0x151517)
+    /// v5 ink：每屏最多一个焦点带，和桌面端同一组值。
+    static let ink = adaptive(light: 0x19191B, dark: 0x1C1C1F)
+    /// ink 上的文字：纸色，不跟随深色模式反转。
+    static let onInk = Color(UIColor(srgbHex: 0xF4EFE6))
+    static let onInkSecondary = Color(UIColor(srgbHex: 0xF4EFE6, alpha: 0.62))
     static let panelRaised = adaptive(light: 0xFFFFFF, dark: 0x1F1F22)
     static let stroke = adaptive(light: 0x16150F, dark: 0xFFFFFF, lightAlpha: 0.10, darkAlpha: 0.12)
     static let strokeStrong = adaptive(light: 0x16150F, dark: 0xFFFFFF, lightAlpha: 0.20, darkAlpha: 0.20)
@@ -29,7 +34,8 @@ enum LP {
     static let danger = adaptive(light: 0xB32636, dark: 0xFF6B74)
     static let violet = adaptive(light: 0x5446B8, dark: 0xB0A3FF)
 
-    static let radius: CGFloat = 14
+    // v5 圆角：面板 12、控件 8，不再混用。
+    static let radius: CGFloat = 12
     static let radiusSmall: CGFloat = 8
     static let gutter: CGFloat = 16
 }
@@ -56,11 +62,16 @@ enum LPFont {
         .system(size: size, weight: weight, design: .monospaced)
     }
 
-    static let title = display(22, weight: .semibold)
+    // v5 字阶：与桌面端同一把尺子（28 / 15 / 13 / 11 mono / 20 mono）。
+    static let title = display(28, weight: .semibold)
     static let section = display(15, weight: .semibold)
-    static let body = display(14)
-    static let caption = display(12)
+    static let body = display(13)
+    static let caption = display(13)
     static let micro = display(11, weight: .medium)
+    static let label = mono(11, weight: .medium)
+    static let number = mono(20, weight: .semibold)
+    /// 每屏最多一句：解释性的人话。
+    static let quote = Font.system(size: 15, design: .serif).italic()
 }
 
 // MARK: - Components

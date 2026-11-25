@@ -64,6 +64,11 @@ fun DiagnosticsScreen(store: ConsoleStore, scope: CoroutineScope) {
             .padding(horizontal = LP.gutter, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        PageHeader(
+            "诊断",
+            if (store.endpoint == null) "本机连通性 · 未配对" else "Mac 判定与探测",
+        )
+
         TabRow(selectedTabIndex = tool, containerColor = LP.panel) {
             TOOLS.forEachIndexed { index, title ->
                 Tab(selected = tool == index, onClick = {

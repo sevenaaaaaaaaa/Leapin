@@ -823,3 +823,69 @@ W2/W3 的任务行在 W1 评审后补齐（T-16…T-21），全部完成并随 1
 2. 五张截图存在且与当前构建一致（截图时间晚于最后一次改动）。
 3. `report.md` 写清真机步骤与「模拟器验不了什么」（Wi-Fi 代理是系统设置，模拟器没有独立无线局域网设置）。
 4. `xcodebuild` exit 0。
+
+
+## M4 · 三端统一视觉（2026-11-25）
+
+**目标**：把 v5 语言（一条路 / 一张纸 / 一个信号）推到 iOS 与 Android，三端同一套几何、字阶与色值。
+**用户怎么试**：三端打开首页，看到的都是「页头 + 一个墨色焦点带 + 证据区」，同一条路由线。
+**依据**：\`docs/design/DESIGN-v5.md\`、\`docs/design/DESIGN-ALL-PLATFORMS.md\`。
+
+**里程碑 DoD**
+
+| 项 | 承接 | 怎么验 |
+| --- | --- | --- |
+| iOS 五页：28 页头 + 焦点带 + 纸面 | T-26 | \`qa/T-22..T-25\` + 五张截图 |
+| Android 五屏：页头 + 焦点带 + 纸面 | T-27 | \`assembleDebug\` 成功 + 代码对照 |
+| 三端 token / 组件一致 | T-28 | \`qa/T-28\` 对照断言 |
+
+### T-26 iOS 视觉 v5：token、RouteKit、首页焦点带
+
+- **Verdicts**：code: not run — 无独立评审角色 · security: skipped — 只改视觉与排版 · qa: pass — qa/T-22 8/8、T-23 7/7、T-24 9/9、T-25 6/6 · doc: pass — 设计文档与任务行同日核对
+- **Shape**: solo
+- **Milestone**: M4
+
+**做什么**
+1. \`MobileTheme\`：加 \`ink / onInk\`；字阶对齐 28 / 15 / 13 / 11 mono / 20 mono；圆角 12 与 8。
+2. 新增 \`Design/RouteKit.swift\`：\`RouteLine\`（三节点、当前节点朱红带光）、\`FocusBand\`（ink 底）、\`LPFact\`、\`LPPageHeader\`、\`OnInkButtonStyle\`。
+3. 首页改成「页头 → 焦点带（一条路 + 四事实 + 主按钮）→ 证据区两块」；连接 / 策略 / 诊断 / 工具四页换 \`LPPageHeader\`，背景统一 \`LP.canvas\`。
+4. \`qa/T-22\` 的断言同步到新结构（标题用 \`LPPageHeader\`、三问用焦点带 + Mac 块、端口正则换新写法）。
+
+**文件**：\`Design/MobileTheme.swift\`、\`Design/RouteKit.swift\`（新）、\`Views/DashboardView.swift\`、\`Views/{Connections,Policies,Diagnostics,Tools}View.swift\`、\`qa/T-22/run.sh\`
+
+**DoD**
+1. \`qa/T-22..T-25\` 全 PASS。
+2. 五张截图存在且晚于源码：\`docs/shots/v5-ios-{home,connections,policies,diagnostics,tools}.png\`。
+3. \`xcodebuild\` exit 0。
+
+### T-27 Android 视觉 v5：同一套 token 与组件
+
+- **Verdicts**：code: not run — 无独立评审角色 · security: skipped — 只改视觉 · qa: pass — \`assembleDebug\` BUILD SUCCESSFUL（2m49s） · doc: pass — 同日核对
+- **Shape**: solo
+- **Milestone**: M4
+
+**做什么**
+1. \`Theme.kt\`：加 \`LP.ink / onInk / onInkSecondary\`。
+2. 新增 \`ui/RouteKit.kt\`：\`RouteLine\`、\`FocusBand\`、\`Fact\`、\`OnInkButton\`、\`PageHeader\`。
+3. 首页加页头与焦点带（本机引擎状态 + 四事实 + 启停）；连接 / 策略 / 诊断 / 工具四屏加 \`PageHeader\`。
+
+**文件**：\`ui/Theme.kt\`、\`ui/RouteKit.kt\`（新）、\`ui/DashboardScreen.kt\`、\`ui/{Connections,Policies,Diagnostics,Tools}Screen.kt\`
+
+**DoD**
+1. \`./gradlew --no-daemon --offline assembleDebug\` 成功，APK 产出。
+2. 五屏都有 \`PageHeader\`；首页有 \`FocusBand\` 与 \`RouteLine\`（\`qa/T-28\` 断言）。
+3. 已知边界：本机没有 Android 模拟器，**只有编译验证**，观感靠装 APK 人工确认。
+
+### T-28 三端对照验收
+
+- **Verdicts**：code: not run — 无独立评审角色 · security: skipped — 只读仓库 · qa: pass — qa/T-28 对照断言全绿 · doc: pass — 对照表落在 DESIGN-ALL-PLATFORMS.md
+- **Shape**: solo
+- **Milestone**: M4
+
+**做什么**
+1. \`qa/T-28/run.sh\`：断言三端都有 accent 朱红、RouteLine / FocusBand / 页头组件、iOS 五页与 Android 五屏都用了页头组件，且 Android APK 产物存在。
+2. 对照表维护在 \`docs/design/DESIGN-ALL-PLATFORMS.md\` §2。
+
+**DoD**
+1. \`qa/T-28\` 全 PASS。
+2. 对照表与代码一致（每条断言都能指到文件）。

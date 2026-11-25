@@ -42,6 +42,12 @@ fun ConnectionsScreen(store: ConsoleStore, scope: CoroutineScope) {
     }
 
     Column(Modifier.fillMaxSize()) {
+        Box(Modifier.padding(horizontal = LP.gutter, vertical = 10.dp)) {
+            PageHeader(
+                "连接",
+                if (store.endpoint == null) "未配对 · 只看本机" else "${filtered.size} 条",
+            )
+        }
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
