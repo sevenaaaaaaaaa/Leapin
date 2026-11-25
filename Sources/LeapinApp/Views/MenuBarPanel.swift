@@ -66,15 +66,20 @@ struct MenuBarPanel: View {
                     .foregroundStyle(latencyColor)
             }
 
-            // 同一「路」的缩略：常驻层不能只剩一行状态词，头和尾都要看得见。
-            RouteLine(nodes: [
-                .init("你"),
-                .init(judgeShort, state: engine.state == .running ? .current : .idle),
-                .init(exitShort),
-            ], axis: .horizontal, onInk: false, compact: true)
+            // v6：同一「路」，第三条腿可以拖。松手才提交，候选在下方浮出。
+            LPRouteScrubber(
+                stops: menuStops,
+                selectedID: status.exit ?? "—",
+                judge: judgeShort,
+                enabled: engine.state == .running && menuStops.count > 1,
+                compact: true
+            ) { member in
+                if let group = currentNodeGroup {
+                    select(group: group.name, member: member)
+                }
+            }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .help("现在：\(judgeShort) → \(exitShort)")
-            .lpAnimation(LPMotion.quick, value: judgeShort)
+            .help(engine.state == .running ? "按住出口上下拖，松手生效" : "未接管：没有可切换的出口")
 
             factRow("配置", status.profileName.isEmpty ? "—" : status.profileName)
             factRow("出口", exitText)
@@ -116,6 +121,26 @@ struct MenuBarPanel: View {
     }
 
     /// 缩略里只放能一眼扫完的词：未接管就说未接管，别把一句状态文案塞进 280pt。
+    /// 菜单栏能拖的那个组：优先「现在」正在用的组，否则第一个可切换组。
+    private var currentNodeGroup: MenuBarGroup? {
+        guard !nodeGroups.isEmpty else { return nil }
+        if let name = status.exitGroup, let hit = nodeGroups.first(where: { $0.name == name }) {
+            return hit
+        }
+        return nodeGroups.first
+    }
+
+    private var menuStops: [LPRouteScrubber.Stop] {
+        guard let group = currentNodeGroup else { return [] }
+        return group.members.map { node in
+            LPRouteScrubber.Stop(
+                id: node.name,
+                label: node.name,
+                detail: node.failed ? "失败" : (node.latencyMs.map { "\($0)ms" } ?? "")
+            )
+        }
+    }
+
     private var judgeShort: String {
         guard engine.state == .running else { return "尚未接管" }
         return status.exitGroup ?? "规则模式"

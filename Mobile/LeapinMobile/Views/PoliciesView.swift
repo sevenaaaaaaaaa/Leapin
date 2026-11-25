@@ -6,6 +6,8 @@ struct PoliciesView: View {
     @Environment(ConsoleStore.self) private var store
     private var local: LocalProxyEngine { .shared }
     @State private var pending: PendingSelection?
+    /// v6：分组默认收起，只展开一个；点标题原地打开，不跳页。
+    @State private var expanded: Set<String> = []
 
     struct PendingSelection: Identifiable {
         let id = UUID()
@@ -27,7 +29,7 @@ struct PoliciesView: View {
                 } else if store.policies.isEmpty {
                     emptyState
                 } else {
-                    VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 10) {
                         ForEach(store.policies, id: \.name) { group in
                             section(group)
                         }
@@ -50,6 +52,9 @@ struct PoliciesView: View {
             }
             .task {
                 if store.policies.isEmpty { await store.loadPolicies() }
+                if expanded.isEmpty, let first = store.policies.first {
+                    expanded = [first.name]
+                }
             }
             .confirmationDialog(
                 pending.map { "切换到 \($0.outbound)？" } ?? "",
@@ -78,28 +83,72 @@ struct PoliciesView: View {
         let footer = group.selected != group.effective && !group.effective.isEmpty
             ? "已选 \(group.selected)，实际走 \(group.effective)"
             : typeLabel(group.type)
-        return LPSection(header: group.name, footer: footer) {
-            if group.members.isEmpty {
-                LPListRow(title: active.isEmpty ? "没有成员" : active, isLast: true)
-            } else {
-                ForEach(Array(group.members.enumerated()), id: \.element) { index, member in
-                    LPListRow(title: member,
-                              value: member == active ? "当前" : nil,
-                              isLast: index == group.members.count - 1) {
-                        if member == active {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(LP.accent)
-                        }
+        let isOpen = expanded.contains(group.name)
+        return VStack(spacing: 0) {
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    if isOpen { expanded.remove(group.name) } else { expanded.insert(group.name) }
+                }
+                LPHaptic.soft()
+            } label: {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(group.name)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(LP.text)
+                        Text(footer)
+                            .font(.system(size: 11))
+                            .foregroundStyle(LP.textTertiary)
+                            .lineLimit(1)
                     }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        guard member != active else { return }
-                        pending = PendingSelection(group: group.name, outbound: member)
+                    Spacer(minLength: 8)
+                    Text(active.isEmpty ? "—" : active)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(LP.textSecondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(LP.textTertiary)
+                        .rotationEffect(.degrees(isOpen ? 0 : -90))
+                }
+                .padding(.horizontal, 14)
+                .frame(height: 54)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(group.name)，当前 \(active)，\(isOpen ? "已展开" : "已收起")")
+
+            if isOpen {
+                if group.members.isEmpty {
+                    LPListRow(title: active.isEmpty ? "没有成员" : active, isLast: true)
+                } else {
+                    ForEach(Array(group.members.enumerated()), id: \.element) { index, member in
+                        LPListRow(title: member,
+                                  value: member == active ? "当前" : nil,
+                                  isLast: index == group.members.count - 1) {
+                            if member == active {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(LP.accent)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            guard member != active else { return }
+                            pending = PendingSelection(group: group.name, outbound: member)
+                        }
                     }
                 }
             }
         }
+        .background(LP.groupedRow)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(LP.stroke, lineWidth: isOpen ? 0 : 1)
+        )
+        .animation(.easeOut(duration: 0.2), value: isOpen)
     }
 
     /// 未配对时不是空白：讲清本机怎么走，并给一个能立刻做的动作。

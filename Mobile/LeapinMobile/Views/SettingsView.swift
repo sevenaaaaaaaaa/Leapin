@@ -5,6 +5,9 @@ struct SettingsView: View {
     @Environment(ConsoleStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var confirmDisconnect = false
+    @AppStorage("lp.agent.draftBar") private var draftBarEnabled = true
+    @AppStorage("lp.agent.confirmExit") private var confirmExit = false
+    @AppStorage("lp.river.holdSeconds") private var holdSeconds = 3
 
     var body: some View {
         @Bindable var store = store
@@ -34,6 +37,33 @@ struct SettingsView: View {
                         .tint(LP.accent)
                         .onChange(of: store.autoRefresh) { _, enabled in
                             if enabled { store.startPolling() }
+                        }
+                    }
+
+                    LPCard(title: "Agent 与自动化") {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Toggle(isOn: $draftBarEnabled) {
+                                settingLabel("草稿行", "在页面底部用一句话改网络")
+                            }
+                            .tint(LP.accent)
+
+                            Toggle(isOn: $confirmExit) {
+                                settingLabel("切换出口前确认", "影响所有走这条策略的连接")
+                            }
+                            .tint(LP.accent)
+
+                            HStack(spacing: 10) {
+                                settingLabel("回看保持", "时间河松手后回到实时前的等待")
+                                Spacer(minLength: 8)
+                                Picker("回看保持", selection: $holdSeconds) {
+                                    Text("2 秒").tag(2)
+                                    Text("3 秒").tag(3)
+                                    Text("5 秒").tag(5)
+                                }
+                                .pickerStyle(.segmented)
+                                .frame(width: 156)
+                                .labelsHidden()
+                            }
                         }
                     }
 
@@ -70,6 +100,17 @@ struct SettingsView: View {
                 }
                 Button("取消", role: .cancel) {}
             }
+        }
+    }
+
+    private func settingLabel(_ title: String, _ note: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(LPFont.body)
+                .foregroundStyle(LP.text)
+            Text(note)
+                .font(LPFont.micro)
+                .foregroundStyle(LP.textTertiary)
         }
     }
 }

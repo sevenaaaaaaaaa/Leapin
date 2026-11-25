@@ -8,6 +8,29 @@ struct ConnectionsView: View {
     private var local: LocalProxyEngine { .shared }
     @State private var query = ""
     @State private var showGuide = false
+    /// v6：时间河冻结与列表过滤条（按 Surge 的做法，过滤压在列表上方）。
+    @State private var frozen: Int?
+    @State private var filter: ConnectionFilter = .all
+
+    private var feed: LPRiverFeed { .shared }
+
+    private enum ConnectionFilter: String, CaseIterable, Identifiable {
+        case all = "全部"
+        case proxy = "代理"
+        case direct = "直连"
+
+        var id: String { rawValue }
+
+        func matches(_ connection: ControlConnection) -> Bool {
+            let direct = connection.policy.uppercased() == "DIRECT"
+                || connection.outbound.uppercased() == "DIRECT"
+            switch self {
+            case .all: return true
+            case .proxy: return !direct
+            case .direct: return direct
+            }
+        }
+    }
 
     /// The phone's own traffic when its engine runs, the Mac's list otherwise.
     private var source: [ControlConnection] {
@@ -15,9 +38,10 @@ struct ConnectionsView: View {
     }
 
     private var filtered: [ControlConnection] {
-        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return source }
+        let byKind = source.filter { filter.matches($0) }
+        guard !query.trimmingCharacters(in: .whitespaces).isEmpty else { return byKind }
         let needle = query.lowercased()
-        return source.filter {
+        return byKind.filter {
             $0.host.lowercased().contains(needle)
                 || $0.sourceApp.lowercased().contains(needle)
                 || $0.policy.lowercased().contains(needle)
@@ -34,6 +58,12 @@ struct ConnectionsView: View {
                                 : (store.endpoint == nil ? "未配对 · 只看本机" : "来自 Mac \(filtered.count) 条"))
                     .padding(.horizontal, 16)
                     .padding(.top, 6)
+                riverBlock
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                filterBar
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
                 if filtered.isEmpty {
                     emptyState
                 } else {
@@ -51,7 +81,61 @@ struct ConnectionsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "搜索域名、App 或策略")
             .refreshable { await store.refresh() }
+            .task { feed.start() }
             .sheet(isPresented: $showGuide) { LocalProxyGuide() }
+        }
+    }
+
+    private var riverBlock: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            LPRiver(samples: feed.samples, frozenIndex: frozen, enabled: local.isRunning,
+                    onInk: false, height: 40) { index in
+                frozen = index
+            }
+            HStack(spacing: 6) {
+                Text(frozen.map { "−\(max(0, feed.samples.count - 1 - $0))s · 回看中" }
+                     ?? (local.isRunning ? "最近 60 秒" : "引擎已停止"))
+                    .font(.system(size: 9.5, design: .monospaced))
+                    .foregroundStyle(LP.textTertiary)
+                Spacer(minLength: 6)
+                if frozen != nil {
+                    Button("回到现在") { frozen = nil }
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(LP.accent)
+                        .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(12)
+        .background(LP.panel, in: RoundedRectangle(cornerRadius: LP.radius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: LP.radius, style: .continuous)
+                .strokeBorder(LP.stroke, lineWidth: 1)
+        )
+    }
+
+    private var filterBar: some View {
+        HStack(spacing: 6) {
+            ForEach(ConnectionFilter.allCases) { item in
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { filter = item }
+                    LPHaptic.select()
+                } label: {
+                    Text(item.rawValue)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(filter == item ? LP.onInk : LP.textSecondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(filter == item ? LP.ink : LP.panel))
+                        .overlay(Capsule().strokeBorder(filter == item ? Color.clear : LP.stroke, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(item.rawValue)请求")
+            }
+            Spacer(minLength: 6)
+            Text("\(filtered.count) 条")
+                .font(.system(size: 9.5, design: .monospaced))
+                .foregroundStyle(LP.textTertiary)
         }
     }
 

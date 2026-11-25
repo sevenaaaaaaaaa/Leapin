@@ -78,6 +78,12 @@ private struct DashboardContent: View {
     @StateObject private var model = OverviewModel()
     /// 首屏只留 ≤5 个一级块（DESIGN-v5 §12.1）：书签、随手可用、常用工具、公司与回家、页脚都收在这里。
     @State private var showMore = false
+    /// v6：60 秒速率河。每秒一帧，只在本页可见时跑。
+    @State private var river: [LPRiverSample] = Array(repeating: .zero, count: 60)
+    @State private var frozen: Int?
+    /// 可拖的出口：只在真正能切的时候（运行中且候选 > 1）才替换静态的 RouteLine。
+    @State private var quickStops: [LPRouteScrubber.Stop] = []
+    @State private var quickGroup: String?
     /// 五个事实的唯一数据源：与菜单栏面板、实时浮窗是同一个对象。
     ///
     /// 这里**只读** `status`，不采样、不持有定时器。store 的帧由三处低频驱动：
@@ -231,11 +237,44 @@ private struct DashboardContent: View {
     private var focusBand: some View {
         FocusBand("现在走") {
             VStack(alignment: .leading, spacing: 22) {
-                RouteLine(nodes: [
-                    .init("你", subtitle: "这台 Mac"),
-                    .init(judgeTitle, subtitle: "判据"),
-                    .init(exitNodeTitle, subtitle: exitNodeSubtitle, state: .current),
-                ])
+                VStack(alignment: .leading, spacing: 10) {
+                    if model.state == .running, quickStops.count > 1 {
+                        LPRouteScrubber(
+                            stops: quickStops,
+                            selectedID: status.exit ?? quickStops[0].id,
+                            judge: judgeTitle,
+                            enabled: true,
+                            onInk: true
+                        ) { member in
+                            guard let group = quickGroup else { return }
+                            Task {
+                                try? await app.engine.menuBarSelect(group: group, member: member)
+                                await loadQuickStops()
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        RouteLine(nodes: [
+                            .init("你", subtitle: "这台 Mac"),
+                            .init(judgeTitle, subtitle: "判据"),
+                            .init(exitNodeTitle, subtitle: exitNodeSubtitle, state: .current),
+                        ])
+                    }
+                    // 活的那一层：最近 60 秒的上下行。空态只留一条中线，不画假波形。
+                    LPRiver(samples: river, frozenIndex: frozen,
+                            enabled: model.state == .running, onInk: true, height: 38) { index in
+                        frozen = index
+                    }
+                    HStack(spacing: 6) {
+                        Text(frozen.map { "−\(59 - $0)s · 回看中" } ?? "最近 60 秒")
+                            .font(.system(size: 9.5, design: .monospaced))
+                            .foregroundStyle(LP.inkTextSecondary)
+                        Spacer(minLength: 0)
+                        Text(model.state == .running ? "拖动回看" : "已停止")
+                            .font(.system(size: 9.5, design: .monospaced))
+                            .foregroundStyle(LP.inkTextSecondary.opacity(0.8))
+                    }
+                }
                 HStack(alignment: .bottom, spacing: 28) {
                     RouteFact("当前配置", profileText)
                     RouteFact("当前出口", exitText)
@@ -262,6 +301,42 @@ private struct DashboardContent: View {
                 }
             }
         }
+        .task { await riverLoop() }
+        .task(id: model.state) { await loadQuickStops() }
+    }
+
+    /// 菜单栏同一份快照：可切换的组与成员。失败就退回静态展示，不假装能拖。
+    private func loadQuickStops() async {
+        let snapshot = await app.engine.menuBarSnapshot()
+        let groups = snapshot.nodeMenuGroups
+        guard let group = groups.first(where: { $0.name == snapshot.currentGroup }) ?? groups.first else {
+            quickStops = []
+            quickGroup = nil
+            return
+        }
+        quickGroup = group.name
+        quickStops = group.members.map { node in
+            LPRouteScrubber.Stop(
+                id: node.name,
+                label: node.name,
+                detail: node.failed ? "失败" : (node.latencyMs.map { "\($0)ms" } ?? "")
+            )
+        }
+    }
+
+    private func riverLoop() async {
+        while !Task.isCancelled {
+            let rates = status.rates
+            river.removeFirst()
+            river.append(LPRiverSample(down: normalize(rates.down), up: normalize(rates.up)))
+            try? await Task.sleep(for: .seconds(1))
+        }
+    }
+
+    /// 对数归一：1 KB/s 看得见，3 MB/s 封顶。
+    private func normalize(_ bytesPerSecond: Double) -> Double {
+        guard bytesPerSecond > 0 else { return 0 }
+        return min(1, log1p(bytesPerSecond) / log1p(3_000_000))
     }
 
     private var judgeTitle: String {

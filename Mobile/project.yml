@@ -68,6 +68,19 @@ targets:
         ENABLE_PREVIEWS: YES
         SWIFT_EMIT_LOC_STRINGS: YES
 
+  LeapinMobileUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: LeapinMobileUITests
+    dependencies:
+      - target: LeapinMobile
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.leapin.mobile.uitests
+        TEST_TARGET_NAME: LeapinMobile
+        GENERATE_INFOPLIST_FILE: YES
+
 schemes:
   LeapinMobile:
     build:
@@ -77,3 +90,7 @@ schemes:
       config: Debug
     archive:
       config: Release
+    test:
+      config: Debug
+      targets:
+        - LeapinMobileUITests
