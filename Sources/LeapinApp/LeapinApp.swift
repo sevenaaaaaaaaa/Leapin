@@ -539,6 +539,35 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// 按 id 导出任意一份配置（书架详情卡用），不改当前配置。
+    /// 与 exportProfile(format:) 的差别只有一处：这里先按 id 把配置读出来。
+    func exportProfile(id: UUID, name: String, format: ProfileFormat) {
+        let panel = NSSavePanel()
+        let safe = name.replacingOccurrences(of: "/", with: "-")
+                       .replacingOccurrences(of: ":", with: "-")
+                       .trimmingCharacters(in: .whitespaces)
+        panel.nameFieldStringValue = "leapin-\(safe.isEmpty ? "profile" : safe).\(format.fileExtension)"
+        panel.allowedContentTypes = []
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let profile = try engine.store.load(id: id)
+            let text: String
+            if format == .clash,
+               let source = try engine.store.kernelSource(for: id),
+               source.kernel == .mihomo {
+                text = source.clash
+            } else {
+                text = try engine.store.export(profile, format: format)
+            }
+            try text.write(to: url, atomically: true, encoding: .utf8)
+            showToast("已导出到 \(url.lastPathComponent)", kind: .success, actionTitle: "在访达中显示") {
+                NSWorkspace.shared.activateFileViewerSelecting([url])
+            }
+        } catch {
+            showToast("导出失败：\(error.localizedDescription)", kind: .error)
+        }
+    }
+
     func installCA() {
         let caURL = engine.store.root.appendingPathComponent("ca/ca.pem")
         guard FileManager.default.fileExists(atPath: caURL.path) else {
@@ -1118,6 +1147,10 @@ private struct MenuBarLabel: View {
     @ObservedObject private var status = MenuBarStatus.shared
     /// 图标自己记的 tone：store 可能还没人喂过，不能直接读它的瞬时值当真相。
     @State private var tone: ResidentTone = .idle
+    /// v6：图标右侧两条 2.5pt 微条。1 Hz 采样，不跟着每个请求重画。
+    @State private var downRate: Double = 0
+    @State private var upRate: Double = 0
+    private static let meterTicker = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         icon
@@ -1129,16 +1162,29 @@ private struct MenuBarLabel: View {
             .onReceive(engine.$systemProxyActive) { _ in scheduleSync() }
             .onReceive(engine.$lastError) { _ in scheduleSync() }
             .onReceive(engine.$profile) { _ in scheduleSync() }
+            // 微条只读「此刻的速率」，一秒一帧；面板打开时 store 也在喂，Meter 自己会去重。
+            .onReceive(Self.meterTicker) { _ in sampleRates() }
+    }
+
+    private func sampleRates() {
+        let fresh = ResidentStatusStore.shared.update(from: engine)
+        downRate = fresh.rates.down
+        upRate = fresh.rates.up
     }
 
     @ViewBuilder private var icon: some View {
-        if let badge = status.badge, tone == .normal {
-            // 延迟只在正常态出现：降级/失败时挂着旧延迟，等于用旧数字冒充健康。
-            Label(badge, systemImage: tone.iconName)
-                .accessibilityLabel(tone.accessibilityText)
-        } else {
-            Image(systemName: tone.iconName)
-                .accessibilityLabel(tone.accessibilityText)
+        HStack(spacing: 3) {
+            if let badge = status.badge, tone == .normal {
+                // 延迟只在正常态出现：降级/失败时挂着旧延迟，等于用旧数字冒充健康。
+                Label(badge, systemImage: tone.iconName)
+                    .accessibilityLabel(tone.accessibilityText)
+            } else {
+                Image(systemName: tone.iconName)
+                    .accessibilityLabel(tone.accessibilityText)
+            }
+            if engine.state == .running {
+                MenuBarMeter(down: downRate, up: upRate)
+            }
         }
     }
 
@@ -1152,5 +1198,28 @@ private struct MenuBarLabel: View {
     /// 这一拍是读得到新值的唯一代价，比加定时器便宜得多。
     private func scheduleSync() {
         DispatchQueue.main.async { sync() }
+    }
+}
+
+/// 菜单栏图标里的两条微条：上行 / 下行，按对数归一，最高 12pt。
+/// 它属于图标，不参与 VoiceOver（读屏读 tone 的文字就够了）。
+private struct MenuBarMeter: View {
+    var down: Double
+    var up: Double
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 1.5) {
+            bar(up)
+            bar(down)
+        }
+        .frame(width: 9, height: 12)
+        .accessibilityHidden(true)
+    }
+
+    private func bar(_ rate: Double) -> some View {
+        let level = rate <= 0 ? 0 : min(1, log1p(rate) / log1p(3_000_000))
+        return Capsule()
+            .frame(width: 2.5, height: max(1.5, level * 12))
+            .foregroundStyle(.primary)
     }
 }

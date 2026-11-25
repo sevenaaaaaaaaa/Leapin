@@ -123,6 +123,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case "adblock": content = AnyView(RewriteView().environmentObject(model))
                 case "rewrite": content = AnyView(RewriteView().environmentObject(model))
                 case "learn": content = AnyView(LearnView().environmentObject(model))
+                case "spine-detail":
+                    content = AnyView(LPSpineDetailSheet(spine: lpSpineFixture(name: "机场主订阅", source: "机场主订阅.yaml",
+                                                                              rules: 303, days: 3, broken: true),
+                                                         isActive: true, busy: false,
+                                                         onActivate: {}, onExport: { _ in },
+                                                         onDelete: {}, onClose: {})
+                        .frame(maxWidth: .infinity, maxHeight: .infinity))
+                case "spine-compare":
+                    content = AnyView(LPSpineCompareSheet(
+                        comparison: LPSpineCompare.run(lpSpineFixture(name: "公司直连", source: "公司直连.yaml", rules: 11, days: 0),
+                                                       lpSpineFixture(name: "机场主订阅", source: "机场主订阅.yaml", rules: 303, days: 3, broken: true)),
+                        onClose: {})
+                        .frame(maxWidth: .infinity, maxHeight: .infinity))
+                case "spine-empty":
+                    content = AnyView(LPSpineShelf(spines: [], activeID: nil,
+                                                   actions: LPSpineShelfActions(pull: { _ in }, compare: { _, _ in },
+                                                                                activate: { _ in }, export: { _, _ in },
+                                                                                delete: { _ in }, importProfile: {})))
                 default: content = AnyView(Text("unknown view: \(spec)"))
                 }
                 let host = NSHostingView(rootView:
@@ -138,12 +156,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // the snapshot a real offscreen window to lay out inside.
                 let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 1160, height: 860),
                                       styleMask: [.titled], backing: .buffered, defer: false)
-                window.appearance = NSAppearance(named: .aqua)
-                host.appearance = NSAppearance(named: .aqua)
+                let appearance = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_DARK"] == "1"
+                    ? NSAppearance(named: .darkAqua) : NSAppearance(named: .aqua)
+                window.appearance = appearance
+                host.appearance = appearance
                 window.contentView = host
                 window.orderFrontRegardless()
                 host.layoutSubtreeIfNeeded()
-                try? await Task.sleep(for: .milliseconds(700))
+                // 1.4s：书脊这类异步取数的块要等它落地，否则拍到的是淡入中途的一帧。
+                try? await Task.sleep(for: .milliseconds(1400))
                 host.layoutSubtreeIfNeeded()
                 if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
                     host.cacheDisplay(in: host.bounds, to: rep)
@@ -333,3 +354,45 @@ enum LaunchAtLogin {
         }
     }
 }
+#if DEBUG
+/// 快照用的书脊样本：与 fixtures 里的四份配置同形，但不需要真的导入。
+private func lpSpineFixture(name: String, source: String, rules: Int, days: Double,
+                            broken: Bool = false) -> LPSpineSnapshot {
+    let tallies: [LPSpineTally] = broken
+        ? [LPSpineTally(name: "domain-suffix", count: 284), LPSpineTally(name: "ip-cidr", count: 9),
+           LPSpineTally(name: "domain-keyword", count: 1), LPSpineTally(name: "geoip", count: 1),
+           LPSpineTally(name: "match", count: 1)]
+        : [LPSpineTally(name: "domain-suffix", count: 9), LPSpineTally(name: "ip-cidr", count: 2),
+           LPSpineTally(name: "geoip", count: 0), LPSpineTally(name: "match", count: 1),
+           LPSpineTally(name: "domain-keyword", count: 1)]
+    return LPSpineSnapshot(
+        id: UUID(),
+        name: name,
+        source: source,
+        updatedAt: Date().addingTimeInterval(-days * 86_400),
+        ruleCount: rules,
+        ruleLines: (0..<rules).map { i in
+            let kind = broken ? "DOMAIN-SUFFIX,cdn\(String(format: "%03d", i)).example.net → Proxy"
+                              : "DOMAIN-SUFFIX,svc\(String(format: "%02d", i)).home.arpa → DIRECT"
+            return kind
+        },
+        tallies: tallies,
+        groups: broken
+            ? [LPSpineGroup(name: "Proxy", type: "url-test", memberCount: 9),
+               LPSpineGroup(name: "Fallback", type: "fallback", memberCount: 0)]
+            : [LPSpineGroup(name: "公司出口", type: "select", memberCount: 2)],
+        outbounds: broken
+            ? (1...9).map { "HK-0\($0)" }
+            : ["Office-HK", "Office-SG", "DIRECT", "REJECT"],
+        rewriteCount: broken ? 3 : 0,
+        scriptNames: broken ? ["mark-sub"] : [],
+        adblockEnabled: true,
+        adblockListCount: broken ? 2 : 0,
+        dnsPort: 5354,
+        dnsUpstreamCount: 2,
+        danglingPolicies: broken ? ["Streaming"] : [],
+        emptyGroups: broken ? ["Fallback"] : []
+    )
+}
+#endif
+
