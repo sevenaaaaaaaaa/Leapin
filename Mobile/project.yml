@@ -27,8 +27,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.leapin.mobile.tunnel
         PRODUCT_NAME: LeapinTunnel
-        MARKETING_VERSION: "1.3"
-        CURRENT_PROJECT_VERSION: "4"
+        MARKETING_VERSION: "1.4"
+        CURRENT_PROJECT_VERSION: "5"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: LeapinTunnel/Info.plist
         CODE_SIGN_ENTITLEMENTS: LeapinTunnel/LeapinTunnel.entitlements
@@ -59,8 +59,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.leapin.mobile
         PRODUCT_NAME: Leapin
-        MARKETING_VERSION: "1.3"
-        CURRENT_PROJECT_VERSION: "4"
+        MARKETING_VERSION: "1.4"
+        CURRENT_PROJECT_VERSION: "5"
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Info.plist
