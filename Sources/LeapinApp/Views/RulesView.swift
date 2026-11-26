@@ -93,20 +93,19 @@ struct RulesView: View {
                 // 复制、策略组切换）一律照常——追问只是看，不该跟着写入口一起被冻。
                 // 写入口逐个上锁：工具栏、行尾删除、⌫、临时规则清除、空态「添加规则」。
                 ruleList
-                    .clipShape(RoundedRectangle(cornerRadius: LPGlass.panelRadius, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: LPRadius.panel, style: .continuous))
                     .lpSheet()
                 if showsPolicyGroups {
                     sidePanel.frame(width: 292)
                 }
             }
-            .padding(.horizontal, 32)
+            .padding(.horizontal, LPSpace.inset)
             .padding(.top, 16)
             .padding(.bottom, 10)
             learnFooter
-                .padding(.horizontal, 32)
+                .padding(.horizontal, LPSpace.inset)
                 .padding(.bottom, 20)
         }
-        .navigationTitle("分流规则")
         .sheet(isPresented: $showAdd) {
             AddRuleSheet { rule in
                 engine.addRules([rule])
@@ -188,7 +187,7 @@ struct RulesView: View {
             }
 
             Text("\(filtered.count) / \(engine.profile.rules.count)")
-                .font(LPFont.num(10.5, weight: .medium))
+                .font(LPFont.num(11.5, weight: .medium))
                 .foregroundStyle(LP.textTertiary)
             Spacer()
             Button {
@@ -225,7 +224,7 @@ struct RulesView: View {
             }
             .buttonStyle(LPPrimaryButtonStyle())
         }
-        .padding(.horizontal, 32).padding(.vertical, 13)
+        .padding(.horizontal, LPSpace.inset).padding(.vertical, 13)
     }
 
     /// Temporary rules only live for this run; say so, and make them easy to drop.
@@ -249,7 +248,7 @@ struct RulesView: View {
             .buttonStyle(LPGhostButtonStyle())
             .disabled(engine.executionKernel == .mihomo)
         }
-        .padding(.horizontal, 32)
+        .padding(.horizontal, LPSpace.inset)
         .padding(.top, 10)
     }
 
@@ -289,8 +288,7 @@ struct RulesView: View {
                                 .frame(width: Self.whyColumnWidth, alignment: .trailing)
                         }
                     }
-                    .font(LPFont.mono(10, weight: .medium))
-                    .tracking(1.2)
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(LP.textTertiary)
                     .padding(.horizontal, 18)
                     .padding(.top, 10)
@@ -725,7 +723,7 @@ struct RulesView: View {
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Text("\(dead.count) 条不会命中")
-                    .font(LPFont.mono(10, weight: .semibold))
+                    .font(LPFont.mono(11, weight: .semibold))
                     .foregroundStyle(LP.danger)
                 ForEach(dead.prefix(4), id: \.diagnostic.index) { item in
                     Button { jump(to: item.diagnostic.index) } label: {
@@ -822,8 +820,8 @@ struct RuleRow: View {
                 .foregroundStyle(LP.textTertiary)
                 .frame(width: 30, alignment: .leading)
             Text(label)
-                .font(LPFont.mono(10, weight: .medium))
-                .tracking(0.8)
+                .font(LPFont.mono(11, weight: .medium))
+                .tracking(0.6)
                 .foregroundStyle(LP.textTertiary)
                 .lineLimit(1)
                 .frame(width: 66, alignment: .leading)
@@ -840,7 +838,7 @@ struct RuleRow: View {
             }
             Spacer()
             Text(rule.policy)
-                .font(LPFont.mono(10, weight: .semibold))
+                .font(LPFont.mono(11, weight: .semibold))
                 .tracking(0.2)
                 .foregroundStyle(policyColor)
         }
@@ -1046,8 +1044,8 @@ struct AddRuleSheet: View {
     private func formRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
         HStack(spacing: 14) {
             Text(label)
-                .font(LPFont.mono(10, weight: .medium))
-                .tracking(0.8)
+                .font(LPFont.mono(11, weight: .medium))
+                .tracking(0.6)
                 .foregroundStyle(LP.textTertiary)
                 .frame(width: 52, alignment: .leading)
             content()

@@ -15,11 +15,14 @@ struct RouteLine: View {
         var title: String
         var subtitle: String?
         var state: NodeState
+        /// 这条路的主角（出口）：字号升到 22，是所在那一页唯一的大字。
+        var prominent: Bool = false
 
-        init(_ title: String, subtitle: String? = nil, state: NodeState = .idle) {
+        init(_ title: String, subtitle: String? = nil, state: NodeState = .idle, prominent: Bool = false) {
             self.title = title
             self.subtitle = subtitle
             self.state = state
+            self.prominent = prominent
         }
     }
 
@@ -70,16 +73,18 @@ struct RouteLine: View {
     }
 
     private func nodeView(_ node: Node) -> some View {
-        HStack(spacing: compact ? 6 : 10) {
-            dot(node.state)
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .firstTextBaseline, spacing: compact ? 6 : 10) {
+            dot(node.state, prominent: node.prominent)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] + (compact ? 3 : 4) }
+            VStack(alignment: .leading, spacing: node.prominent ? 3 : 2) {
                 Text(node.title)
-                    .font(.system(size: compact ? 12 : 14, weight: .semibold))
+                    .font(.system(size: compact ? 12 : (node.prominent ? 22 : 14), weight: .semibold))
+                    .tracking(node.prominent ? -0.3 : 0)
                     .foregroundStyle(labelColor(node.state))
                     .lineLimit(1)
                 if let subtitle = node.subtitle, !compact {
                     Text(subtitle)
-                        .font(.system(size: 11))
+                        .font(.system(size: compact ? 11 : 12))
                         .foregroundStyle(subColor)
                         .lineLimit(1)
                 }
@@ -130,16 +135,16 @@ struct RouteLine: View {
         }
     }
 
-    private func dot(_ state: NodeState) -> some View {
+    private func dot(_ state: NodeState, prominent: Bool = false) -> some View {
         Circle()
             .fill(dotColor(state))
-            .frame(width: compact ? 6 : 8, height: compact ? 6 : 8)
-            .padding(.top, compact ? 3 : 4)
+            .frame(width: compact ? 6 : (prominent ? 10 : 8),
+                   height: compact ? 6 : (prominent ? 10 : 8))
             .background {
                 if state == .current || state == .alert {
                     Circle().fill(LP.accent.opacity(0.18))
-                        .frame(width: compact ? 12 : 16, height: compact ? 12 : 16)
-                        .offset(y: compact ? 3 : 4)
+                        .frame(width: compact ? 12 : (prominent ? 22 : 16),
+                               height: compact ? 12 : (prominent ? 22 : 16))
                 }
             }
     }

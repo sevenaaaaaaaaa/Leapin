@@ -200,15 +200,11 @@ final class AppModel: ObservableObject {
         /// 页头图标跟着落点走，不跟旧 rawValue 走。
         var headerIcon: String { verb?.icon ?? icon }
 
-        /// 页头副标题写这个动词页现在有哪几个 tab；旧页名的副标题不再出现在页头上。
-        var headerSubtitle: String {
-            switch verb {
-            case .goWhere?: return "总览 / 配置与订阅"
-            case .whatChanged?: return "重写 / Mock / 脚本 / 去广告"
-            case .why?: return "连接 / 指标 / 探测 / 诊断"
-            case .howJudged?, nil: return subtitle
-            }
-        }
+        /// 页头副标题：动词页写用户的那句原话（`WorkbenchVerb.question`），其余页沿用页面副标题。
+        ///
+        /// 动词名只有两三个字，单独当标题对新用户不够自明；那句原话才是这一页在回答的问题。
+        /// tab 名不再写在这里——它们现在就排在标题旁边。
+        var headerSubtitle: String { verb?.question ?? subtitle }
     }
 
     let engine = LeapinEngine.shared
@@ -237,6 +233,9 @@ final class AppModel: ObservableObject {
     @Published var networkFailed = false
 
     @Published var section: Section? = .dashboard
+    /// 当前页交给页头的 tab（见 `lpHeaderTabs`）。页头只负责画；选中的是哪一个、
+    /// 怎么切，都还是页面自己的状态，壳这边不留第二份。
+    @Published var headerTabs: LPHeaderTabs?
     @Published var toast: String?
     @Published var toastKind: LPToastKind = .success
     @Published var toastActionTitle: String?
@@ -317,11 +316,11 @@ final class AppModel: ObservableObject {
         }
     }
 
-    /// ⌘F 只对真正有搜索框的页面生效；其余页面改为打开命令面板，
-    /// 避免「按了没反应」的假入口。
+    /// ⌘F 落到当前页真正的输入框上。总览没有列表可过滤，它的输入框是「问路」；
+    /// 其余没有搜索框的页面改为打开命令面板，避免「按了没反应」的假入口。
     func requestSearchFocus() {
         let page = section ?? .dashboard
-        if page == .dashboard { showPalette = true; return }
+        if page == .dashboard { searchFocusRequest += 1; return }
         guard page.supportsSearch else {
             showPalette = true
             showToast("\(page.title)没有搜索框，已打开命令面板", kind: .info)
@@ -591,9 +590,11 @@ struct RootView: View {
                 LPBackground()
                 HStack(spacing: 0) {
                     SidebarView(compact: compact)
+                        // 侧栏的上缘和页头标题的上缘在同一条线上（标题栏之下同样 12pt）；
+                        // 红黄绿三个按钮在它上方的纸面上。
                         .padding(.leading, 10)
-                        .padding(.top, 36)
-                        .padding(.bottom, 10)
+                        .padding(.top, LPShell.headerTop)
+                        .padding(.bottom, 12)
                     VStack(spacing: 0) {
                         PageHeaderBar(compact: compact)
                         pageContent
@@ -640,7 +641,10 @@ struct RootView: View {
             if let raw = note.object as? String, let section = AppModel.Section(rawValue: raw) {
                 app.go(to: section)
             }
-            NSApp.activate(ignoringOtherApps: true)
+            // 外链、菜单栏面板跳页时要把窗口带到人面前；离屏快照只是自己翻页，不抢前台。
+            if !LPShooting.isOn {
+                NSApp.activate(ignoringOtherApps: true)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .lpTogglePalette)) { _ in
             app.showPalette.toggle()
@@ -742,15 +746,15 @@ private struct SidebarView: View {
         VStack(alignment: .leading, spacing: 0) {
             brand
                 .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
-                .padding(.horizontal, compact ? 0 : 18)
-                .padding(.top, 24)
-                .padding(.bottom, 20)
+                .padding(.horizontal, compact ? 0 : 16)
+                .padding(.top, 16)
+                .padding(.bottom, compact ? 12 : 16)
 
             paletteEntry
-                .padding(.horizontal, 14)
-                .padding(.bottom, 20)
+                .padding(.horizontal, compact ? 10 : 12)
+                .padding(.bottom, 16)
 
-            // 分组导航放在可滚动区里：窗口高度不足时只压缩导航，状态卡始终可见。
+            // 分组导航放在可滚动区里：窗口高度不足时只压缩导航，引擎那一行始终可见。
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
                     // 3 组 11 行全部来自 WorkbenchSidebar（T-05 的纯数据）：顺序、分组、
@@ -758,22 +762,16 @@ private struct SidebarView: View {
                     ForEach(Array(WorkbenchSidebar.groups.enumerated()), id: \.element.id) { groupIndex, group in
                         if groupIndex > 0 {
                             if compact {
-                                Rectangle().fill(LP.stroke).frame(height: 1)
+                                Rectangle().fill(LP.line).frame(height: 1)
                                     .padding(.horizontal, 16).padding(.vertical, 6)
                             } else {
-                                Text(group.name)
-                                    .font(LPFont.mono(10, weight: .medium))
-                                    .tracking(1.7)
-                                    .foregroundStyle(LP.textTertiary)
+                                LPLabel(group.name)
                                     .padding(.horizontal, 18)
-                                    .padding(.top, 10)
-                                    .padding(.bottom, 4)
+                                    .padding(.top, 16)
+                                    .padding(.bottom, 6)
                             }
                         } else if !compact {
-                            Text(group.name)
-                                .font(LPFont.mono(10, weight: .medium))
-                                .tracking(1.7)
-                                .foregroundStyle(LP.textTertiary)
+                            LPLabel(group.name)
                                 .padding(.horizontal, 18)
                                 .padding(.bottom, 6)
                         }
@@ -789,17 +787,22 @@ private struct SidebarView: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, 10)
+                        .padding(.horizontal, 8)
                     }
                 }
-                .padding(.bottom, 4)
+                .padding(.bottom, 6)
             }
 
-            StatusCard(compact: compact).padding(compact ? 6 : 8)
+            EngineLine(compact: compact)
+                .padding(.horizontal, compact ? 8 : 12)
+                .padding(.vertical, 10)
+                .overlay(alignment: .top) { Rectangle().fill(LP.line).frame(height: 1) }
         }
         .padding(.vertical, 6)
-        .frame(width: compact ? 64 : 208)
-        .lpSheet(radius: 26)
+        .frame(width: compact ? LPShell.sidebarCompact : LPShell.sidebarWidth)
+        .lpSheet(radius: 20)
+        // 侧栏是搁在纸面上的一张卡：一圈很淡的投影把它和窗口分开，不用再加一道粗边。
+        .shadow(color: .black.opacity(0.05), radius: 14, y: 6)
     }
 
     /// 选中态只认 section 行：sheet 与导入是动作、不是页面，永远不选中。
@@ -822,22 +825,23 @@ private struct SidebarView: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(LP.textSecondary)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 30)
-                    .lpPill()
+                    .frame(height: 28)
+                    .lpSheet(radius: LPRadius.control)
             } else {
                 HStack(spacing: 7) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(LP.textTertiary)
-                    Text("任务或工具")
+                    // 与「前往」菜单、菜单栏面板同一个词：同一个东西不在三处叫三个名字。
+                    Text("命令面板")
                         .font(.system(size: 13))
-                        .foregroundStyle(LP.textTertiary)
+                        .foregroundStyle(LP.textSecondary)
                     Spacer(minLength: 4)
                     LPKeyCap(keys: "⌘K")
                 }
-                .padding(.horizontal, 9)
+                .padding(.horizontal, 8)
                 .padding(.vertical, 6)
-                .lpPill()
+                .lpSheet(radius: LPRadius.control)
             }
         }
         .buttonStyle(.plain)
@@ -845,36 +849,26 @@ private struct SidebarView: View {
         .accessibilityLabel("打开命令面板")
     }
 
+    /// 字标旁边的标记与 App 图标是同一个母题（一条路：两个端点、一个朱红点），
+    /// 不是另一枚临时的字母块。口号用一句衬线：全 App 只有这里用它。
     private var brand: some View {
-        HStack(spacing: 10) {
-            ZStack(alignment: .bottomTrailing) {
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(LP.text)
-                Text("L")
-                    .font(LPFont.display(16, weight: .bold))
-                    .foregroundStyle(LP.bg)
-                    .offset(y: -1)
-                Circle()
-                    .fill(LP.accent)
-                    .frame(width: 5, height: 5)
-                    .offset(x: 2, y: 2)
-                    .overlay(Circle().strokeBorder(LP.bg, lineWidth: 1.5).offset(x: 2, y: 2))
-            }
-            .frame(width: 31, height: 31)
-
+        HStack(spacing: 9) {
+            LPMark(size: 26)
             if !compact {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Leapin")
-                        .font(LPFont.display(14, weight: .semibold))
+                        .font(.system(size: 14, weight: .semibold))
                         .tracking(-0.2)
                         .foregroundStyle(LP.text)
                     Text("One leap. No detour.")
-                        .font(.system(size: 13))
-                        .tracking(0.1)
+                        .font(LPType.quote)
                         .foregroundStyle(LP.textTertiary)
+                        .lineLimit(1)
                 }
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Leapin")
     }
 }
 
@@ -908,11 +902,11 @@ private struct SidebarRow: View {
                 }
             }
             .padding(.horizontal, compact ? 0 : 10)
-            .padding(.vertical, compact ? 8 : 5)
+            .padding(.vertical, compact ? 8 : 6)
             .frame(maxWidth: .infinity, alignment: compact ? .center : .leading)
             .background(
                 RoundedRectangle(cornerRadius: LPRadius.control, style: .continuous)
-                    .fill(selected ? LP.selectionFill : (hover ? LP.text.opacity(0.05) : Color.clear))
+                    .fill(selected ? LP.selectionFill : (hover ? LP.hover : Color.clear))
             )
             .overlay(alignment: .leading) {
                 // 紧凑栏里图标居中，左侧胶囊会压到图标；选中态由底色和强调色图标表达。
@@ -933,83 +927,59 @@ private struct SidebarRow: View {
     }
 }
 
+/// 侧栏脚注：本地服务自己开没开、听在哪个端口。
+///
+/// 它不是第二个「接管」开关——接管只有页头那一枚。这里只管服务本身，给手动配置
+/// 代理的 App（终端、浏览器）留一个不惊动系统代理的启停，所以它小、且只有一行。
 @MainActor
-private struct StatusCard: View {
+private struct EngineLine: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var engine = LeapinEngine.shared
     var compact: Bool = false
 
     var body: some View {
         if compact {
-            VStack(spacing: 10) {
+            VStack(spacing: 8) {
                 StatusDot(color: stateColor, pulsing: engine.state == .running)
-                Button {
-                    app.toggle()
-                } label: {
-                    Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(engine.state == .running ? LP.danger : .white)
-                        .frame(width: 26, height: 24)
-                        .background(
-                            engine.state == .running ? LP.panelSolid : LP.accent,
-                            in: RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .strokeBorder(LP.stroke)
-                        )
-                }
-                .buttonStyle(.plain)
-                .help(engine.state == .running ? "停止代理" : "启动代理")
+                engineButton
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 11)
-            .lpSheet(radius: 12)
         } else {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 7) {
                     StatusDot(color: stateColor, pulsing: engine.state == .running)
                     Text(engine.state.label)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(LP.text)
-                    Spacer(minLength: 0)
+                    Spacer(minLength: 4)
+                    engineButton
                 }
-
-                VStack(spacing: 3) {
-                    portRow("混合", engine.profile.general.mixedPort)
-                    portRow("DNS", engine.profile.dns.listenPort)
-                }
-
-                Rectangle().fill(LP.stroke.opacity(0.7)).frame(height: 0.5)
-
-                Button {
-                    app.toggle()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
-                            .font(.system(size: 11, weight: .bold))
-                        Text(engine.state == .running ? "停止代理" : "启动代理")
-                            .font(.system(size: 13, weight: .semibold))
-                        Spacer(minLength: 0)
-                    }
-                    .foregroundStyle(engine.state == .running ? LP.danger : LP.accent)
-                    .padding(.vertical, 3)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(engine.state == .running ? "停止代理" : "启动代理")
+                // 端口不是数量：用 String() 拼接，别让插值给它加千分位（7,892）。
+                Text("混合 " + String(engine.profile.general.mixedPort)
+                     + " · DNS " + String(engine.profile.dns.listenPort))
+                    .font(LPFont.mono(11))
+                    .foregroundStyle(LP.textTertiary)
+                    .lineLimit(1)
+                    .padding(.leading, 18)
             }
-            .padding(12)
-            .lpSheet(radius: 12)
         }
     }
 
-    private func portRow(_ label: String, _ port: UInt16) -> some View {
-        HStack {
-            Text(label).font(.system(size: 11)).foregroundStyle(LP.textTertiary)
-            Spacer()
-            Text(":" + String(port)).font(LPFont.mono(10, weight: .medium)).foregroundStyle(LP.textSecondary)
+    private var engineButton: some View {
+        Button {
+            app.toggle()
+        } label: {
+            Image(systemName: engine.state == .running ? "stop.fill" : "play.fill")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(engine.state == .running ? LP.danger : LP.accent)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .help(engine.state == .running
+              ? "停止本地服务；如果已经接管，系统代理会同时恢复"
+              : "只启动本地服务，不接入系统代理。接管整个网络请用页头的「网络接管」")
+        .accessibilityLabel(engine.state == .running ? "停止本地服务" : "启动本地服务")
     }
 
     private var stateColor: Color {
@@ -1032,55 +1002,101 @@ private struct PageHeaderBar: View {
 
     private var section: AppModel.Section { app.section ?? .dashboard }
 
+    /// 页头：标题块 + 当前页的 tab + 全局主开关，一条底线。
+    ///
+    /// tab 住在页头里而不是页头下面：四个动词页于是从同一行开始画内容，
+    /// tab 也不可能再和筛选 chip 混成一种东西。
     var body: some View {
-        // 标题用动词名：dashboard → 走哪、capture/why → 为什么。落到哪个页就写哪个动词，
-        // 否则页头会拿旧页名（网络活动 / 排障与配置）盖在动词页上。
-        PageHeader(title: section.headerTitle, subtitle: section.headerSubtitle, icon: section.headerIcon) {
-            HStack(spacing: 0) {
-                Button {
-                    app.showPalette = true
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "command").font(.system(size: 11, weight: .semibold))
-                        Text("⌘K").font(LPFont.mono(10, weight: .medium))
-                    }
-                    .foregroundStyle(LP.textSecondary)
-                    .padding(.horizontal, 10)
-                    .frame(height: 22)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("命令面板（⌘K）")
-
-                toolbarDivider
-
-                HStack(spacing: 8) {
-                    Text("网络接管")
-                        .font(.system(size: 13))
-                        .foregroundStyle(LP.textSecondary)
-                    LPSwitch(isOn: Binding(
-                        get: { engine.systemProxyActive },
-                        set: { on in
-                            if on { app.connectNetwork() } else { Task { await app.pauseNetwork() } }
-                        }
-                    ), width: 30)
-                    .disabled(app.networkBusy || engine.configurationBusy || engine.state == .starting)
-                }
-                .padding(.horizontal, 10)
-                .frame(height: 22)
-
-                toolbarDivider
-
-                StatusChip(state: engine.state, plain: true)
-                    .padding(.horizontal, 10)
+        HStack(alignment: .top, spacing: 0) {
+            // 标题用动词名：dashboard → 走哪、capture/why → 为什么。落到哪个页就写哪个动词，
+            // 否则页头会拿旧页名（网络活动 / 排障与配置）盖在动词页上。
+            titleBlock
+            if let tabs = app.headerTabs {
+                LPTabBar(items: tabs.items,
+                         selected: tabs.selected,
+                         underlineDrop: Self.underlineDrop) { id in tabs.onSelect(id) }
+                    .padding(.leading, 24)
             }
-            .frame(height: 30)
-            .lpPill()
+            Spacer(minLength: 16)
+            takeover
+        }
+        .padding(.horizontal, LPSpace.inset)
+        .padding(.top, LPShell.headerTop)
+        .frame(height: LPShell.headerHeight, alignment: .top)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(LP.line).frame(height: 1)
         }
     }
 
-    private var toolbarDivider: some View {
-        Rectangle().fill(LP.stroke).frame(width: 1, height: 14)
+    /// 文字框底边到页头底线的距离：下划线靠它正好落在那条线上。
+    private static var underlineDrop: CGFloat {
+        LPShell.headerHeight - 1 - LPShell.headerTop - LPShell.titleLine
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(section.headerTitle)
+                .font(LPType.title)
+                .tracking(-0.3)
+                .foregroundStyle(LP.text)
+                .lineLimit(1)
+                .fixedSize()
+            Text(section.headerSubtitle)
+                .font(.system(size: 12))
+                .foregroundStyle(LP.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        // 四个动词名二到四个字不等；给标题块一个共同的最小宽，tab 的起点才在每页都对齐。
+        .frame(minWidth: compact ? 0 : 96, alignment: .leading)
+    }
+
+    /// 全局唯一的主开关：系统流量有没有交给 Leapin。
+    ///
+    /// 这一枚胶囊把「状态」和「开关」并在一起——以前页头一个状态胶囊、侧栏一张状态卡、
+    /// 焦点带一句「已停止」，同一屏把同一件事说三遍，还各带一个启停入口。
+    private var takeover: some View {
+        let on = engine.systemProxyActive
+        let busy = app.networkBusy || engine.configurationBusy || engine.state == .starting
+        return HStack(spacing: 8) {
+            StatusDot(color: takeoverColor, pulsing: on)
+            if !compact {
+                Text(takeoverLabel)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(on ? LP.text : LP.textSecondary)
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            LPSwitch(isOn: Binding(
+                get: { on },
+                set: { enabled in
+                    if enabled { app.connectNetwork() } else { Task { await app.pauseNetwork() } }
+                }
+            ), width: 32)
+            .disabled(busy)
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, compact ? 8 : 10)
+        .frame(height: 32)
+        .background(Capsule(style: .continuous).fill(LP.sheet))
+        .overlay(Capsule(style: .continuous).strokeBorder(LP.line, lineWidth: 1))
+        .help(on ? "系统代理正指向 Leapin；关掉后恢复原设置"
+                 : "把系统代理指向 Leapin（会先启动本地服务）")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("网络接管")
+        .accessibilityValue(on ? "已接管" : "未接管")
+    }
+
+    /// 关着时叫它本名，让人知道这个开关管什么；开着时才说状态。
+    private var takeoverLabel: String {
+        if app.networkBusy { return "接管中…" }
+        return engine.systemProxyActive ? "已接管" : "网络接管"
+    }
+
+    private var takeoverColor: Color {
+        if app.networkBusy || engine.state == .starting { return LP.amber }
+        if case .failed = engine.state { return LP.danger }
+        return engine.systemProxyActive ? LP.mint : LP.textTertiary
     }
 }
 

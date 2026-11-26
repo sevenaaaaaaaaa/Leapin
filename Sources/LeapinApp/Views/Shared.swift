@@ -58,7 +58,7 @@ struct StatTile: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 6) {
                 Text(title)
-                    .font(LPFont.mono(10, weight: .medium))
+                    .font(LPFont.mono(11, weight: .medium))
                     .tracking(1.1)
                     .foregroundStyle(LP.textTertiary)
                     .lineLimit(1)
@@ -127,7 +127,7 @@ struct RuleChainCard: View {
                         .foregroundStyle(LP.textTertiary)
                 }
                 Text(chain.policy)
-                    .font(LPFont.mono(9.5, weight: .semibold))
+                    .font(LPFont.mono(11, weight: .semibold))
                     .foregroundStyle(LP.textSecondary)
             }
             .padding(.horizontal, 14)
@@ -332,7 +332,7 @@ struct FlowRow: View {
             Spacer(minLength: 8)
             if flow.bytesIn + flow.bytesOut > 0 {
                 Text("\(Fmt.bytes(flow.bytesOut)) ↑  \(Fmt.bytes(flow.bytesIn)) ↓")
-                    .font(LPFont.num(10, weight: .regular))
+                    .font(LPFont.num(11, weight: .regular))
                     .foregroundStyle(LP.textSecondary)
             }
             if let blocked = flow.blockedBy {

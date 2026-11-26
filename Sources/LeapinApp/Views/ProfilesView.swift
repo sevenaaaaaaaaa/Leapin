@@ -74,7 +74,6 @@ struct ProfilesView: View {
             }
             .pagePadding()
         }
-        .navigationTitle("配置")
         .onAppear(perform: refresh)
         .task { await refreshNodesAndMaybeAutoTest() }
         .onChange(of: engine.profile.id) { _, _ in
@@ -478,7 +477,7 @@ struct ProfilesView: View {
                             .help(error)
                     } else {
                         Text("\(speed.mbps, specifier: "%.2f") Mbps")
-                            .font(LPFont.mono(10, weight: .semibold))
+                            .font(LPFont.mono(11, weight: .semibold))
                             .foregroundStyle(LP.accent)
                     }
                 }

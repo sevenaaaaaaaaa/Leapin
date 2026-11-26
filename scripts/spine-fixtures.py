@@ -10,12 +10,18 @@
 
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
 import time
 
-ROOT = sys.argv[1] if len(sys.argv) > 1 else "/tmp/spine-fixture"
+# 根目录只收显式给定的一个路径，且拒绝带 `..` 的写法：这个脚本会先整目录清空再写入，
+# 调用者手滑把根指到仓库或家目录时，宁可拒跑也不能删错地方。
+_raw_root = sys.argv[1] if len(sys.argv) > 1 else "/tmp/spine-fixture"
+if ".." in pathlib.PurePath(_raw_root).parts:
+    raise SystemExit("拒绝包含 .. 的根目录：%s" % _raw_root)
+ROOT = os.path.realpath(_raw_root)
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLI = os.path.join(REPO, ".build", "debug", "leapin")
 

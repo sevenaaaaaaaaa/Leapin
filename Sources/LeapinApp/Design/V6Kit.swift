@@ -12,18 +12,14 @@ enum LPHaptic {
     static func warning() {}
 }
 
-extension LP {
-    /// ink 面上的两级文字。桌面 v5 之前只在 FocusBand 里临时用 `.white.opacity`，
-    /// 现在集中成两个 token，免得每个调用点各写一个透明度。
-    static let inkText = Color.white.opacity(0.94)
-    static let inkTextSecondary = Color.white.opacity(0.60)
-}
-
-/// 「你 → 判据 → 出口」的第三条腿是可拖的。
+/// 「这台 Mac → 判据 → 出口」。第三站是可拖的，也是这一页的主角。
 ///
-/// 按住出口上下拖，候选在下方浮出并吸附；松手才提交。
-/// `compact` 用于 280pt 的菜单栏面板：节点更窄、字号更小，但手势不变。
+/// `hero` 用在「走哪」的焦点带上：出口是全屏最大的一个字，朱红点带光晕，
+/// 换路生效时「跃」一下（品牌动效：旧点消失、新点出现、弦亮一闪）。
+/// `compact` 用在 280pt 的菜单栏面板：节点更窄、字号更小，但手势不变。
 struct LPRouteScrubber: View {
+    enum Size { case hero, compact }
+
     struct Stop: Identifiable, Equatable {
         var id: String
         var label: String
@@ -32,15 +28,27 @@ struct LPRouteScrubber: View {
 
     var stops: [Stop]
     var selectedID: String
+    /// 判据站的名字：场景名，或「规则模式」/「尚未接管」。
     var judge: String
+    /// 判据站下面的一行小字，例如「303 条规则」。
+    var judgeDetail: String? = nil
+    /// 出口下面的一行小字，例如「Proxy › 机场主订阅 · 42 ms」。
+    var exitDetail: String? = nil
+    /// 一个出口都没有时，出口站写什么。默认破折号；首屏未接管时它会变成一句人话，
+    /// 于是「还没有出口」就是这一屏唯一的大字，不用再另起一个标题。
+    var emptyExitTitle: String? = nil
     var enabled: Bool
-    var compact = false
+    var size: Size = .compact
     var onInk = false
     var onCommit: (String) -> Void
 
     @State private var scrubbing = false
     @State private var index = 0
     @State private var startedIndex = 0
+    /// 「跃」的两个状态：新出口的弹出（pop）与判据到出口之间的弦（chord）。
+    @State private var pop = true
+    @State private var chord: Double = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var currentIndex: Int {
         stops.firstIndex(where: { $0.id == selectedID }) ?? 0
@@ -50,89 +58,153 @@ struct LPRouteScrubber: View {
         stops.first(where: { $0.id == selectedID }) ?? stops.first
     }
 
-    private var ink: Color { onInk ? LP.inkText : LP.text }
-    private var inkSoft: Color { onInk ? LP.inkTextSecondary : LP.textTertiary }
-    private var nodeWidth: CGFloat { compact ? 62 : 84 }
+    private var canScrub: Bool { enabled && stops.count > 1 }
+
+    // MARK: metrics
+
+    private var hero: Bool { size == .hero }
+    private var ink: Color { onInk ? LP.onInk : LP.text }
+    private var inkSoft: Color { onInk ? LP.onInkSecondary : LP.textSecondary }
+    private var inkFaint: Color { onInk ? LP.onInkTertiary : LP.textTertiary }
+    private var signal: Color { onInk ? LP.accentOnInk : LP.accent }
+    private var trackColor: Color { onInk ? LP.inkLine : LP.lineStrong }
+    /// The dot's box, halo included. Its centre is the height the track runs at.
+    private var dotBox: CGFloat { hero ? 22 : 12 }
+    private var dotSize: CGFloat { hero ? 12 : 8 }
+    private var trackHeight: CGFloat { hero ? 1.5 : 1}
+    private var stationGap: CGFloat { hero ? 10 : 6}
+    /// The exit label's room. The band has space to spare; the 280pt panel has 248pt of it.
+    private var exitMaxWidth: CGFloat { hero ? 400 : 112 }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 5 : 8) {
-            HStack(spacing: 0) {
-                endpoint(title: "你", detail: compact ? nil : "这台 Mac", filled: false)
-                connector
-                endpoint(title: "判据", detail: compact ? nil : judge, filled: false)
-                connector
-                exitControl
-            }
-            if scrubbing, stops.count > 1 {
+        VStack(alignment: .leading, spacing: hero ? 14 : 6) {
+            route
+            if scrubbing, canScrub {
                 candidateRail
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .animation(.easeOut(duration: 0.18), value: scrubbing)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: scrubbing)
+        .onChange(of: selectedID) { _, _ in leap() }
     }
 
-    private func endpoint(title: String, detail: String?, filled: Bool) -> some View {
-        VStack(spacing: compact ? 3 : 5) {
-            Circle()
-                .fill(filled ? LP.accent : ink.opacity(0.9))
-                .frame(width: 6, height: 6)
-            Text(title)
-                .font(.system(size: compact ? 10.5 : 12, weight: .semibold))
-                .foregroundStyle(ink)
-                .lineLimit(1)
-            if let detail {
-                Text(detail)
-                    .font(.system(size: 9.5, design: .monospaced))
-                    .foregroundStyle(inkSoft)
-                    .lineLimit(1)
-            }
+    // MARK: the route
+
+    private var route: some View {
+        HStack(alignment: .top, spacing: 0) {
+            station(hero ? "这台 Mac" : "你", detail: nil)
+            track(hero ? 56 : 14, isChord: false)
+            station(hero ? judge : "判据", detail: hero ? judgeDetail : nil)
+            track(hero ? 76 : 18, isChord: true)
+            exitStation
         }
-        .frame(width: nodeWidth)
     }
 
-    private var connector: some View {
-        Rectangle()
-            .fill(inkSoft.opacity(0.40))
-            .frame(height: 1)
-            .frame(maxWidth: .infinity)
-    }
-
-    private var exitControl: some View {
-        Button {
-            guard enabled, stops.count > 1 else { LPHaptic.warning(); return }
-            let next = stops[(currentIndex + 1) % stops.count]
-            onCommit(next.id)
-        } label: {
-            VStack(spacing: compact ? 3 : 5) {
-                Circle()
-                    .fill(LP.accent)
-                    .frame(width: 8, height: 8)
-                    .overlay(Circle().strokeBorder(LP.accent.opacity(0.28), lineWidth: 5))
-                Text(scrubbing ? stops[safe: index]?.label ?? "—" : selected?.label ?? "—")
-                    .font(.system(size: compact ? 10.5 : 12, weight: .semibold))
+    private func station(_ title: String, detail: String?) -> some View {
+        VStack(alignment: .leading, spacing: stationGap) {
+            Circle()
+                .fill(ink.opacity(hero ? 0.55 : 0.9))
+                .frame(width: hero ? 8 : 6, height: hero ? 8 : 6)
+                .frame(width: dotBox, height: dotBox)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: hero ? 15 : 11, weight: .semibold))
                     .foregroundStyle(ink)
                     .lineLimit(1)
-                    .truncationMode(.middle)
-                HStack(spacing: 3) {
-                    Image(systemName: "chevron.up")
-                    Image(systemName: "chevron.down")
+                    .truncationMode(.tail)
+                if let detail {
+                    Text(detail)
+                        .font(.system(size: hero ? 13 : 11))
+                        .foregroundStyle(inkSoft)
+                        .lineLimit(1)
                 }
-                .font(.system(size: 6.5, weight: .bold))
-                .foregroundStyle(enabled && stops.count > 1 ? inkSoft : inkSoft.opacity(0.4))
             }
-            .frame(width: compact ? 70 : 96)
+            .padding(.leading, hero ? -2 : 0)
+        }
+        // The band lets a station take its natural width; the panel cannot, so there a
+        // station gets a ceiling and truncates rather than pushing the exit off the edge.
+        .frame(maxWidth: hero ? nil : 64, alignment: .leading)
+        .fixedSize(horizontal: hero, vertical: false)
+    }
+
+    /// One leg of the route. The second leg is the chord: it lights up when a
+    /// different exit takes effect, which is the only time it is ever drawn.
+    private func track(_ width: CGFloat, isChord: Bool) -> some View {
+        ZStack(alignment: .leading) {
+            Rectangle()
+                .fill(trackColor)
+                .frame(height: trackHeight)
+            if isChord {
+                Rectangle()
+                    .fill(signal)
+                    .frame(height: trackHeight)
+                    .opacity(chord)
+            }
+        }
+        .frame(width: width)
+        .padding(.top, (dotBox - trackHeight) / 2)
+    }
+
+    private var exitStation: some View {
+        Button {
+            guard canScrub else { LPHaptic.warning(); return }
+            onCommit(stops[(currentIndex + 1) % stops.count].id)
+        } label: {
+            VStack(alignment: .leading, spacing: stationGap) {
+                HStack(spacing: 5) {
+                    ZStack {
+                        if hero {
+                            Circle()
+                                .fill(signal.opacity(0.24))
+                                .frame(width: dotBox, height: dotBox)
+                        }
+                        if hasExit {
+                            Circle()
+                                .fill(signal)
+                                .frame(width: dotSize, height: dotSize)
+                        } else {
+                            // No exit yet: an open ring where the point will land.
+                            Circle()
+                                .strokeBorder(signal, lineWidth: hero ? 1.5 : 1.5)
+                                .frame(width: dotSize, height: dotSize)
+                        }
+                    }
+                    .scaleEffect(pop ? 1 : 0.4)
+                    .frame(width: dotBox, height: dotBox)
+                    if canScrub {
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: hero ? 9 : 7, weight: .bold))
+                            .foregroundStyle(inkFaint)
+                    }
+                }
+                Text(scrubbing ? stops[safe: index]?.label ?? "—" : (selected?.label ?? emptyExitTitle ?? "—"))
+                    .font(exitFont)
+                    .tracking(hero ? -0.4 : 0)
+                    .foregroundStyle(hasExit ? ink : inkSoft)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: exitMaxWidth, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
+                if hero, let detail = scrubbing ? stops[safe: index]?.detail : exitDetail, !detail.isEmpty {
+                    Text(detail)
+                        .font(.system(size: 13))
+                        .foregroundStyle(inkSoft)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
             .padding(.vertical, 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .highPriorityGesture(scrubGesture, including: enabled && stops.count > 1 ? .all : .subviews)
-        .help(enabled ? "上下拖切换出口" : "未接管：没有可切换的出口")
+        .highPriorityGesture(scrubGesture, including: canScrub ? .all : .subviews)
+        .help(canScrub ? "上下拖切换出口" : "未接管：没有可切换的出口")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("出口")
         .accessibilityValue(selected?.label ?? "未设置")
         .accessibilityHint("上下轻扫切换出口")
         .accessibilityAdjustableAction { direction in
-            guard enabled, stops.count > 1 else { return }
+            guard canScrub else { return }
             switch direction {
             case .increment:
                 onCommit(stops[(currentIndex + 1) % stops.count].id)
@@ -144,17 +216,44 @@ struct LPRouteScrubber: View {
         }
     }
 
+    private var hasExit: Bool {
+        selected != nil && !stops.isEmpty
+    }
+
+    /// The exit is the one large thing on the screen. A short node name gets the
+    /// full 28pt; airport names run long (flags, line types, numbering), and those
+    /// drop a step rather than filling the band with one word.
+    private var exitFont: Font {
+        let label = scrubbing ? stops[safe: index]?.label ?? "" : selected?.label ?? ""
+        let size: CGFloat = !hero ? 15 : (label.count <= 14 ? 28 : 20)
+        return .system(size: size, weight: .semibold)
+    }
+
+    // MARK: the leap
+
+    /// A different exit took effect. The point does not travel: it vanishes where it
+    /// was and appears where it lands, and the chord behind it lights once and dims.
+    private func leap() {
+        guard hero, !reduceMotion else { return }
+        pop = false
+        chord = 1
+        DispatchQueue.main.async {
+            withAnimation(LPMotion.leap) { pop = true }
+            withAnimation(LPMotion.chord) { chord = 0 }
+        }
+    }
+
     private var scrubGesture: some Gesture {
         DragGesture(minimumDistance: 2)
             .onChanged { value in
-                guard enabled, stops.count > 1 else { return }
+                guard canScrub else { return }
                 if !scrubbing {
                     scrubbing = true
                     startedIndex = currentIndex
                     index = currentIndex
                     LPHaptic.soft()
                 }
-                let step = Int((-value.translation.height / (compact ? 26 : 34)).rounded())
+                let step = Int((-value.translation.height / (hero ? 30 : 26)).rounded())
                 let next = min(max(startedIndex + step, 0), stops.count - 1)
                 if next != index {
                     index = next
@@ -175,24 +274,24 @@ struct LPRouteScrubber: View {
             ForEach(Array(stops.enumerated()), id: \.element.id) { offset, stop in
                 HStack(spacing: 7) {
                     Rectangle()
-                        .fill(offset == index ? LP.accent : inkSoft.opacity(0.35))
+                        .fill(offset == index ? signal : inkFaint.opacity(0.55))
                         .frame(width: offset == index ? 12 : 5, height: 1)
                     Text(stop.label)
-                        .font(.system(size: compact ? 10.5 : 12,
+                        .font(.system(size: hero ? 12 : 11,
                                       weight: offset == index ? .semibold : .regular))
                         .foregroundStyle(offset == index ? ink : inkSoft)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     if !stop.detail.isEmpty {
                         Text(stop.detail)
-                            .font(.system(size: 9, design: .monospaced))
+                            .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(inkSoft)
                             .lineLimit(1)
                     }
                 }
-                .padding(.vertical, compact ? 3 : 5)
+                .padding(.vertical, hero ? 4 : 3)
                 .padding(.horizontal, 6)
-                .background(offset == index ? ink.opacity(0.08) : Color.clear)
+                .background(offset == index ? Color.white.opacity(onInk ? 0.10 : 0) : Color.clear)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
@@ -212,9 +311,12 @@ struct LPRiver: View {
     var enabled: Bool
     var onInk = true
     var height: CGFloat = 44
+    /// 矮条形态（菜单栏面板）里放不下一句提示：留一条平线就够了。
+    var showsIdleHint = true
     var onScrub: (Int?) -> Void
 
-    private var ink: Color { onInk ? LP.inkText : LP.text }
+    private var ink: Color { onInk ? LP.onInk : LP.text }
+    private var signal: Color { onInk ? LP.accentOnInk : LP.accent }
 
     private var isIdle: Bool {
         samples.allSatisfy { $0.down <= 0.0001 && $0.up <= 0.0001 }
@@ -253,7 +355,7 @@ struct LPRiver: View {
                                 Path(roundedRect: CGRect(x: x, y: mid - 1 - upHeight,
                                                          width: barWidth, height: upHeight),
                                      cornerRadius: barWidth / 2),
-                                with: .color(LP.accent.opacity(past ? 0.2 : alpha)))
+                                with: .color(signal.opacity(past ? 0.2 : alpha)))
                         }
                     }
                 }
@@ -263,7 +365,7 @@ struct LPRiver: View {
                     var cursor = Path()
                     cursor.move(to: CGPoint(x: x, y: 0))
                     cursor.addLine(to: CGPoint(x: x, y: size.height))
-                    context.stroke(cursor, with: .color(LP.accent), lineWidth: 1)
+                    context.stroke(cursor, with: .color(signal), lineWidth: 1)
                 }
             }
             .contentShape(Rectangle())
@@ -285,10 +387,10 @@ struct LPRiver: View {
         }
         .frame(height: height)
         .overlay {
-            if isIdle {
+            if isIdle, showsIdleHint {
                 Text(enabled ? "打开一个网页，波形从这里开始" : "引擎停止，没有波形")
-                    .font(.system(size: 9.5, design: .monospaced))
-                    .foregroundStyle(ink.opacity(0.52))
+                    .font(.system(size: 11))
+                    .foregroundStyle(ink.opacity(0.50))
                     .offset(y: -13)
                     .allowsHitTesting(false)
             }

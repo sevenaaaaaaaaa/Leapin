@@ -28,7 +28,6 @@ struct LearnView: View {
             }
             .pagePadding()
         }
-        .navigationTitle("智能学习")
     }
 
     // MARK: Input

@@ -283,7 +283,7 @@ struct LPSpineView: View {
                         .frame(width: 4, height: 4)
                     Spacer(minLength: 0)
                     Text("\(spine.ruleCount)")
-                        .font(LPFont.mono(9.5, weight: .medium))
+                        .font(LPFont.mono(11, weight: .medium))
                         .foregroundStyle(active ? LP.accent : LP.textTertiary)
                         .lineLimit(1)
                 }
@@ -461,7 +461,7 @@ struct LPSpineDetailSheet: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 12)
             Text(spine.source)
-                .font(LPFont.mono(10))
+                .font(LPFont.mono(11))
                 .foregroundStyle(LP.textTertiary)
                 .lineLimit(1)
             HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -501,7 +501,7 @@ struct LPSpineDetailSheet: View {
                     ForEach(spine.tallies.prefix(6)) { tally in
                         HStack(spacing: 10) {
                             Text(tally.name.uppercased())
-                                .font(LPFont.mono(10.5))
+                                .font(LPFont.mono(11.5))
                                 .foregroundStyle(LP.textSecondary)
                                 .frame(width: 112, alignment: .leading)
                                 .lineLimit(1)
@@ -511,7 +511,7 @@ struct LPSpineDetailSheet: View {
                                     .frame(width: max(2, 150 * CGFloat(tally.count) / CGFloat(maxCount)), height: 4)
                             }
                             Text("\(tally.count)")
-                                .font(LPFont.mono(10.5))
+                                .font(LPFont.mono(11.5))
                                 .foregroundStyle(LP.textTertiary)
                         }
                         .accessibilityElement(children: .combine)
@@ -714,7 +714,7 @@ struct LPSpineCompareSheet: View {
 
     private func tag(_ text: String) -> some View {
         Text(text)
-            .font(LPFont.mono(10.5))
+            .font(LPFont.mono(11.5))
             .foregroundStyle(LP.textSecondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -734,7 +734,7 @@ struct LPSpineCompareSheet: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(lines.prefix(6).enumerated()), id: \.offset) { _, line in
                         Text(line)
-                            .font(LPFont.mono(10.5))
+                            .font(LPFont.mono(11.5))
                             .foregroundStyle(LP.textSecondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
@@ -803,7 +803,7 @@ struct LPSpineComparePicker: View {
                                     .foregroundStyle(LP.text)
                                     .lineLimit(1)
                                 Text("\(spine.ruleCount) 条")
-                                    .font(LPFont.mono(10.5))
+                                    .font(LPFont.mono(11.5))
                                     .foregroundStyle(LP.textTertiary)
                                 Spacer(minLength: 0)
                                 Image(systemName: "chevron.right")

@@ -10,6 +10,20 @@ extension Notification.Name {
     static let lpSearchFocus = Notification.Name("lp.search.focus")
 }
 
+/// Debug 快照模式（`LEAPIN_SHOT`）。正式构建里恒为 false。
+///
+/// 处在这个模式时，窗口从头到尾待在屏幕外，App 也不抢前台：拍一张截图不该在别人
+/// 屏幕上闪一个窗口、再把键盘焦点夺走。
+enum LPShooting {
+    static var isOn: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.environment["LEAPIN_SHOT"] != nil
+        #else
+        return false
+        #endif
+    }
+}
+
 /// Keeps window size/position across launches without a storyboard.
 struct WindowAutosave: NSViewRepresentable {
     var name: String = "LeapinMain"
@@ -18,29 +32,37 @@ struct WindowAutosave: NSViewRepresentable {
         let view = NSView()
         DispatchQueue.main.async {
             guard let window = view.window else { return }
-            window.setFrameAutosaveName(name)
-            window.minSize = NSSize(width: 900, height: 640)
-            // 上次的显示器可能已断开：窗口不在任何可见屏幕内时回到主屏中央。
-            if !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(window.frame) }) {
-                window.center()
-                window.saveFrame(usingName: name)
+            if LPShooting.isOn {
+                // 尺寸照读上次保存的，但不挂自动保存：自动保存会把屏幕外的位置也记下来。
+                // 在屏幕上时窗口会被别的 App 的窗口挡住，而被挡住的窗口 AppKit 不画图层，
+                // `cacheDisplay` 拍到的就是一张全透明的图。
+                window.setFrame(from: name)
+                window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+            } else {
+                window.setFrameAutosaveName(name)
+                window.minSize = NSSize(width: 900, height: 640)
+                // 上次的显示器可能已断开：窗口不在任何可见屏幕内时回到主屏中央。
+                if !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(window.frame) }) {
+                    window.center()
+                    window.saveFrame(usingName: name)
+                }
             }
-            // 标题栏并入纸面：不显示标题文字，底色跟随内容，而不是系统的灰。
+            // 标题栏并入纸面：标题栏透明、不画字、不画底下的分隔线（页头自己有一条）。
+            // 灰带的真正来源是页面的 `.navigationTitle`：SwiftUI 一看到页面标题就把标题栏
+            // 连字带底重新显示出来，全 App 因此不再设它（页头已经写着页面名）。
+            // fullSizeContentView 本来就是开的，这里保留是防它将来被谁拿掉。
+            window.styleMask.insert(.fullSizeContentView)
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
-            // Liquid Glass 的窗口是材质，不是白纸：清掉底色让 behind-window
-            // 模糊采样桌面，再由 LPBackground 铺一层很薄的色相洗色保证对比度。
-            window.isOpaque = false
-            window.backgroundColor = .clear
-            // SwiftUI 里放的 NSVisualEffectView 拿不到 behindWindow 采样（它不在
-            // 窗口根层），所以把材质装到窗口的 frame view 上，作为最底层。
-            if let frameView = window.contentView?.superview {
-                let fx = NSVisualEffectView(frame: frameView.bounds)
-                fx.material = .underWindowBackground
-                fx.blendingMode = .behindWindow
-                fx.state = .active
-                fx.autoresizingMask = [.width, .height]
-                frameView.addSubview(fx, positioned: .below, relativeTo: nil)
+            window.titlebarSeparatorStyle = .none
+            // 一张纸就是一张纸。窗口以前是桌面模糊之上的 40% 纸色洗色，可读性于是取决于
+            // 壁纸：深色壁纸把「纸」洗成浑浊的灰褐，发丝线全部消失。现在窗口不透明，
+            // 纸色由 LPBackground 铺满；玻璃只留给浮层。
+            window.isOpaque = true
+            window.backgroundColor = NSColor(name: nil) { appearance in
+                appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                    ? NSColor(srgbRed: 15 / 255, green: 15 / 255, blue: 16 / 255, alpha: 1)
+                    : NSColor(srgbRed: 244 / 255, green: 239 / 255, blue: 230 / 255, alpha: 1)
             }
         }
         return view
@@ -84,6 +106,10 @@ final class GlobalHotKeyCenter {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var stopExternalTools: (() -> Void)?
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 快照模式不抢前台：不上 Dock、不被激活，窗口也一直在屏幕外。
+        if LPShooting.isOn {
+            NSApp.setActivationPolicy(.accessory)
+        }
         // 让标题栏跟随内容主题，避免深色内容配浅色窗框。
         if ProcessInfo.processInfo.environment["LEAPIN_APPEARANCE"] == "dark" {
             NSApp.appearance = NSAppearance(named: .darkAqua)
@@ -103,8 +129,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         #if DEBUG
         if let spec = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_VIEW"],
            let path = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_PATH"] {
+            // LEAPIN_SNAPSHOT_ENGINE=1：先把引擎跑起来再拍（只配合隔离的 LEAPIN_PROFILE_ROOT），
+            // 菜单栏面板这类常驻面于是有了「运行中」的截图。
+            // LEAPIN_SNAPSHOT_WAIT=秒数：落定之前多留一段窗口，给外部往代理里灌流量。
+            let startEngine = ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_ENGINE"] == "1"
+            let settle = Double(ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_WAIT"] ?? "") ?? 1.4
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(800))
+                if startEngine { await LeapinEngine.shared.start() }
                 if ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_APPEARANCE"] == "light" {
                     NSApp.appearance = NSAppearance(named: .aqua)
                 }
@@ -141,6 +173,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                                    actions: LPSpineShelfActions(pull: { _ in }, compare: { _, _ in },
                                                                                 activate: { _ in }, export: { _, _ in },
                                                                                 delete: { _ in }, importProfile: {})))
+                // 菜单栏面板：常驻层是 99% 的接触面，却一直没法离屏拍。
+                case "menubar":
+                    content = AnyView(MenuBarPanel().environmentObject(model)
+                        .fixedSize()
+                        .padding(24))
                 default: content = AnyView(Text("unknown view: \(spec)"))
                 }
                 let host = NSHostingView(rootView:
@@ -149,7 +186,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         // 没有根视图那层注入；缺这一行不是画错，是取 route 时运行时崩。
                         .environmentObject(model.routes)
                         .frame(width: 1160, height: 860)
-                        .background(Color(nsColor: .windowBackgroundColor)))
+                        // 纸色，不是系统的窗口灰：页面和面板在实际运行时都坐在纸上。
+                        .background(LP.paper))
                 host.frame = NSRect(x: 0, y: 0, width: 1160, height: 860)
                 // Pages that size themselves from the window (settings' columns,
                 // activity's chart) render blank in a bare hosting view, so give
@@ -163,8 +201,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 window.contentView = host
                 window.orderFrontRegardless()
                 host.layoutSubtreeIfNeeded()
+                // LEAPIN_SNAPSHOT_POPUP=1：菜单栏面板的切换行弹的是 AppKit 菜单，快照里没有鼠标
+                // 来点。于是真的弹一次、到点自动收起，确认建菜单 → 弹出 → 追踪 → 取消这一路不崩，
+                // 且确实进了追踪（持续时间≈autoDismiss；一调用就返回说明菜单根本没弹出来）。
+                // 菜单画在另一个窗口里，拍不进这张图；它会在这个窗口旁边闪一下，所以只在冒烟时开。
+                if ProcessInfo.processInfo.environment["LEAPIN_SNAPSHOT_POPUP"] == "1" {
+                    DispatchQueue.main.async {
+                        let items: [LPPopUpItem] = [
+                            .item("甲", selected: true) {},
+                            .item("乙") {},
+                            .submenu("组", [.item("丙") {}, .item("丁") {}]),
+                            .separator,
+                            .note("说明"),
+                        ]
+                        let tracked = LPPopUpMenu.show(items, below: host, autoDismiss: 0.8)
+                        print("leapin-snapshot: popup tracked for \(String(format: "%.2f", tracked))s")
+                    }
+                }
                 // 1.4s：书脊这类异步取数的块要等它落地，否则拍到的是淡入中途的一帧。
-                try? await Task.sleep(for: .milliseconds(1400))
+                try? await Task.sleep(for: .seconds(settle))
                 host.layoutSubtreeIfNeeded()
                 if let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
                     host.cacheDisplay(in: host.bounds, to: rep)
@@ -176,16 +231,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Debug: render the live window to a PNG without screen-recording permission.
         // LEAPIN_SHOT=/tmp/x.png LEAPIN_SHOT_SECTION=settings
+        // LEAPIN_SHOT_ENGINE=1 先把引擎跑起来再拍，看到的是运行中的首屏，不是未接管的空态。
+        // 只配合隔离的 LEAPIN_PROFILE_ROOT 使用；演示配置用私有端口、关掉控制面，
+        // 所以它和正在使用的正式实例谁先谁后都互不影响。引擎自身从不改系统代理。
+        // LEAPIN_SHOT_WAIT=秒数 在导航之后多留一段窗口，给外部往代理里灌流量。
         if let path = ProcessInfo.processInfo.environment["LEAPIN_SHOT"] {
             let section = ProcessInfo.processInfo.environment["LEAPIN_SHOT_SECTION"]
+            let startEngine = ProcessInfo.processInfo.environment["LEAPIN_SHOT_ENGINE"] == "1"
+            let wait = Double(ProcessInfo.processInfo.environment["LEAPIN_SHOT_WAIT"] ?? "") ?? 0
             Task { @MainActor in
+                if startEngine { await LeapinEngine.shared.start() }
                 try? await Task.sleep(for: .milliseconds(600))
                 if let section { NotificationCenter.default.post(name: .lpNavigate, object: section) }
+                if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
                 try? await Task.sleep(for: .seconds(2))
+                // LEAPIN_SHOT_DEBUG=1：把此刻的窗口列出来。拍到一张全透明的图时，先看它拍的是不是
+                // 期望的那个窗口。
+                if ProcessInfo.processInfo.environment["LEAPIN_SHOT_DEBUG"] == "1" {
+                    let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "nil"
+                    print("leapin-snapshot: active=\(NSApp.isActive) frontmost=\(front)")
+                    for (index, open) in NSApp.windows.enumerated() {
+                        let content = open.contentView.map { String(describing: type(of: $0)) } ?? "nil"
+                        print("leapin-snapshot: window[\(index)] \(type(of: open)) visible=\(open.isVisible) key=\(open.isKeyWindow) frame=\(open.frame) content=\(content)")
+                    }
+                }
                 guard let window = NSApp.windows.first(where: { !($0 is NSPanel) && $0.contentView != nil }) else {
                     NSApp.terminate(nil); return
                 }
+                // 快照模式里窗口没挂自动保存，SwiftUI 于是按默认尺寸开窗；这里补读保存的尺寸
+                // 再挪回屏幕外，拍出来的才是想要的大小（AppKit 会自己留一个角在屏幕上）。
+                if window.frameAutosaveName.isEmpty {
+                    window.setFrame(from: "LeapinMain")
+                    window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
+                    try? await Task.sleep(for: .milliseconds(600))
+                }
                 let view = window.contentView!
+                // LEAPIN_SHOT_CG=1：拍窗口服务器合成后的画面。系统原生控件（圆角输入框、密码框、
+                // Form）在 macOS 26+ 是玻璃材质，任何离屏光栅化都拍不下来，只有这一条路看得到它们
+                // 本来的样子。代价是窗口得回到屏幕上（主屏左上角）不到一秒；不激活 App，不抢焦点。
+                if ProcessInfo.processInfo.environment["LEAPIN_SHOT_CG"] == "1" {
+                    if let screen = NSScreen.main {
+                        var frame = window.frame
+                        frame.origin = NSPoint(x: screen.visibleFrame.minX + 40, y: screen.visibleFrame.maxY - frame.height - 40)
+                        window.setFrame(frame, display: true)
+                        window.orderFrontRegardless()
+                        try? await Task.sleep(for: .milliseconds(800))
+                        if let shot = CGWindowListCreateImage(.null, .optionIncludingWindow,
+                                                              CGWindowID(window.windowNumber),
+                                                              [.boundsIgnoreFraming, .bestResolution]) {
+                            let rep = NSBitmapImageRep(cgImage: shot)
+                            try? rep.representation(using: .png, properties: [:])?
+                                .write(to: URL(fileURLWithPath: path))
+                        }
+                    }
+                    NSApp.terminate(nil)
+                    return
+                }
+                // LEAPIN_SHOT_PDF=1：改走 PDF。`cacheDisplay` 拍不下系统原生控件（圆角输入框、密码框、
+                // Form 在 macOS 26+ 是玻璃材质画的），含这些控件的页面会得到一张全透明的图；
+                // 让视图把自己画进 PDF 再栅格化，这一类页面才有得看。
+                if ProcessInfo.processInfo.environment["LEAPIN_SHOT_PDF"] == "1" {
+                    let data = view.dataWithPDF(inside: view.bounds)
+                    try? data.write(to: URL(fileURLWithPath: path + ".pdf"))
+                }
                 if let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) {
                     view.cacheDisplay(in: view.bounds, to: rep)
                     try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: path))

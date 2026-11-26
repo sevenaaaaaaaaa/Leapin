@@ -26,18 +26,19 @@ struct SSHView: View {
     var body: some View {
         VStack(spacing: 0) {
             form
-                .padding(.horizontal, 32)
-                .padding(.top, 22)
+                .padding(.horizontal, LPSpace.inset)
+                .padding(.top, 14)
             terminal
-                .padding(.horizontal, 32)
-                .padding(.top, 22)
-                .padding(.bottom, 22)
+                .padding(.horizontal, LPSpace.inset)
+                .padding(.top, 18)
+                .padding(.bottom, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .onDisappear {
             Task { await session.disconnect() }
         }
-        .navigationTitle("SSH")
+        // 不设 navigationTitle：页头已经写着「SSH」。窗口一旦有了页面标题，SwiftUI 就会把
+        // 标题栏重新显示出来，纸面顶上又多出一条灰带。
     }
 
     // MARK: Form
@@ -186,13 +187,15 @@ struct SSHView: View {
 
     // MARK: Terminal
 
+    /// 终端是全 App 唯一一整块墨面：底色就是焦点带的墨，字是墨上的三级白。
+    /// 以前它是一块带蓝的黑，和纸、墨、朱红都不同源。
     private var terminal: some View {
         VStack(spacing: 0) {
             HStack(spacing: 9) {
                 Text(connected ? "\(user)@\(host):\(port)" : "ssh — 未连接")
                     .font(LPFont.mono(12, weight: .medium))
                     .tracking(0.3)
-                    .foregroundStyle(Color(red: 0.72, green: 0.78, blue: 0.86))
+                    .foregroundStyle(LP.onInkSecondary)
                     .lineLimit(1)
 
                 Spacer(minLength: 8)
@@ -204,7 +207,7 @@ struct SSHView: View {
                     } label: {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 11))
-                            .foregroundStyle(Color(red: 0.62, green: 0.68, blue: 0.78))
+                            .foregroundStyle(LP.onInkSecondary)
                     }
                     .buttonStyle(.plain)
                     .help("复制全部输出")
@@ -215,7 +218,7 @@ struct SSHView: View {
                     } label: {
                         Image(systemName: "eraser")
                             .font(.system(size: 11))
-                            .foregroundStyle(Color(red: 0.62, green: 0.68, blue: 0.78))
+                            .foregroundStyle(LP.onInkSecondary)
                     }
                     .buttonStyle(.plain)
                     .help("清空输出")
@@ -223,32 +226,31 @@ struct SSHView: View {
                 }
 
                 Circle()
-                    .fill(connected ? LP.mint : Color(red: 0.45, green: 0.50, blue: 0.58))
+                    .fill(connected ? LP.mint : LP.onInkTertiary)
                     .frame(width: 5, height: 5)
 
                 Text(connected ? "LIVE" : "IDLE")
-                    .font(LPFont.mono(10, weight: .bold))
+                    .font(LPFont.mono(11, weight: .bold))
                     .tracking(1.2)
-                    .foregroundStyle(connected ? LP.mint : Color(red: 0.45, green: 0.50, blue: 0.58))
+                    .foregroundStyle(connected ? LP.mint : LP.onInkTertiary)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(Color(red: 0.07, green: 0.09, blue: 0.13))
+            .background(Color.white.opacity(0.05))
             .overlay(alignment: .bottom) {
-                Rectangle().fill(Color.white.opacity(0.08)).frame(height: 1)
+                Rectangle().fill(LP.inkLine).frame(height: 1)
             }
 
             ScrollViewReader { proxy in
                 ScrollView {
                     Text(clean(output.isEmpty ? "连接后在此显示终端输出。支持交互式 shell（ssh -tt）。\n" : output))
                         .font(LPFont.mono(13))
-                        .foregroundStyle(Color(red: 0.78, green: 0.86, blue: 0.95))
+                        .foregroundStyle(LP.onInk)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(14)
                         .id("bottom")
                 }
-                .background(Color(red: 0.04, green: 0.055, blue: 0.08))
                 .onChange(of: output) { _, _ in
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
@@ -258,25 +260,26 @@ struct SSHView: View {
             HStack(spacing: 8) {
                 Text("$")
                     .font(LPFont.mono(12, weight: .bold))
-                    .foregroundStyle(LP.mint)
-                TextField("", text: $command, prompt: Text("输入命令，回车发送").foregroundColor(Color(red: 0.42, green: 0.50, blue: 0.60)))
+                    .foregroundStyle(LP.accentOnInk)
+                TextField("", text: $command, prompt: Text("输入命令，回车发送").foregroundColor(LP.onInkTertiary))
                     .textFieldStyle(.plain)
                     .font(LPFont.mono(13))
-                    .foregroundStyle(Color(red: 0.85, green: 0.90, blue: 0.97))
+                    .foregroundStyle(LP.onInk)
                     .onSubmit(send)
                     .disabled(!connected)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .background(Color(red: 0.06, green: 0.075, blue: 0.11))
+            .background(Color.white.opacity(0.05))
             .overlay(alignment: .top) {
-                Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1)
+                Rectangle().fill(LP.inkLine).frame(height: 1)
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(LP.ink)
+        .clipShape(RoundedRectangle(cornerRadius: LPRadius.panel, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(LP.strokeStrong, lineWidth: 1)
+            RoundedRectangle(cornerRadius: LPRadius.panel, style: .continuous)
+                .strokeBorder(LP.inkBorder, lineWidth: 1)
         )
         .frame(minHeight: 240)
     }

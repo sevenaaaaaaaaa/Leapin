@@ -102,8 +102,6 @@ struct CaptureView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbar
-            filterRow
-            Rectangle().fill(LP.stroke).frame(height: 1)
             // 窄窗口或无选中项时只留列表：空详情栏占掉半屏，是首屏最贵的空白。
             GeometryReader { geo in
                 Group {
@@ -154,9 +152,9 @@ struct CaptureView: View {
                 }
             }
             .lpSheet()
-            .padding(.horizontal, 32)
-            .padding(.top, 16)
-            .padding(.bottom, 24)
+            .padding(.horizontal, LPSpace.inset)
+            .padding(.top, 2)
+            .padding(.bottom, 20)
         }
         .onExitCommand { selected = nil }
         .sheet(isPresented: $showObservation) {
@@ -171,7 +169,6 @@ struct CaptureView: View {
             .environmentObject(app)
             .frame(minWidth: 1000, minHeight: 720)
         }
-        .navigationTitle("抓包")
         .alert("HTTPS 解密需要信任证书", isPresented: $showMITMWarning) {
             Button("去安装 CA") { app.installCA() }
             Button("取消", role: .cancel) {}
@@ -208,9 +205,33 @@ struct CaptureView: View {
         .onChange(of: initialSearch) { _, _ in applyInitialSearchIfNeeded() }
     }
 
+    /// 一条工具条：左边过滤（搜索框、状态 chip、计数），右边动作。
+    /// 以前是上下两行，chip 又和页头的 tab 长得一样，三排胶囊叠在一起分不出谁是谁。
     private var toolbar: some View {
         HStack(spacing: 10) {
-            LPSearchField(text: $search, placeholder: "过滤 URL / 主机", width: 210, focus: $searchFocused)
+            LPSearchField(text: $search, placeholder: "过滤 URL / 主机", width: 220, focus: $searchFocused)
+
+            HStack(spacing: 4) {
+                ForEach(StatusFilter.allCases) { option in
+                    LPChip(title: option.title, selected: statusFilter == option) {
+                        LPMotion.run(LPMotion.press) { statusFilter = option }
+                    }
+                }
+            }
+
+            Text(countText)
+                .font(LPFont.num(11, weight: .medium))
+                .foregroundStyle(paused ? LP.amber : LP.textTertiary)
+                .fixedSize()
+            if !search.isEmpty || statusFilter != .all {
+                Button("清除筛选") {
+                    search = ""
+                    statusFilter = .all
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(LP.accent)
+            }
 
             Spacer()
 
@@ -282,37 +303,14 @@ struct CaptureView: View {
             .buttonStyle(LPGhostButtonStyle())
             .disabled(engine.captures.isEmpty && engine.flows.isEmpty)
         }
-        .padding(.horizontal, 32).padding(.vertical, 13)
+        .padding(.horizontal, LPSpace.inset).padding(.vertical, 12)
     }
 
-    private var filterRow: some View {
-        HStack(spacing: 5) {
-            ForEach(StatusFilter.allCases) { option in
-                LPChip(title: option.title, selected: statusFilter == option) {
-                    LPMotion.run(LPMotion.press) { statusFilter = option }
-                }
-            }
-            Spacer()
-            Text(paused
-                 ? "已暂停 · \(filtered.count) / \(source.count) 条"
-                 : (search.isEmpty && statusFilter == .all
-                    ? "\(filtered.count) 条"
-                    : "\(filtered.count) / \(source.count)"))
-                .font(LPFont.num(10, weight: .medium))
-                .foregroundStyle(paused ? LP.amber : LP.textTertiary)
-                .fixedSize()
-            if !search.isEmpty || statusFilter != .all {
-                Button("清除筛选") {
-                    search = ""
-                    statusFilter = .all
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundStyle(LP.accent)
-            }
-        }
-        .padding(.horizontal, 32)
-        .padding(.bottom, 11)
+    private var countText: String {
+        paused ? "已暂停 · \(filtered.count) / \(source.count) 条"
+               : (search.isEmpty && statusFilter == .all
+                  ? "\(filtered.count) 条"
+                  : "\(filtered.count) / \(source.count)")
     }
 
     /// 空态不是一块居中留白，而是一张「还没填的账」：列头在，行位在，动作在底部。
@@ -325,8 +323,7 @@ struct CaptureView: View {
                 Text("状态").frame(width: 34, alignment: .trailing)
                 Text("耗时").frame(width: 52, alignment: .trailing)
             }
-            .font(LPFont.mono(10, weight: .medium))
-            .tracking(1.2)
+            .font(.system(size: 11, weight: .medium))
             .foregroundStyle(LP.textTertiary)
             .padding(.horizontal, 18)
             .padding(.vertical, 9)
@@ -359,7 +356,9 @@ struct CaptureView: View {
                         app.toggle()
                     }
                 }
-                .buttonStyle(LPPrimaryButtonStyle())
+                // 空态里的动作退成次按钮：这一屏唯一的主操作（接管）在页头，
+                // 空表里再放一枚朱红按钮，就是两个「下一步」在抢人。
+                .buttonStyle(LPGhostButtonStyle())
             }
             .padding(.horizontal, 18)
             .padding(.top, 18)
@@ -394,13 +393,12 @@ struct CaptureView: View {
                         Text("状态").frame(width: 34, alignment: .trailing)
                         Text("耗时").frame(width: 52, alignment: .trailing)
                     }
-                    .font(LPFont.mono(10, weight: .medium))
-                    .tracking(1.2)
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(LP.textTertiary)
                     .padding(.horizontal, 18)
                     .padding(.top, 10)
                     .padding(.bottom, 7)
-                    Rectangle().fill(LP.stroke.opacity(0.7)).frame(height: 0.5)
+                    LPDivider()
                     ScrollView {
                     LazyVStack(spacing: 1) {
                         ForEach(filtered) { request in
@@ -472,12 +470,12 @@ struct CaptureView: View {
             Spacer(minLength: 8)
             if let code = request.statusCode {
                 Text(String(code))
-                    .font(LPFont.num(10.5, weight: .semibold))
+                    .font(LPFont.num(11, weight: .semibold))
                     .foregroundStyle(code < 400 ? LP.success : LP.danger)
                     .frame(width: 34, alignment: .trailing)
             } else {
                 Text("—")
-                    .font(LPFont.num(10.5))
+                    .font(LPFont.num(11))
                     .foregroundStyle(LP.textTertiary)
                     .frame(width: 34, alignment: .trailing)
             }
@@ -678,13 +676,12 @@ struct CaptureView: View {
         return parts.joined(separator: " \\\n  ")
     }
 
+    /// 方法色只分两档：读是中性的，写（POST / PUT / PATCH / DELETE）才用朱红——
+    /// 「这个请求会改东西」正是需要被看见的那一个信号。系统的蓝绿橙不属于这套纸墨。
     private func methodColor(_ method: String) -> Color {
         switch method.uppercased() {
-        case "GET": return .blue
-        case "POST": return .green
-        case "PUT", "PATCH": return .orange
-        case "DELETE": return .red
-        default: return .secondary
+        case "POST", "PUT", "PATCH", "DELETE": return LP.accent
+        default: return LP.textSecondary
         }
     }
 

@@ -102,7 +102,7 @@ struct ObservationView: View {
                         .foregroundStyle(LP.text)
                         .lineLimit(1)
                     Text("v1.1")
-                        .font(LPFont.mono(10, weight: .medium))
+                        .font(LPFont.mono(11, weight: .medium))
                         .foregroundStyle(LP.textTertiary)
                 }
 
@@ -415,7 +415,7 @@ struct ObservationView: View {
             }
             .frame(width: 13, alignment: .leading)
             Text(text)
-                .font(LPFont.num(10, weight: .medium))
+                .font(LPFont.num(11, weight: .medium))
                 .foregroundStyle(LP.textSecondary)
                 .lineLimit(1)
                 .contentTransition(.numericText())
@@ -503,7 +503,7 @@ struct ObservationView: View {
         } content: {
             HStack(spacing: 10) {
                 Text(tag)
-                    .font(LPFont.mono(10, weight: .semibold))
+                    .font(LPFont.mono(11, weight: .semibold))
                     .tracking(0.6)
                     .foregroundStyle(copyable ? LP.textSecondary : LP.textTertiary)
                     .frame(width: 42, alignment: .leading)
@@ -707,7 +707,7 @@ struct ObservationView: View {
                 Text("主机 / 规则").frame(maxWidth: .infinity, alignment: .leading)
                 Text("流量").frame(width: 120, alignment: .trailing)
             }
-            .font(LPFont.mono(10, weight: .medium))
+            .font(LPFont.mono(11, weight: .medium))
             .tracking(1)
             .foregroundStyle(LP.textTertiary)
             .padding(.bottom, 7)

@@ -613,6 +613,10 @@ public final class ProxyServer: @unchecked Sendable {
             var bytes = forwarded.serialized()
             bytes.append(payload)
             try await upstream.write(bytes)
+            // Plain HTTP never goes through `BytePump`, which is where the live gauge
+            // gets every chunk on a tunnel. Without these two lines the rate meter was
+            // blind to plain HTTP: the bytes only reached the flow event at the end.
+            LiveTraffic.shared.record(bytes: bytes.count, inbound: true)
 
             guard let response = try await HTTPCodec.readResponseHead(upstreamStream) else {
                 throw LeapinError.connectionFailed("origin closed without a response")
@@ -649,6 +653,7 @@ public final class ProxyServer: @unchecked Sendable {
             var out = head.serialized
             out.append(deliveredBody)
             try await socket.write(out)
+            LiveTraffic.shared.record(bytes: out.count, inbound: false)
 
             flows?.record(makeEvent(phase: .closed, meta: meta, decision: decision,
                                     bytesIn: body.count, bytesOut: out.count,

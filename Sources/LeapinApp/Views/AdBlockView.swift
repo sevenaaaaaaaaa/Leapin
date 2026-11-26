@@ -34,12 +34,9 @@ struct AdBlockView: View {
         self.deck = deck
     }
 
-    @ViewBuilder var body: some View {
-        if embedded {
-            page
-        } else {
-            page.navigationTitle("去广告")
-        }
+    /// 页面级标题归页头：这里不设 navigationTitle，否则窗口会把标题栏重新显示出来。
+    var body: some View {
+        page
     }
 
     private var page: some View {

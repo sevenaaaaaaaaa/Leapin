@@ -8,6 +8,10 @@ import AppKit
 /// Visual direction: "Editorial Instrument" — warm paper, ink typography,
 /// a single vermilion signal colour, hairline rules instead of floating cards.
 /// Data is monospaced; prose is proportional; nothing competes with the numbers.
+///
+/// Surfaces are a three-step ramp in both modes, so the eye always knows what it is
+/// looking at without reading a border: **paper** (the window) < **sheet** (a card,
+/// a control) < **ink** (the one focus band a screen is allowed).
 enum LP {
     static func dyn(_ light: NSColor, _ dark: NSColor) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
@@ -22,38 +26,63 @@ enum LP {
                 alpha: alpha)
     }
 
-    // Surfaces — warm paper in light, warm ink in dark.
-    static let bg = dyn(hex(0xEDE7DB), hex(0x0A0A0B))
-    /// Tint laid over a clear glass card so content surfaces sit a step above the
-    /// window material instead of dissolving into it.
-    static let cardTint = dyn(hex(0xFFFFFF, 0.34), hex(0xFFFFFF, 0.05))
-    static let panel = dyn(hex(0xFCFBF8), hex(0x151517))
-    static let panelSolid = dyn(hex(0xFFFFFF), hex(0x171719))
-    static let panelRaised = dyn(hex(0xFFFFFF), hex(0x1F1F22))
-    static let stroke = dyn(hex(0x16150F, 0.10), hex(0xFFFFFF, 0.12))
-    static let strokeStrong = dyn(hex(0x16150F, 0.20), hex(0xFFFFFF, 0.20))
+    // MARK: Surfaces
 
-    // MARK: v5 surfaces (DESIGN-v5 §6.1) — only three surfaces plus the hairline.
-    /// Window background: one sheet of paper.
+    /// The window: one sheet of paper.
     static let paper = dyn(hex(0xF4EFE6), hex(0x0F0F10))
-    /// Content surface: modules, rows, inputs.
-    static let sheet = dyn(hex(0xFBF8F2), hex(0x161618))
+    /// Content surface: cards, rows, inputs.
+    static let sheet = dyn(hex(0xFDFBF7), hex(0x1A1A1E))
+    /// Something sitting on a sheet: a menu row, the selected segment.
+    static let sheetRaised = dyn(hex(0xFFFFFF), hex(0x25252A))
     /// The single focus band per screen. At most one per page.
-    static let ink = dyn(hex(0x19191B), hex(0x1C1C1F))
-    /// Hairline rule — replaces the double stroke.
+    /// Dark mode lifts it a clear step above the paper: an ink band that is
+    /// barely darker than the night paper is not a focus band, it is a shadow.
+    static let ink = dyn(hex(0x19191B), hex(0x26262B))
+    /// The band's edge: nothing in light (ink is its own edge), a hairline in dark.
+    static let inkBorder = dyn(hex(0xFFFFFF, 0), hex(0xFFFFFF, 0.12))
+    /// Hairline rule.
     static let line = dyn(hex(0x16150F, 0.10), hex(0xFFFFFF, 0.10))
+    static let lineStrong = dyn(hex(0x16150F, 0.18), hex(0xFFFFFF, 0.18))
+    /// Row hover, never a tinted wash.
+    static let hover = dyn(hex(0x16150F, 0.05), hex(0xFFFFFF, 0.07))
     /// Sidebar / list selection. Ink at 6%, never a tinted accent wash:
     /// a pale vermilion row reads as a warning, not as "you are here".
-    static let selectionFill = dyn(hex(0x16150F, 0.06), hex(0xFFFFFF, 0.07))
+    static let selectionFill = dyn(hex(0x16150F, 0.06), hex(0xFFFFFF, 0.08))
 
-    // Text
+    // Older names, still read across the app. Each one now resolves to a step of
+    // the same ramp, so a card cannot pick a fourth surface by using the old token.
+    static let bg = paper
+    static let panel = sheet
+    static let panelSolid = sheetRaised
+    static let panelRaised = sheetRaised
+    static let stroke = line
+    static let strokeStrong = lineStrong
+    static let cardTint = dyn(hex(0xFFFFFF, 0.34), hex(0xFFFFFF, 0.05))
+
+    // MARK: Text
+
     static let text = dyn(hex(0x16150F), hex(0xF3F1EA))
     static let textSecondary = dyn(hex(0x5F5C53), hex(0xA6A39A))
     // 9–10pt 说明文字大量使用三级色：浅底需 ≥4.5:1，深底同样拉到 5:1 以上。
     static let textTertiary = dyn(hex(0x6F6B60), hex(0x87847B))
 
-    // Accents — one signal colour; the rest are semantic status only.
+    /// On the ink band. The band is dark in both modes, so these are plain white
+    /// at three weights; the tertiary weight stays at 50% because 11pt text on
+    /// the dark-mode band needs every bit of that to clear 4.5:1.
+    static let onInk = Color.white.opacity(0.94)
+    static let onInkSecondary = Color.white.opacity(0.66)
+    static let onInkTertiary = Color.white.opacity(0.50)
+    static let inkLine = Color.white.opacity(0.20)
+    static let inkText = onInk
+    static let inkTextSecondary = onInkSecondary
+
+    // MARK: Accents — one signal colour; the rest are semantic status only.
+
     static let accent = dyn(hex(0xC63A12), hex(0xFF7A4D))
+    /// The same vermilion for use **on ink**. The brand red is 3.2:1 against the
+    /// band, fine for a dot but not for a label, and it reads brown next to black;
+    /// the lifted red is 5.8:1 or better on both bands and is still one hue.
+    static let accentOnInk = Color(red: 1, green: 122 / 255, blue: 77 / 255)
     /// Filled-button background: white text must clear 4.5:1 in both modes, so the
     /// dark mode fill is the deeper vermilion rather than the bright accent used for text.
     static let accentFill = dyn(hex(0xB83510), hex(0xC2410F))
@@ -71,9 +100,10 @@ enum LP {
         LinearGradient(colors: [accent, dyn(hex(0x8E2606), hex(0xD9502A))],
                        startPoint: .topLeading, endPoint: .bottomTrailing)
     }
-    // Metrics — 8pt rhythm.
-    static let radius: CGFloat = 10
-    static let radiusSmall: CGFloat = 6
+
+    // Metrics — 8pt rhythm. Panels are 12 everywhere; nothing rounds at 10 any more.
+    static let radius: CGFloat = 12
+    static let radiusSmall: CGFloat = 8
     static let gutter: CGFloat = 24
     static let hairline: CGFloat = 1
 }
@@ -96,21 +126,30 @@ enum LPFont {
     static let overline = Font.system(size: 11, weight: .semibold)
 }
 
-/// v5 type scale (DESIGN-v5 §6.2). Nothing below 11pt; body is always 13.
+/// The type scale. Nothing below 11pt; body is always 13.
+///
+/// The scale has a job beyond "sizes that go together": a screen is allowed exactly
+/// one `hero`, and it goes to the thing the screen is about — the exit on 走哪,
+/// the verdict on 为什么 — never to a page title.
 /// Use these instead of raw sizes so the scale is one place, not four hundred.
 enum LPType {
-    static let title = Font.system(size: 28, weight: .semibold)
+    /// Page title in the shell header. Small on purpose: the verb name is a label,
+    /// two characters that say where you are, not the loudest thing on the page.
+    static let title = Font.system(size: 22, weight: .semibold)
+    /// The one large thing on a screen, given by meaning.
+    static let hero = Font.system(size: 28, weight: .semibold)
     static let section = Font.system(size: 15, weight: .semibold)
     static let body = Font.system(size: 13)
     static let label = Font.system(size: 11, weight: .medium, design: .monospaced)
     static let data = Font.system(size: 20, weight: .semibold, design: .monospaced)
     static let dataSmall = Font.system(size: 13, weight: .medium, design: .monospaced)
-    static let quote = Font.system(size: 15, design: .serif).italic()
+    /// One serif sentence per screen at most: the brand's voice, used for the tagline.
+    static let quote = Font.system(size: 12, design: .serif).italic()
     /// The floor. A glyph may go below this only with a reason written in qa/T-15.
     static let minimum: CGFloat = 11
 }
 
-/// v5 spacing scale (§6.3): 4 / 8 / 12 / 16 / 24 / 32 / 48.
+/// Spacing scale: 4 / 8 / 12 / 16 / 24 / 32 / 48.
 enum LPSpace {
     static let xs: CGFloat = 4
     static let s: CGFloat = 8
@@ -122,43 +161,47 @@ enum LPSpace {
     static let page: CGFloat = 32
     static let section: CGFloat = 24
     static let module: CGFloat = 16
+    /// The one left edge every page shares: header title, toolbar and content all
+    /// start this far from the sidebar. Pages used to disagree by up to 38pt.
+    static let inset: CGFloat = 28
+    /// A toolbar row under the header: 12 + 28 control + 12.
+    static let toolbar: CGFloat = 52
 }
 
-/// v5 radii (§6.3): panel 12, control 8, status pill full.
+/// Radii: panel 12, control 8, status pill full.
 enum LPRadius {
     static let panel: CGFloat = 12
     static let control: CGFloat = 8
     static let pill: CGFloat = 999
 }
 
+// MARK: - Shell metrics
+
+/// Fixed numbers of the window chrome. Pages do not read these; the shell does,
+/// and the two halves of the header (title block and tab underline) must agree.
+enum LPShell {
+    static let headerHeight: CGFloat = 66
+    static let headerTop: CGFloat = 12
+    static let titleLine: CGFloat = 26
+    static let sidebarWidth: CGFloat = 208
+    static let sidebarCompact: CGFloat = 64
+}
+
 // MARK: - Background
 
+/// Opaque paper. The window used to be a 40% wash over the blurred desktop, which
+/// meant legibility depended on the wallpaper: a dark one turned the "paper" murky
+/// and ate every hairline. One sheet of paper means one sheet of paper.
 struct LPBackground: View {
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
     var body: some View {
-        ZStack {
-            if reduceTransparency {
-                LP.bg
-            } else {
-                // The blur itself lives on the window's frame view (Platform.swift);
-                // this wash is the only thing between the wallpaper and the text.
-                LP.bg.opacity(0.40)
-            }
-        }
-        .ignoresSafeArea()
+        LP.paper
+            .ignoresSafeArea()
     }
 }
 
-// MARK: - Liquid Glass
+// MARK: - Paper surfaces
 
-/// Liquid Glass (macOS 26) with a materials fallback for macOS 14-15.
-///
-/// Rules encoded here rather than at every call site:
-/// - glass is a surface material, not a fill: never layer an opaque colour behind it;
-/// - corner radii grow with the surface (panels 20, tiles 16, controls capsule);
-/// - interactive is only passed for elements the user can actually press.
-/// v5 content surface (DESIGN-v5 §6.1): paper + hairline, no material.
+/// Paper + hairline. The only content surface: cards, the sidebar, inputs sit on it.
 /// Glass is reserved for overlays — menu bar panel, floating window, palette, sheet.
 struct LPSheetSurface: ViewModifier {
     var radius: CGFloat = LPRadius.panel
@@ -184,7 +227,7 @@ extension View {
     }
 }
 
-/// v5 pill control surface: paper + hairline, used by chips and inline pickers.
+/// Pill control surface: paper + hairline, used by chips and inline pickers.
 struct LPPillSurface: ViewModifier {
     func body(content: Content) -> some View {
         content
@@ -196,6 +239,8 @@ struct LPPillSurface: ViewModifier {
 extension View {
     func lpPill() -> some View { modifier(LPPillSurface()) }
 }
+
+// MARK: - Liquid Glass
 
 enum LPGlass {
     static var isAvailable: Bool {
@@ -222,7 +267,7 @@ private struct LPGlassSurface<S: InsettableShape>: ViewModifier {
                 .glassEffect(glass, in: shape)
                 .overlay(
                     shape.strokeBorder(LP.stroke, lineWidth: 1)
-                    .allowsHitTesting(false)
+                        .allowsHitTesting(false)
                 )
                 .shadow(color: .black.opacity(shadow), radius: 20, x: 0, y: 9)
         } else {
@@ -285,20 +330,11 @@ struct LEAPIN_PanelModifier: ViewModifier {
     var raised: Bool = false
 
     func body(content: Content) -> some View {
-        // System-native surfaces: a flat, subtly raised card on the window
-        // background, the way macOS System Settings groups content. No glass, no
-        // border, no shadow — the glass panel read as a widget dashboard rather
-        // than part of the system.
+        // Same paper + hairline as every other surface. The old 0.5pt separator at
+        // half strength vanished at 1× and left cards as unexplained white patches.
         content
             .padding(padding)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(Color(nsColor: raised ? .controlBackgroundColor : .controlBackgroundColor))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color(nsColor: .separatorColor).opacity(0.5), lineWidth: 0.5)
-            )
+            .modifier(LPSheetSurface(radius: radius))
     }
 }
 
@@ -307,14 +343,13 @@ extension View {
         modifier(LEAPIN_PanelModifier(radius: radius, padding: padding, raised: raised))
     }
 
-    /// Standard page container: generous margins, one readable measure.
+    /// Standard page container: the shell's one inset, top-aligned.
+    /// No maximum width: pages that scroll and pages that do not used to disagree
+    /// about the measure, so content jumped sideways when switching pages.
     func lpPage() -> some View {
-        // One measure for every page: a narrower column than before (1180 read
-        // as a dashboard wall on a 1440 screen) and the insets System Settings uses.
-        self.frame(maxWidth: 1080, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .top)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 22)
+        self.frame(maxWidth: .infinity, alignment: .topLeading)
+            .padding(.horizontal, LPSpace.inset)
+            .padding(.vertical, 20)
     }
 
     /// Hover feedback for interactive cards/rows. Subtle: 1pt lift, not a bounce.
@@ -367,45 +402,23 @@ struct SectionHeader: View {
     }
 }
 
-struct PageHeader: View {
-    var title: String
-    var subtitle: String
-    var icon: String
-    @ViewBuilder var actions: () -> AnyView
+/// The name of a group in the chrome: a sidebar section, a table column, a rail.
+/// Sans, 11pt, secondary. The mono eyebrow (`LPEyebrow`) is for data.
+struct LPLabel: View {
+    var text: String
+    var tint: Color = LP.textSecondary
 
-    init(title: String, subtitle: String, icon: String, @ViewBuilder actions: @escaping () -> some View) {
-        self.title = title
-        self.subtitle = subtitle
-        self.icon = icon
-        self.actions = { AnyView(actions()) }
-    }
-
-    init(title: String, subtitle: String, icon: String) {
-        self.title = title
-        self.subtitle = subtitle
-        self.icon = icon
-        self.actions = { AnyView(EmptyView()) }
+    init(_ text: String, tint: Color = LP.textSecondary) {
+        self.text = text
+        self.tint = tint
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 9) {
-                    Text(title)
-                        .font(LPType.title)
-                        .tracking(-0.4)
-                        .foregroundStyle(LP.text)
-                }
-                Text(subtitle)
-                    .font(LPType.body)
-                    .foregroundStyle(LP.textTertiary)
-            }
-            Spacer()
-            actions()
-        }
-        .padding(.horizontal, 32)
-        .padding(.top, 22)
-        .padding(.bottom, 16)
+        Text(text)
+            .font(.system(size: 11, weight: .medium))
+            .tracking(0.2)
+            .foregroundStyle(tint)
+            .lineLimit(1)
     }
 }
 
@@ -437,46 +450,97 @@ struct LPEyebrow: View {
 
 // MARK: - Controls
 
+/// Keyboard focus ring: reads the nearest focusable ancestor's focus state and
+/// draws a 2pt vermilion ring outside the shape. It lives inside the button styles,
+/// so every button that uses one of them is keyboard-visible without a @FocusState.
+struct LPButtonFocusRing<S: InsettableShape, Content: View>: View {
+    @Environment(\.isFocused) private var isFocused
+    var shape: S
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        content()
+            .overlay(
+                shape
+                    .strokeBorder(LP.accent, lineWidth: 2)
+                    .padding(-3)
+                    .opacity(isFocused ? 1 : 0)
+                    .allowsHitTesting(false)
+            )
+    }
+}
+
+/// One height for every button so a toolbar rows up: 13pt text + 7pt above and below.
+private let lpButtonShape = RoundedRectangle(cornerRadius: LPRadius.control, style: .continuous)
+private let lpButtonOverlay = RoundedRectangle(cornerRadius: LPRadius.control, style: .continuous)
+
 struct LPPrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
     var tint: Color? = nil
     func makeBody(configuration: Configuration) -> some View {
         let fill = isEnabled ? (tint ?? LP.accentFill) : LP.stroke
-        LPButtonFocusRing(shape: RoundedRectangle(cornerRadius: 8, style: .continuous)) {
+        return LPButtonFocusRing(shape: lpButtonShape) {
             // 主操作保持不透明实色：tint 玻璃在浅底上会把朱红洗成灰，
             // 白字对比掉到 2:1 以下——可读性优先于材质一致性。
             configuration.label
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(isEnabled ? .white : LP.textTertiary)
                 .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(fill))
+                .padding(.vertical, 7)
+                .background(lpButtonOverlay.fill(fill))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    lpButtonOverlay
                         .strokeBorder(.white.opacity(0.14), lineWidth: 0.5)
                 )
-            .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .opacity(configuration.isPressed ? 0.86 : 1)
-            .lpAnimation(LPMotion.press, value: configuration.isPressed)
+                .scaleEffect(configuration.isPressed ? 0.985 : 1)
+                .opacity(configuration.isPressed ? 0.86 : 1)
+                .lpAnimation(LPMotion.press, value: configuration.isPressed)
         }
     }
 }
 
+/// The quiet button: hairline, no fill, ink text. Hover and press tint it with ink.
 struct LPGhostButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
     func makeBody(configuration: Configuration) -> some View {
-        LPButtonFocusRing(shape: RoundedRectangle(cornerRadius: 8, style: .continuous)) {
+        LPButtonFocusRing(shape: lpButtonShape) {
             configuration.label
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(LP.text)
-                .padding(.horizontal, 13)
-                .padding(.vertical, 6)
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color(nsColor: .controlBackgroundColor)))
-                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(Color(nsColor: .separatorColor).opacity(0.7), lineWidth: 0.5))
-                .opacity(isEnabled ? (configuration.isPressed ? 0.7 : 1) : 0.45)
+                .foregroundStyle(isEnabled ? LP.text : LP.textTertiary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(
+                    lpButtonOverlay.fill(configuration.isPressed
+                                         ? LP.text.opacity(0.10)
+                                         : (hovering ? LP.hover : Color.clear))
+                )
+                .overlay(lpButtonOverlay.strokeBorder(isEnabled ? LP.lineStrong : LP.line, lineWidth: 1))
         }
+        .onHover { hovering = $0 }
+    }
+}
+
+/// The quiet button for the ink band: same shape and metrics as the ghost, drawn
+/// in white so a second action on the band is reachable without a second red button.
+struct LPOnInkButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+    func makeBody(configuration: Configuration) -> some View {
+        LPButtonFocusRing(shape: lpButtonShape) {
+            configuration.label
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(isEnabled ? LP.onInk : LP.onInkTertiary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(
+                    lpButtonOverlay.fill(configuration.isPressed
+                                         ? Color.white.opacity(0.16)
+                                         : (hovering ? Color.white.opacity(0.10) : Color.white.opacity(0.04)))
+                )
+                .overlay(lpButtonOverlay.strokeBorder(Color.white.opacity(isEnabled ? 0.22 : 0.10), lineWidth: 1))
+        }
+        .onHover { hovering = $0 }
     }
 }
 
@@ -494,30 +558,12 @@ struct LPCardButtonStyle: ButtonStyle {
     }
 }
 
-/// 键盘焦点环：读到最近可聚焦祖先（Button）的焦点态，在按钮外描 2pt 朱红。
-/// 放在 ButtonStyle 内部，因此所有用这两套样式的按钮自动获得焦点提示，无需逐处接 @FocusState。
-private struct LPButtonFocusRing<S: InsettableShape, Content: View>: View {
-    @Environment(\.isFocused) private var isFocused
-    var shape: S
-    @ViewBuilder var content: () -> Content
-
-    var body: some View {
-        content()
-            .overlay(
-                shape
-                    .strokeBorder(LP.accent, lineWidth: 2)
-                    .padding(-3)
-                    .opacity(isFocused ? 1 : 0)
-                    .allowsHitTesting(false)
-            )
-    }
-}
-
 // MARK: - Status
 
 struct StatusDot: View {
     var color: Color
     var pulsing: Bool = false
+    var size: CGFloat = 6
     @State private var on = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -526,14 +572,14 @@ struct StatusDot: View {
             if pulsing {
                 Circle()
                     .fill(color.opacity(0.30))
-                    .frame(width: 12, height: 12)
+                    .frame(width: size * 2, height: size * 2)
                     .scaleEffect(on ? 1.35 : 0.7)
                     .opacity(on ? 0 : 1)
                     .animation(reduceMotion ? nil : .easeOut(duration: 1.8).repeatForever(autoreverses: false), value: on)
             }
-            Circle().fill(color).frame(width: 6, height: 6)
+            Circle().fill(color).frame(width: size, height: size)
         }
-        .frame(width: 12, height: 12)
+        .frame(width: size * 2, height: size * 2)
         .onAppear { on = true }
     }
 }
@@ -561,6 +607,12 @@ enum LPMotion {
     static let spring = Animation.spring(response: 0.26, dampingFraction: 0.82)
     /// 首屏错峰入场。
     static let enter = Animation.easeOut(duration: 0.38)
+    /// 「跃」：换路生效时，朱红点在新的一站弹出。没有飞行轨迹——
+    /// 品牌的主图形就是「A 消失，B 出现，留白是瞬间」。
+    static let leap = Animation.spring(response: 0.34, dampingFraction: 0.62)
+    /// 「弦」：换路生效的那一下，判据到出口之间的连线亮起再暗下去。
+    /// 只在状态切换时出现，不做装饰。
+    static let chord = Animation.easeOut(duration: 0.55)
 
     /// 命令式动画：reduceMotion 打开时直接落位。
     @MainActor
@@ -599,7 +651,7 @@ struct LPRule: View {
             Rectangle().fill(LP.stroke).frame(height: 1)
             if let label {
                 Text(label)
-                    .font(LPFont.mono(10, weight: .medium))
+                    .font(LPFont.mono(11, weight: .medium))
                     .tracking(1.2)
                     .foregroundStyle(LP.textTertiary)
                     .fixedSize()

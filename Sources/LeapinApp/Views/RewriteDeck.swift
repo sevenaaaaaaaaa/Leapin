@@ -63,6 +63,27 @@ struct RewriteDeck {
                 return "默认使用内置 leapin-ads.txt（约 100 条），这里加额外的 ABP / hosts 来源。"
             }
         }
+
+        /// 能直接用的示例行。空列表给的不是一块空白，而是几行可以照着改的例子；
+        /// 编辑器里的「模板」也是这一份，两处不会各写一套语法。
+        var samples: [(title: String, line: String)] {
+            switch self {
+            case .rewrite:
+                return [
+                    ("添加请求头", #"http-request ^https?://api\.example\.com/ header-add X-Debug 1"#),
+                    ("改响应头", #"http-response ^https?://api\.example\.com/ header-replace Cache-Control no-store"#),
+                    ("替换正文", #"http-response ^https?://api\.example\.com/user body-replace "\"vip\":false" "\"vip\":true""#),
+                    ("重定向", #"http-request ^https?://old\.example\.com/ redirect https://new.example.com 302"#),
+                ]
+            case .mock:
+                return [
+                    ("Mock 接口", #"http-request ^https?://api\.example\.com/mock mock 200 application/json {"ok":true}"#),
+                    ("重定向", #"http-request ^https?://old\.example\.com/ redirect https://new.example.com 302"#),
+                ]
+            case .script, .adblock:
+                return []
+            }
+        }
     }
 
     /// 一条列表行。四类共用同一种行，tab 只决定取哪一类。

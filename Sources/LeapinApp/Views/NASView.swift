@@ -30,7 +30,6 @@ struct NASView: View {
             }
             .pagePadding()
         }
-        .navigationTitle("NAS")
         .onDisappear { discovery.stop(); scanning = false }
     }
 

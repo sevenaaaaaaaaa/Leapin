@@ -44,11 +44,12 @@ struct SettingsView: View {
                     saveBar
                 }
                 .frame(maxWidth: 720, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .center)
+                // 左对齐到页头那条线，不居中：全 App 只有一条左缘，设置页不该自己另起一条。
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity)
             .pagePadding()
-            .navigationTitle("设置")
+            // 不设 navigationTitle（见 SSHView 里的说明）：页头已经写着「设置」。
             .formStyle(.grouped)
         }
         .onAppear {
@@ -461,9 +462,7 @@ private struct FieldRow<Content: View>: View {
             content()
         }
         .padding(.vertical, 7)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(LP.stroke.opacity(0.55)).frame(height: 0.5)
-        }
+        .overlay(alignment: .bottom) { LPDivider() }
     }
 }
 
@@ -489,9 +488,7 @@ private struct ToggleRow: View {
             LPSwitch(isOn: $isOn, width: 32)
         }
         .padding(.vertical, 7)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(LP.stroke.opacity(0.55)).frame(height: 0.5)
-        }
+        .overlay(alignment: .bottom) { LPDivider() }
     }
 }
 
@@ -524,9 +521,7 @@ private struct FactRow: View {
                 .padding(.leading, 100)
         }
         .padding(.vertical, 7)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(LP.stroke.opacity(0.55)).frame(height: 0.5)
-        }
+        .overlay(alignment: .bottom) { LPDivider() }
         .accessibilityElement(children: .combine)
     }
 }
@@ -659,9 +654,13 @@ private struct PhonePairingCard: View {
                     }
                     .buttonStyle(LPGhostButtonStyle())
                 }
-                Toggle("允许局域网访问", isOn: Binding(get: { lanEnabled }, set: onToggleLAN))
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
+                HStack(spacing: 7) {
+                    Text("允许局域网访问")
+                        .font(.system(size: 11))
+                        .foregroundStyle(LP.text)
+                    // 自绘开关：系统开关打开时是系统蓝，不在这套纸墨朱红里。
+                    LPSwitch(isOn: Binding(get: { lanEnabled }, set: onToggleLAN), width: 28)
+                }
             }
         }
         if pairing.blockers.isEmpty {

@@ -351,8 +351,9 @@ struct NetworkTaskPanel: View {
         }
     }
 
+    /// 跳去别的页面的动作不是「提交」：次按钮。朱红只留给计划卡上那一个真正执行的动作。
     private func destination(_ title: String, _ section: AppModel.Section) -> some View {
-        Button(title) { app.go(to: section) }.buttonStyle(LPPrimaryButtonStyle())
+        Button(title) { app.go(to: section) }.buttonStyle(LPGhostButtonStyle())
     }
 
     private func steps(_ values: [String]) -> some View {
@@ -399,15 +400,6 @@ struct DiagnosticsWorkspace: View {
                     Text("检查一个目标，或调整一条规则。")
                         .font(LPFont.display(28, weight: .semibold)).foregroundStyle(LP.text)
                 }
-                // 本地检查的结果是一张报告卡，而探测 tab 不渲染报告卡：在这里留着入口
-                // 只会让人点了看不到任何结果（T-14 评审 O2）。
-                if scope == .full {
-                    HStack(spacing: 12) {
-                        Button("检查本地代理") { assistant.inspectLocal() }.buttonStyle(LPPrimaryButtonStyle()).disabled(assistant.busy)
-                        Button("排查抓包与解密") { assistant.inspectLocal(capture: true) }.buttonStyle(LPGhostButtonStyle()).disabled(assistant.busy)
-                        Text("本地检查不发起外部请求").font(.system(size: 13)).foregroundStyle(LP.textTertiary)
-                    }
-                }
                 TaskComposer(assistant: assistant, focused: $focused)
                 if assistant.task == nil, let message = assistant.message {
                     Text(message)
@@ -416,6 +408,20 @@ struct DiagnosticsWorkspace: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 NetworkTaskPanel(assistant: assistant)
+                if scope == .full {
+                    // 本地检查的入口放在报告出现的位置上方。两个都是次按钮：这一页的主操作
+                    // 是计划卡上那一个，上面再压一枚朱红按钮就是两个「下一步」在抢人。
+                    HStack(spacing: 10) {
+                        Button("检查本地代理") { assistant.inspectLocal() }
+                            .buttonStyle(LPGhostButtonStyle()).disabled(assistant.busy)
+                        Button("排查抓包与解密") { assistant.inspectLocal(capture: true) }
+                            .buttonStyle(LPGhostButtonStyle()).disabled(assistant.busy)
+                        Text("本地检查不发起外部请求")
+                            .font(.system(size: 12)).foregroundStyle(LP.textTertiary)
+                        Spacer(minLength: 0)
+                        Button("导入与转换配置") { app.beginImport() }.buttonStyle(LPGhostButtonStyle())
+                    }
+                }
                 if scope == .probes {
                     Text("命中链、DNS trace 与直连 / 代理耗时都在上面；完整报告与重复请求检查在「诊断」tab。")
                         .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
@@ -424,13 +430,6 @@ struct DiagnosticsWorkspace: View {
                 if scope == .full, let report = assistant.report {
                     // 没有可重测的 host（本地检查之后）就不给「重新检查」，否则是死键。
                     DiagnosticReportView(report: report, onRetest: retestAction)
-                }
-                if scope == .full {
-                    HStack(spacing: 12) {
-                        Button("网络活动与连接明细") { app.go(to: .activity) }.buttonStyle(LPGhostButtonStyle())
-                        Button("抓包与 HTTPS 解密") { app.go(to: .capture) }.buttonStyle(LPGhostButtonStyle())
-                        Button("导入与转换配置") { app.beginImport() }.buttonStyle(LPGhostButtonStyle())
-                    }
                 }
             }.pagePadding()
         }
@@ -459,34 +458,42 @@ private struct TaskComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Picker("任务类型", selection: $assistant.directMode) {
-                Text("检查网站 / 其他需求").tag(false)
-                Text("网站直连").tag(true)
-            }
-            .pickerStyle(.segmented).frame(maxWidth: 330).disabled(assistant.busy)
+            // 系统的分段控件是灰的 AppKit，落在暖纸和朱红旁边像从别的 App 里借来的。
+            LPSegmentedPicker([(false, "检查网站 / 其他需求"), (true, "网站直连")],
+                              selection: $assistant.directMode)
+                .disabled(assistant.busy)
             HStack(spacing: 10) {
-                Image(systemName: "sparkle.magnifyingglass").font(.system(size: 18)).foregroundStyle(LP.accent).accessibilityHidden(true)
+                Image(systemName: "sparkle.magnifyingglass").font(.system(size: 15, weight: .medium)).foregroundStyle(LP.accent).accessibilityHidden(true)
                 TextField(assistant.directMode ? "输入需要直连的网站域名" : "输入网站，或任务：访问家里的文件", text: $assistant.input)
-                    .textFieldStyle(.plain).font(.system(size: 15))
+                    .textFieldStyle(.plain).font(.system(size: 14, weight: .medium))
                     .focused(focused).onSubmit { assistant.submit() }
                     .accessibilityLabel("网站或网络需求")
                     .disabled(assistant.busy)
                 Group {
                     if assistant.task == nil {
-                        Button("查看计划") { assistant.submit() }.buttonStyle(LPPrimaryButtonStyle())
+                        Button("查看计划") { assistant.submit() }.buttonStyle(LPGhostButtonStyle())
                     } else {
                         Button("更新计划") { assistant.submit() }.buttonStyle(LPGhostButtonStyle())
                     }
                 }
-                    .disabled(assistant.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || assistant.busy)
+                .disabled(assistant.input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || assistant.busy)
             }
-            LPDivider()
+            .padding(.horizontal, 12)
+            .frame(height: 38)
+            .background(
+                RoundedRectangle(cornerRadius: LPRadius.control, style: .continuous)
+                    .fill(LP.sheet)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: LPRadius.control, style: .continuous)
+                    .strokeBorder(LP.lineStrong, lineWidth: 1)
+            )
             Text("本地任务助手 · 输入 example.com 检查网站，或输入「让 example.com 直连」预览规则。")
-                .font(.system(size: 13)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: 12)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
             if assistant.receipt != nil, assistant.task == nil {
                 Button("撤销上次规则修改") { assistant.undo() }.buttonStyle(LPGhostButtonStyle())
             }
         }
-        .padding(20).lpPanel(padding: 0)
+        .padding(20).lpPanel(padding: 20)
     }
 }

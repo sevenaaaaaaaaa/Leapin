@@ -2,10 +2,15 @@ import SwiftUI
 
 /// The single ink band a screen is allowed (DESIGN-v5 §3, §7).
 ///
-/// Slot order is fixed: eyebrow → one route line → facts → one primary action.
+/// Slot order is fixed: eyebrow → the route → facts → one primary action.
 /// Nothing else goes in; a second band on the same screen is a bug.
+///
+/// The band is the product's one dark surface: it is where "where is my traffic
+/// going right now" lives, so everything on it is white at three weights and the
+/// one vermilion point. In dark mode the band is lifted a step above the paper
+/// and given a hairline, otherwise the focus band is not a focus band.
 struct FocusBand<Content: View>: View {
-    var eyebrow: String?
+    var eyebrow: String? = nil
     @ViewBuilder var content: Content
 
     init(_ eyebrow: String? = nil, @ViewBuilder content: () -> Content) {
@@ -14,31 +19,34 @@ struct FocusBand<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 18) {
             if let eyebrow {
                 Text(eyebrow)
-                    .font(LPType.label)
+                    .font(LPFont.mono(11, weight: .medium))
                     .tracking(1.1)
-                    .textCase(.uppercase)
-                    .foregroundStyle(.white.opacity(0.55))
+                    .foregroundStyle(LP.onInkTertiary)
             }
             content
         }
         .padding(.horizontal, 28)
-        .padding(.vertical, 26)
+        .padding(.vertical, 24)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: LPRadius.panel, style: .continuous)
                 .fill(LP.ink)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: LPRadius.panel, style: .continuous)
+                .strokeBorder(LP.inkBorder, lineWidth: 1)
+        )
     }
 }
 
-/// One fact inside a focus band: an 11pt label over a 20pt mono number.
+/// One fact on the band: an 11pt mono label over a 20pt mono number.
 struct RouteFact: View {
     var key: String
     var value: String
-    var unit: String?
+    var unit: String? = nil
 
     init(_ key: String, _ value: String, unit: String? = nil) {
         self.key = key
@@ -49,19 +57,28 @@ struct RouteFact: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(key)
-                .font(LPType.label)
-                .foregroundStyle(.white.opacity(0.50))
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundStyle(LP.onInkTertiary)
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(value)
-                    .font(LPType.data)
-                    .foregroundStyle(.white)
+                    .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(LP.onInk)
                     .lineLimit(1)
+                    .monospacedDigit()
                 if let unit {
                     Text(unit)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.65))
+                        .foregroundStyle(LP.onInkSecondary)
                 }
             }
         }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A hairline on the band.
+struct InkRule: View {
+    var body: some View {
+        Rectangle().fill(LP.inkLine).frame(height: 1)
     }
 }

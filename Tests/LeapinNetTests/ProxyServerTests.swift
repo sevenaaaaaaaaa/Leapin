@@ -122,6 +122,43 @@ final class ProxyServerTests: XCTestCase {
         XCTAssertEqual(metas.first?.network, "tcp")
     }
 
+    /// 明文 HTTP 不经过字节泵。以前它的字节只进了收尾的流量事件，没进实时计数器，
+    /// 于是首屏的速率和时间河对明文流量是瞎的——HTTPS 隧道走 `BytePump`，所以一直没人发现。
+    /// 计数器是全局的，别的测试可能同时在加字节，所以只断言「至少涨了这么多」。
+    func testPlainHTTPBytesReachTheLiveGauge() async throws {
+        let origin = try await HTTPOriginServer.start(mode: .html(String(repeating: "x", count: 4096)))
+        servers.append(origin)
+        let resolver = MapResolver(["leapin-gauge.internal": ["127.0.0.1"]])
+        let server = try makeProxy(router: StaticRouter(), resolver: resolver)
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.connectionProxyDictionary = [
+            kCFNetworkProxiesHTTPEnable as String: 1,
+            kCFNetworkProxiesHTTPProxy as String: "127.0.0.1",
+            kCFNetworkProxiesHTTPPort as String: Int(server.listeningPort),
+            kCFNetworkProxiesHTTPSEnable as String: 0,
+        ]
+        let session = URLSession(configuration: configuration)
+        defer { session.invalidateAndCancel() }
+
+        let url = try XCTUnwrap(URL(string: "http://leapin-gauge.internal:\(origin.port)/body"))
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        let uploadBody = Data(repeating: 0x41, count: 2048)
+
+        let before = LiveTraffic.shared.snapshot()
+        let (data, response) = try await session.upload(for: request, from: uploadBody)
+        let after = LiveTraffic.shared.snapshot()
+
+        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        XCTAssertEqual(data.count, 4096)
+        XCTAssertGreaterThanOrEqual(after.bytesOut - before.bytesOut, data.count,
+                                    "明文响应的字节没有进实时计数器")
+        XCTAssertGreaterThanOrEqual(after.bytesIn - before.bytesIn, uploadBody.count,
+                                    "明文请求体的字节没有进实时计数器")
+    }
+
     // MARK: - HTTP CONNECT tunnel
 
     func testHTTPConnectTunnelEchoesBytes() async throws {

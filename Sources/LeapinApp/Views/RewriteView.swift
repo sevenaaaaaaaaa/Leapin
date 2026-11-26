@@ -7,6 +7,9 @@ import LeapinRuntime
 /// M2 的分工（docs/tasks/product-v4.md T-09）：页头只切 tab；四类的列表与落地都在
 /// RewriteDeck 里，四类共用一条生效路径。去广告 tab 直接复用 AdBlockView——视图与
 /// 仪表条都不另写一份，只是把列表数据换成 Deck 的行。
+///
+/// tab 住在页头里（`lpHeaderTabs`）；这一页唯一的主按钮放在列表自己的标题行上，
+/// 不再单独占一条工具条。
 @MainActor
 struct RewriteView: View {
     @EnvironmentObject private var app: AppModel
@@ -19,6 +22,9 @@ struct RewriteView: View {
     @State private var editing: EditTarget?
     @State private var pendingDelete: RewriteDeck.Row?
 
+    private static let owner = "whatChanged"
+    private static let tabs: [LPTab] = RewriteDeck.Kind.allCases.map { LPTab(id: $0.rawValue, title: $0.title) }
+
     private struct EditTarget: Identifiable {
         let id = UUID()
         var kind: RewriteDeck.Kind
@@ -28,12 +34,13 @@ struct RewriteView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            tabBar
-            Rectangle().fill(LP.stroke).frame(height: 1)
             content
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .navigationTitle(WorkbenchVerb.whatChanged.title)
+        .lpHeaderTabs(owner: Self.owner, items: Self.tabs, selected: tab.rawValue) { id in
+            guard let kind = RewriteDeck.Kind(rawValue: id) else { return }
+            LPMotion.run(LPMotion.press) { tab = kind }
+        }
         .onAppear { consumePendingLine() }
         .onChange(of: app.pendingRewriteLine) { _, _ in consumePendingLine() }
         .sheet(item: $editing) { target in
@@ -62,34 +69,6 @@ struct RewriteView: View {
 
     // MARK: - Tabs
 
-    /// 页头下方一条左对齐的过滤条：四类各一个 chip，右边是这一页唯一的主按钮。
-    /// 原来的 segmented 把「选哪一类」画成第二条导航，居中悬浮在页头下面，和页面标题抢层级；
-    /// chip 是过滤器，不是导航——它只筛同一张表。
-    private var tabBar: some View {
-        HStack(spacing: 6) {
-            ForEach(RewriteDeck.Kind.allCases) { kind in
-                LPChip(title: kind.title, selected: tab == kind) {
-                    LPMotion.run(LPMotion.press) { tab = kind }
-                }
-            }
-            Spacer(minLength: 12)
-            if tab == .rewrite || tab == .mock {
-                Button {
-                    addRule(for: tab)
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus").font(.system(size: 11, weight: .bold))
-                        Text(tab == .mock ? "新建 Mock" : "新建规则").font(.system(size: 13, weight: .semibold))
-                    }
-                }
-                .buttonStyle(LPPrimaryButtonStyle())
-            }
-        }
-        .padding(.horizontal, 32)
-        .padding(.top, 14)
-        .padding(.bottom, 10)
-    }
-
     @ViewBuilder private var content: some View {
         switch tab {
         case .rewrite: listTab(for: .rewrite)
@@ -109,18 +88,19 @@ struct RewriteView: View {
                 Text("Mihomo 模式下的流量由原始配置驱动，请求重写仍会生效，但分流以 Mihomo 为准。")
                     .font(.system(size: 13))
                     .foregroundStyle(LP.textSecondary)
-                    .padding(12)
+                    .padding(.horizontal, LPSpace.inset)
+                    .padding(.top, 12)
             }
 
             HStack(alignment: .top, spacing: 22) {
                 listPanel(for: kind)
-                    .clipShape(RoundedRectangle(cornerRadius: LPGlass.panelRadius, style: .continuous))
+                    .clipShape(RoundedRectangle(cornerRadius: LPRadius.panel, style: .continuous))
                     .lpSheet()
                 sidePanel(for: kind).frame(width: 292)
             }
-            .padding(.horizontal, 32)
-            .padding(.top, 16)
-            .padding(.bottom, 24)
+            .padding(.horizontal, LPSpace.inset)
+            .padding(.top, 14)
+            .padding(.bottom, 20)
         }
     }
 
@@ -137,6 +117,16 @@ struct RewriteView: View {
                         .font(Font.system(size: 11))
                         .foregroundStyle(LP.textTertiary)
                 }
+                // 这一页唯一的主按钮：放在列表自己的标题行上，不另占一条工具条。
+                Button {
+                    addRule(for: kind)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus").font(.system(size: 11, weight: .bold))
+                        Text(kind == .mock ? "新建 Mock" : "新建规则").font(.system(size: 13, weight: .semibold))
+                    }
+                }
+                .buttonStyle(LPPrimaryButtonStyle())
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -217,29 +207,40 @@ struct RewriteView: View {
             )
     }
 
+    /// 空列表不是一块居中的空白：标题、一句说明，然后是几行能直接用的例子。
+    /// 点一行就带着它打开编辑器——第一次用的人不必先背语法。
     private func emptyState(for kind: RewriteDeck.Kind) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: kind.icon)
-                .font(.system(size: 26, weight: .light))
-                .foregroundStyle(LP.textTertiary)
-            Text(kind.emptyTitle)
-                .font(LPFont.display(14, weight: .semibold))
-                .foregroundStyle(LP.text)
-            Text(kind.emptyDetail)
-                .font(Font.system(size: 13))
-                .foregroundStyle(LP.textTertiary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 320)
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(kind.emptyTitle)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(LP.text)
+                Text(kind.emptyDetail)
+                    .font(.system(size: 13))
+                    .foregroundStyle(LP.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 18)
+
+            ForEach(Array(kind.samples.enumerated()), id: \.offset) { _, sample in
+                SampleRow(title: sample.title, line: sample.line) {
+                    editing = EditTarget(kind: kind, index: nil, line: sample.line)
+                }
+                .overlay(alignment: .top) { LPDivider() }
+            }
+
             if kind == .rewrite || kind == .mock {
-                Button(kind == .mock ? "添加第一条 Mock" : "添加第一条规则") {
+                Button(kind == .mock ? "从空白开始写一条 Mock" : "从空白开始写一条规则") {
                     addRule(for: kind)
                 }
                 .buttonStyle(LPGhostButtonStyle())
-                .padding(.top, 4)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .overlay(alignment: .top) { LPDivider() }
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(30)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     // MARK: - Side panel
@@ -343,11 +344,11 @@ struct RewriteView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .clipShape(RoundedRectangle(cornerRadius: LPGlass.panelRadius, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: LPRadius.panel, style: .continuous))
         .lpSheet()
-        .padding(.horizontal, 32)
-        .padding(.top, 16)
-        .padding(.bottom, 24)
+        .padding(.horizontal, LPSpace.inset)
+        .padding(.top, 14)
+        .padding(.bottom, 20)
     }
 
     private func scriptRow(_ row: RewriteDeck.Row) -> some View {
@@ -433,6 +434,46 @@ struct RewriteView: View {
     }
 }
 
+// MARK: - 示例行
+
+/// 空态里的一个例子：名字、原始规则行，点一下带着它进编辑器。
+private struct SampleRow: View {
+    let title: String
+    let line: String
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(LP.text)
+                    .frame(width: 76, alignment: .leading)
+                Text(line)
+                    .font(LPFont.mono(11))
+                    .foregroundStyle(hovering ? LP.textSecondary : LP.textTertiary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 8)
+                Text("用这个示例")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(LP.accent)
+                    .opacity(hovering ? 1 : 0)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(hovering ? LP.hover : Color.clear)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .lpAnimation(LPMotion.quick, value: hovering)
+        .accessibilityLabel("用示例「\(title)」新建规则")
+    }
+}
+
 // MARK: - Editor sheet
 
 private struct RuleEditorSheet: View {
@@ -498,7 +539,7 @@ private struct RuleEditorSheet: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("模板").font(Font.system(size: 11)).foregroundStyle(LP.textTertiary)
                 FlowLayout(spacing: 6) {
-                    ForEach(Self.templates, id: \.title) { template in
+                    ForEach(kind.samples, id: \.title) { template in
                         Button(template.title) { text = template.line }
                             .buttonStyle(.plain)
                             .font(Font.system(size: 11))
@@ -524,16 +565,8 @@ private struct RuleEditorSheet: View {
         }
         .padding(20)
         .frame(width: 520)
-        .background(LP.panel)
+        .background(LP.sheet)
     }
-
-    private static let templates: [(title: String, line: String)] = [
-        ("添加请求头", #"http-request ^https?://api\.example\.com/ header-add X-Debug 1"#),
-        ("改响应头", #"http-response ^https?://api\.example\.com/ header-replace Cache-Control no-store"#),
-        ("替换正文", #"http-response ^https?://api\.example\.com/user body-replace "\"vip\":false" "\"vip\":true""#),
-        ("Mock 接口", #"http-request ^https?://api\.example\.com/mock mock 200 application/json {"ok":true}"#),
-        ("重定向", #"http-request ^https?://old\.example\.com/ redirect https://new.example.com 302"#),
-    ]
 }
 
 /// Minimal wrapping layout for the template chips.
