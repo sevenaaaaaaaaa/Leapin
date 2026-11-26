@@ -90,6 +90,18 @@ public final class HomeConnections: ObservableObject {
         do { snapshot = try await connector.status(); message = snapshot?.statusText; failed = false }
         catch { fail(error) }
     }
+    /// Tailscale 停了时的「重连」：CLI `up` 不带旗标，恢复连接而不动既有配置。
+    public func reconnect() async {
+        guard !busy else { return }
+        busy = true; failed = false
+        message = "正在恢复 Tailscale 连接…"
+        defer { busy = false }
+        do {
+            try await connector.reconnect()
+            snapshot = try await connector.status()
+            message = snapshot?.statusText
+        } catch { fail(error) }
+    }
     public func configure(peerID: String, resource: String, applyRouting: () throws -> Void = {}) async -> Bool {
         guard !busy else { return false }
         busy = true; failed = false; verifiedAt = nil

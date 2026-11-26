@@ -31,26 +31,25 @@ struct SettingsView: View {
     @State private var pairing: PhonePairing?
 
     var body: some View {
-        Form {
-            VStack(spacing: 16) {
-                VStack(spacing: 18) {
-                    proxySection
-                    dnsSection
-                    pairingSection
-                    launchSection
-                    captureSection
-                    factsSection
-                    advancedSection
-                    saveBar
-                }
-                // 通栏：卡片左缘对页头、右缘到窗口边距，和其它页面同一副骨架。
-                // 限宽居中会在窗口一宽时两边漏风——上一版就因此被圈了两条长空档。
-                .frame(maxWidth: .infinity, alignment: .leading)
+        // 普通 ScrollView：grouped Form 是 AppKit 收藏视图，套在外层容器里会失去滚动
+        //（设置页滑不动的由来）。分节的卡片外观本来就由各 section 自己的 Card 画。
+        ScrollView {
+            VStack(spacing: 18) {
+                proxySection
+                dnsSection
+                pairingSection
+                launchSection
+                captureSection
+                factsSection
+                advancedSection
+                saveBar
             }
-            .frame(maxWidth: .infinity)
-            .pagePadding()
+            // 通栏：卡片左缘对页头、右缘到窗口边距，和其它页面同一副骨架。
+            // 限宽居中会在窗口一宽时两边漏风——上一版就因此被圈了两条长空档。
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, LPSpace.inset)
+            .padding(.vertical, 20)
             // 不设 navigationTitle（见 SSHView 里的说明）：页头已经写着「设置」。
-            .formStyle(.grouped)
         }
         .onAppear {
             load()

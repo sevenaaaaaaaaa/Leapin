@@ -34,18 +34,14 @@ struct HomeConnectionView: View {
     @State private var peerID = ""
     @State private var resource = ""
     @State private var localError: String?
-    private var unavailable: Bool { home.busy || app.engine.configurationBusy || app.engine.state == .starting }
+    private var unavailable: Bool { home.busy || app.engine.configurationBusy || app.engine.state == .starting || cliMissing }
+    private var cliMissing: Bool { !home.busy && home.failed && TailscaleConnector.findExecutable() == nil }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text("选一台家庭设备，绑定它的 NAS 或 Web 服务。以后点「回家」，检查通过后直接打开。")
                 .font(.system(size: 13)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
-            HStack {
-                Text(home.snapshot?.statusText ?? "尚未读取 Tailscale 状态").font(.system(size: 13, weight: .medium))
-                Spacer()
-                if home.busy { ProgressView().controlSize(.small) }
-                Button("刷新") { Task { await home.refresh() } }.buttonStyle(LPGhostButtonStyle()).disabled(unavailable)
-                Button("打开 Tailscale") { openTailscale() }.buttonStyle(LPGhostButtonStyle())
-            }
+            tailscaleRow
             Picker("家庭设备", selection: $peerID) {
                 Text("选择设备").tag("")
                 ForEach(home.snapshot?.peers ?? []) { peer in
@@ -55,7 +51,7 @@ struct HomeConnectionView: View {
             TextField("资源地址，例如 https://nas.example.ts.net:5001/", text: $resource).textFieldStyle(.roundedBorder).disabled(unavailable)
             Text("支持所选设备的完整 Tailscale DNS 名或 IP，协议为 HTTP、HTTPS、SMB。仅该主机优先直连，其他分流沿用当前方案。此入口不配置子网路由或出口节点。")
                 .font(.system(size: 13)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
-            if let text = localError ?? home.message {
+            if let text = localError ?? (home.failed ? home.message : nil) {
                 Text(text).font(.system(size: 13)).foregroundStyle(localError != nil || home.failed ? LP.danger : LP.textSecondary)
                     .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
             }
@@ -73,10 +69,6 @@ struct HomeConnectionView: View {
                 }
             }
             LPDivider()
-            HStack {
-                Button("选择 Tailscale CLI…") { chooseCLI() }.buttonStyle(LPGhostButtonStyle()).disabled(unavailable)
-                Link("安装 Tailscale", destination: URL(string: "https://tailscale.com/download/mac")!).font(.system(size: 13))
-            }
             Text("首次使用请在 Tailscale 登录并让家庭设备上线。已绑定的连接若暂停，点「回家」会尝试按原设置恢复；不会替你登录、切换账号或设定出口。移除绑定只移除 Leapin 的资源入口。")
                 .font(.system(size: 13)).foregroundStyle(LP.textTertiary).fixedSize(horizontal: false, vertical: true)
         }.padding(.horizontal, LPSpace.inset)
@@ -92,6 +84,58 @@ struct HomeConnectionView: View {
             guard let peer = home.snapshot?.peers.first(where: { $0.id == value }), value != home.saved?.peerID else { return }
             let host = peer.normalizedDNSName.isEmpty ? (peer.usableAddresses.first ?? "") : peer.normalizedDNSName
             resource = "https://\(host.contains(":") ? "[\(host)]" : host)/"
+        }
+    }
+
+    /// Tailscale 的状态收成一行：连接了就安静显示，停了给「重连」，没装才给
+    /// 「打开 / 安装」并把手动指定 CLI 收进高级折叠。它是前提条件，不该比任务本身还占地方。
+    @ViewBuilder private var tailscaleRow: some View {
+        HStack(spacing: 8) {
+            StatusDot(color: statusColor)
+            Text(statusLine)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(cliMissing || home.failed ? LP.danger : LP.text)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            if home.busy { ProgressView().controlSize(.small) }
+            Spacer(minLength: 8)
+            contextActions
+        }
+        if cliMissing {
+            DisclosureGroup("高级：手动指定 Tailscale CLI") {
+                Button("选择 Tailscale CLI…") { chooseCLI() }.buttonStyle(LPGhostButtonStyle())
+            }.font(.system(size: 13))
+        }
+    }
+
+    private var statusLine: String {
+        if home.busy { return "正在读取 Tailscale 状态…" }
+        if cliMissing { return "没找到 Tailscale" }
+        if home.failed { return "Tailscale 状态读取失败" }
+        if let snapshot = home.snapshot { return snapshot.statusText }
+        return "尚未读取 Tailscale 状态"
+    }
+
+    private var statusColor: Color {
+        if home.busy { return LP.amber }
+        if cliMissing || home.failed { return LP.danger }
+        if home.snapshot?.state == "Running" { return LP.mint }
+        return LP.amber
+    }
+
+    @ViewBuilder private var contextActions: some View {
+        if cliMissing {
+            Button("打开 Tailscale") { openTailscale() }.buttonStyle(LPGhostButtonStyle())
+            Link("安装 Tailscale", destination: URL(string: "https://tailscale.com/download/mac")!)
+                .font(.system(size: 13))
+        } else if home.snapshot?.state == "Stopped" {
+            Button("重新连接") { Task { await home.reconnect() } }
+                .buttonStyle(LPGhostButtonStyle()).disabled(home.busy)
+            Button("刷新") { Task { await home.refresh() } }
+                .buttonStyle(LPGhostButtonStyle()).disabled(home.busy)
+        } else {
+            Button("刷新") { Task { await home.refresh() } }
+                .buttonStyle(LPGhostButtonStyle()).disabled(home.busy)
         }
     }
     private func chooseCLI() {
