@@ -16,12 +16,13 @@ import subprocess
 import sys
 import time
 
-# 根目录只收显式给定的一个路径，且拒绝带 `..` 的写法：这个脚本会先整目录清空再写入，
-# 调用者手滑把根指到仓库或家目录时，宁可拒跑也不能删错地方。
+# 根目录只收显式给定的一个路径，且必须落在 /tmp 之下：这个脚本会先整目录清空再写入，
+# 指到仓库、家目录或带 `..` 的写法一律拒跑。
 _raw_root = sys.argv[1] if len(sys.argv) > 1 else "/tmp/spine-fixture"
-if ".." in pathlib.PurePath(_raw_root).parts:
-    raise SystemExit("拒绝包含 .. 的根目录：%s" % _raw_root)
 ROOT = os.path.realpath(_raw_root)
+TMP = os.path.realpath("/tmp")
+if ROOT != TMP and not ROOT.startswith(TMP + os.sep):
+    raise SystemExit("fixture 根目录请在 /tmp 之下（脚本会整目录清空重写）：%s" % _raw_root)
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CLI = os.path.join(REPO, ".build", "debug", "leapin")
 
@@ -86,8 +87,12 @@ def main():
     files = {"公司直连.yaml": company(), "家庭网络.yaml": home(),
              "机场主订阅.yaml": airport(), "旧配置备份.yaml": stale()}
     for name, text in files.items():
-        with open(os.path.join(ROOT, "in", name), "w", encoding="utf-8") as f:
-            f.write(text)
+        base = pathlib.Path(ROOT) / "in"
+        target = (base / name).resolve()
+        # 兜底：写入点必须落在根目录的 in/ 里（ROOT 已约束在 /tmp 之下）。
+        if base.resolve() not in target.parents:
+            raise SystemExit("拒绝写出根目录：%s" % target)
+        target.write_text(text, encoding="utf-8")
 
     env = dict(os.environ, LEAPIN_PROFILE_ROOT=ROOT)
     for name in files:
