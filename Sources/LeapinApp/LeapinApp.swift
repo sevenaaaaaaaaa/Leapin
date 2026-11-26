@@ -758,43 +758,30 @@ private struct SidebarView: View {
                 .padding(.horizontal, compact ? 10 : 12)
                 .padding(.bottom, 16)
 
-            // 分组导航放在可滚动区里：窗口高度不足时只压缩导航，引擎那一行始终可见。
-            ScrollView(.vertical, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    // 3 组 11 行全部来自 WorkbenchSidebar（T-05 的纯数据）：顺序、分组、
-                    // 落点和 ⌘1..⌘4 都由那份计划决定，侧栏只负责画和把行变成动作。
-                    ForEach(Array(WorkbenchSidebar.groups.enumerated()), id: \.element.id) { groupIndex, group in
-                        if groupIndex > 0 {
-                            if compact {
-                                Rectangle().fill(LP.line).frame(height: 1)
-                                    .padding(.horizontal, 16).padding(.vertical, 6)
-                            } else {
-                                LPLabel(group.name)
-                                    .padding(.horizontal, 18)
-                                    .padding(.top, 16)
-                                    .padding(.bottom, 6)
-                            }
-                        } else if !compact {
-                            LPLabel(group.name)
-                                .padding(.horizontal, 18)
-                                .padding(.bottom, 6)
-                        }
-
-                        VStack(spacing: 2) {
+            // 星图：导航是一张拓扑，不是一列后台 tab。紧凑栏（窄窗）保留图标列。
+            if compact {
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 2) {
+                        ForEach(WorkbenchSidebar.groups) { group in
                             ForEach(group.rows) { row in
                                 SidebarRow(title: row.title,
                                            icon: row.icon,
                                            selected: isSelected(row),
                                            hint: row.shortcut,
-                                           compact: compact) {
+                                           compact: true) {
                                     app.dispatch(row.destination)
                                 }
                             }
                         }
-                        .padding(.horizontal, 8)
                     }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 6)
                 }
-                .padding(.bottom, 6)
+            } else {
+                ScrollView(.vertical, showsIndicators: false) {
+                    LPNavGraph()
+                        .padding(.top, 2)
+                }
             }
 
             EngineLine(compact: compact)
