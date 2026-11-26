@@ -100,7 +100,7 @@ struct DiagnosticReportView: View {
         case .connect: app.connectNetwork()
         case .settings: app.go(to: .settings)
         case .capture: app.go(to: .capture)
-        case .debugChannel: app.networkToolPage = 1; app.showNetworkTools = true
+        case .debugChannel: app.networkToolPage = 1; app.go(to: .tools)
         case .profiles: app.go(to: .profiles)
         case .none: break
         }

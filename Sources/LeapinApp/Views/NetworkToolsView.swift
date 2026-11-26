@@ -10,16 +10,9 @@ struct NetworkToolsView: View {
     @ObservedObject var debug: DebugChannel
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                Text("连接与调试工具").font(LPFont.display(28, weight: .semibold))
-                Spacer()
-                Button("完成") { app.showNetworkTools = false }.buttonStyle(LPGhostButtonStyle())
-            }
-            Picker("任务", selection: $app.networkToolPage) {
-                Text("分享本地服务").tag(0)
-                Text("HTTPS 调试").tag(1)
-                Text("工具与致谢").tag(2)
-            }.pickerStyle(.segmented)
+            // 纸面上的分段选择器：系统 segmented 是另一套材质，落在这套纸墨里像借来的。
+            LPSegmentedPicker([(0, "分享本地服务"), (1, "HTTPS 调试"), (2, "工具与致谢")],
+                              selection: $app.networkToolPage)
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if app.networkToolPage == 0 { ServiceSharingForm(model: sharing, process: sharing.process) }
@@ -27,7 +20,10 @@ struct NetworkToolsView: View {
                     else { ToolCreditsView() }
                 }.padding(.vertical, 4)
             }
-        }.padding(26).frame(width: 800, height: 650).foregroundStyle(LP.text).background(LP.bg)
+        }.padding(.horizontal, LPSpace.inset)
+        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .foregroundStyle(LP.text)
     }
 }
 

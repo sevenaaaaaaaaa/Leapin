@@ -12,7 +12,7 @@ struct HomeWidget: View {
             HStack {
                 Label("回家与设备", systemImage: "house").font(.system(size: 15, weight: .semibold))
                 Spacer()
-                Button("设置") { app.showHome = true }.buttonStyle(.plain).foregroundStyle(LP.accent)
+                Button("设置") { app.go(to: .home) }.buttonStyle(.plain).foregroundStyle(LP.accent)
             }
             Text(home.saved.map { "\($0.peerName) · \($0.host)" } ?? "绑定家庭设备，随时打开 NAS 或家庭服务。")
                 .font(.system(size: 13)).foregroundStyle(LP.textSecondary).lineLimit(2)
@@ -37,11 +37,6 @@ struct HomeConnectionView: View {
     private var unavailable: Bool { home.busy || app.engine.configurationBusy || app.engine.state == .starting }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack {
-                Label("回家", systemImage: "house").font(LPFont.display(28, weight: .semibold))
-                Spacer()
-                Button("完成") { app.showHome = false }.buttonStyle(LPGhostButtonStyle()).disabled(home.busy)
-            }
             Text("选一台家庭设备，绑定它的 NAS 或 Web 服务。以后点「回家」，检查通过后直接打开。")
                 .font(.system(size: 13)).foregroundStyle(LP.textSecondary).fixedSize(horizontal: false, vertical: true)
             HStack {
@@ -84,7 +79,11 @@ struct HomeConnectionView: View {
             }
             Text("首次使用请在 Tailscale 登录并让家庭设备上线。已绑定的连接若暂停，点「回家」会尝试按原设置恢复；不会替你登录、切换账号或设定出口。移除绑定只移除 Leapin 的资源入口。")
                 .font(.system(size: 13)).foregroundStyle(LP.textTertiary).fixedSize(horizontal: false, vertical: true)
-        }.padding(26).frame(width: 700).foregroundStyle(LP.text).background(LP.bg)
+        }.padding(.horizontal, LPSpace.inset)
+        .padding(.vertical, 20)
+        .frame(maxWidth: 640, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .foregroundStyle(LP.text)
         .task {
             peerID = home.saved?.peerID ?? ""; resource = home.saved?.resource.absoluteString ?? ""
             if home.snapshot == nil && !home.failed { await home.refresh() }

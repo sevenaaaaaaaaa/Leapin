@@ -336,11 +336,11 @@ struct NetworkTaskPanel: View {
         case .importProfile:
             Button("导入与检查配置…") { app.beginImport() }.buttonStyle(LPPrimaryButtonStyle())
         case .company:
-            Button("打开公司内网") { app.showCompany = true }.buttonStyle(LPPrimaryButtonStyle())
+            Button("打开公司内网") { app.go(to: .company) }.buttonStyle(LPPrimaryButtonStyle())
         case .shareService:
-            Button("预览分享范围") { app.networkToolPage = 0; app.showNetworkTools = true }.buttonStyle(LPPrimaryButtonStyle())
+            Button("预览分享范围") { app.networkToolPage = 0; app.go(to: .tools) }.buttonStyle(LPPrimaryButtonStyle())
         case .toolCredits:
-            Button("查看工具与致谢") { app.networkToolPage = 2; app.showNetworkTools = true }.buttonStyle(LPPrimaryButtonStyle())
+            Button("查看工具与致谢") { app.networkToolPage = 2; app.go(to: .tools) }.buttonStyle(LPPrimaryButtonStyle())
         case .home:
             Button("回家") { app.openHome() }.buttonStyle(LPPrimaryButtonStyle()).disabled(app.home.busy || app.engine.configurationBusy)
         case .nas: destination("发现共享设备", .nas)

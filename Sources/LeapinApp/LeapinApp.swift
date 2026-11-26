@@ -117,6 +117,7 @@ final class AppModel: ObservableObject {
     /// 两个 rawValue 都落到 `WhyPage`，侧栏与「前往」菜单只列 `why` 一行。
     enum Section: String, CaseIterable, Identifiable {
         case dashboard, rules, rewrite, adblock, capture, why, ssh, nas, learn, profiles, settings, activity, diagnostics
+        case home, company, tools
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -133,6 +134,9 @@ final class AppModel: ObservableObject {
             case .settings: return "设置"
             case .activity: return "网络活动"
             case .diagnostics: return "排障与配置"
+            case .home: return "回家"
+            case .company: return "公司内网"
+            case .tools: return "分享与调试"
             }
         }
         var icon: String {
@@ -150,13 +154,16 @@ final class AppModel: ObservableObject {
             case .settings: return "gearshape"
             case .activity: return "waveform.path"
             case .diagnostics: return "stethoscope"
+            case .home: return "house"
+            case .company: return "building.2"
+            case .tools: return "link"
             }
         }
         /// 该页面是否真的有可聚焦的搜索框（⌘F 只在 true 的页面上生效）。
         var supportsSearch: Bool {
             switch self {
             case .rules, .rewrite, .capture, .why, .adblock, .profiles, .activity, .diagnostics: return true
-            case .dashboard, .ssh, .nas, .learn, .settings: return false
+            case .dashboard, .ssh, .nas, .learn, .settings, .home, .company, .tools: return false
             }
         }
 
@@ -175,6 +182,9 @@ final class AppModel: ObservableObject {
             case .settings: return "端口、DNS、抓包与日志"
             case .activity: return "连接明细、流量与分流路径"
             case .diagnostics: return "网站检查、规则调整与可恢复操作"
+            case .home: return "绑定家庭设备，检查并打开 NAS 或 Web 服务"
+            case .company: return "内网资源与接入方式，多公司保存、单公司启用"
+            case .tools: return "限时分享本地服务、HTTPS 调试通道与工具致谢"
             }
         }
 
@@ -190,9 +200,9 @@ final class AppModel: ObservableObject {
             case .rules: return .howJudged
             case .rewrite, .adblock: return .whatChanged
             case .why, .capture, .activity, .diagnostics: return .why
-            case .ssh, .nas, .learn, .settings: return nil
-            }
+        case .ssh, .nas, .learn, .settings, .home, .company, .tools: return nil
         }
+    }
 
         /// 页头标题用动词名（dashboard → 走哪、why/capture → 为什么），其余页沿用页面名。
         var headerTitle: String { verb?.title ?? title }
@@ -216,18 +226,15 @@ final class AppModel: ObservableObject {
     let bookmarks = NetworkBookmarks(root: LeapinEngine.shared.store.root)
     let home = HomeConnections(root: LeapinEngine.shared.store.root)
     let company = CompanyAccess(root: LeapinEngine.shared.store.root)
-    @Published var showCompany = false
     @Published var companyResourceFocus: UUID?
     let sharing = ServiceSharing()
     let debugChannel = DebugChannel(root: LeapinEngine.shared.store.root)
-    @Published var showNetworkTools = false
     @Published var networkToolPage = 0
     @Published var showImportCenter = false
     @Published var pendingImport: ImportPreparation?
     @Published var showCapabilities = false
     @Published var sceneToConfigure: NetworkScene?
     @Published var showBookmarks = false
-    @Published var showHome = false
     @Published var networkBusy = false
     @Published var networkMessage: String?
     @Published var networkFailed = false
@@ -304,13 +311,6 @@ final class AppModel: ObservableObject {
             // 落点写错的代价不该是崩一屏：忽略，交给静态断言去发现。
             guard let target = Section(rawValue: raw) else { return }
             go(to: target)
-        case .sheet(let sheet):
-            switch sheet {
-            case .home: showHome = true
-            case .company: showCompany = true
-            case .networkTools: showNetworkTools = true
-            }
-        // 导入走导入中心（不是 showImporter 的系统文件框）。
         case .importCenter:
             beginImport()
         }
@@ -402,7 +402,7 @@ final class AppModel: ObservableObject {
     }
 
     func inspectCompanyResource(_ resource: CompanyResource) {
-        companyResourceFocus = resource.id; showCompany = true
+        companyResourceFocus = resource.id; go(to: .company)
         let port = engine.diagnosticProxyPort
         let profile = engine.profile
         let started = engine.stats.startedAt
@@ -415,28 +415,28 @@ final class AppModel: ObservableObject {
     func openCompanyResource(_ resource: CompanyResource) async {
         guard let active = company.active, active.resources.contains(resource) else { return }
         do { try engine.refreshHomeRouting() }
-        catch { company.notice(error.localizedDescription, failed: true); showCompany = true; return }
+        catch { company.notice(error.localizedDescription, failed: true); go(to: .company); return }
         if active.method.isProxy {
             await engine.refreshSystemProxyStatus()
             guard engine.state == .running, engine.systemProxyActive else {
                 company.notice("浏览器尚未通过 Leapin 使用内网代理。请先接入系统代理，或在目标 App 手动设置 Leapin 代理。", failed: true)
-                showCompany = true; return
+                go(to: .company); return
             }
             guard !resource.matchesProxyBypass(engine.profile.general.bypass) else {
                 company.notice("此地址匹配系统代理绕过列表，直接打开浏览器可能不经过内网代理。请在设置核对绕过规则，或为目标 App 单独配置代理。", failed: true)
-                showCompany = true; return
+                go(to: .company); return
             }
         }
-        if !NSWorkspace.shared.open(resource.url) { company.notice("系统没有打开此类地址的应用，请使用对应的官方客户端。", failed: true); showCompany = true }
+        if !NSWorkspace.shared.open(resource.url) { company.notice("系统没有打开此类地址的应用，请使用对应的官方客户端。", failed: true); go(to: .company) }
     }
 
     func openHome() {
         guard !home.busy, !engine.configurationBusy, engine.state != .starting else { return }
-        guard home.saved != nil else { showHome = true; return }
+        guard home.saved != nil else { go(to: .home); return }
         Task {
             if let url = await home.verifySaved(applyRouting: { try self.engine.refreshHomeRouting() }) {
                 NSWorkspace.shared.open(url)
-            } else { showHome = true }
+            } else { go(to: .home) }
         }
     }
 
@@ -621,9 +621,6 @@ struct RootView: View {
         .sheet(isPresented: $app.showImportCenter) { ImportCenter().environmentObject(app) }
         .sheet(isPresented: $app.showCapabilities) { KernelCapabilitiesView().environmentObject(app) }
         .sheet(item: $app.sceneToConfigure) { scene in SceneConfigurationView(scene: scene).environmentObject(app) }
-        .sheet(isPresented: $app.showNetworkTools) { NetworkToolsView(sharing: app.sharing, debug: app.debugChannel).environmentObject(app) }
-        .sheet(isPresented: $app.showCompany) { CompanyAccessView(model: app.company).environmentObject(app) }
-        .sheet(isPresented: $app.showHome) { HomeConnectionView(home: app.home).environmentObject(app) }
         .sheet(isPresented: $app.showBookmarks) { BookmarksView(store: app.bookmarks).environmentObject(app) }
         .sheet(isPresented: $app.showImportReport) {
             if let report = app.importReport {
@@ -710,6 +707,11 @@ struct RootView: View {
         // 侧栏不列 learn：它已降级成「怎么判」底部的学习建议入口，但独立页保留。
         case .learn: LearnView()
         case .settings: SettingsView()
+        // 原来是三张工具 sheet（T-05 的落点表里也是 sheet）：侧栏长得一样的入口必须
+        // 做同一件事，所以回家 / 公司内网 / 分享与调试和 SSH、NAS 一样是页面。
+        case .home: HomeConnectionView(home: app.home)
+        case .company: CompanyAccessView(model: app.company)
+        case .tools: NetworkToolsView(sharing: app.sharing, debug: app.debugChannel)
         }
     }
 

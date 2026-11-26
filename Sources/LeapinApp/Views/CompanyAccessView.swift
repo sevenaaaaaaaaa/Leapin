@@ -20,12 +20,12 @@ struct CompanyWidget: View {
                         ForEach(model.configuration.companies) { company in
                             Button(company.name) {
                                 do { try model.activate(company.id, apply: { try app.engine.refreshHomeRouting() }) }
-                                catch { model.notice(error.localizedDescription, failed: true); app.showCompany = true }
+                                catch { model.notice(error.localizedDescription, failed: true); app.go(to: .company) }
                             }
                         }
                     }.menuStyle(.borderlessButton).frame(maxWidth: 140)
                 }
-                Button("管理") { app.showCompany = true }.buttonStyle(.plain).foregroundStyle(LP.accent)
+                Button("管理") { app.go(to: .company) }.buttonStyle(.plain).foregroundStyle(LP.accent)
             }
             if let company = model.active {
                 Text(company.method.title).font(.system(size: 13)).foregroundStyle(LP.textSecondary)
@@ -41,7 +41,7 @@ struct CompanyWidget: View {
             } else {
                 Text("把内网 Git、文档、开发环境放在一起。兼容已有客户端、VPN、浏览器登录和内网代理。")
                     .font(.system(size: 13)).foregroundStyle(LP.textSecondary)
-                Button("配置公司访问") { app.showCompany = true }.buttonStyle(LPGhostButtonStyle())
+                Button("配置公司访问") { app.go(to: .company) }.buttonStyle(LPGhostButtonStyle())
             }
             Text(model.failed ? model.message ?? "请打开公司访问检查" : "保存接入方式不等于已经连接或登录。")
                 .font(.system(size: 11)).foregroundStyle(model.failed ? LP.danger : LP.textTertiary).lineLimit(2)
@@ -73,11 +73,6 @@ struct CompanyAccessView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Label("公司内网", systemImage: "building.2").font(LPFont.display(28, weight: .semibold))
-                Spacer()
-                Button("完成") { model.cancelCheck(); app.showCompany = false }.buttonStyle(LPGhostButtonStyle())
-            }
             HStack(spacing: 10) {
                 Picker("编辑公司", selection: Binding(get: { selection }, set: { choose($0) })) {
                     Text("新配置").tag("")
@@ -118,7 +113,11 @@ struct CompanyAccessView: View {
                 Text(activeDraft ? "当前公司 · 连接状态需检查" : "保存后生效，尚未连接")
                     .font(.system(size: 11)).foregroundStyle(LP.textSecondary)
             }
-        }.padding(24).frame(width: 800, height: 620).foregroundStyle(LP.text).background(LP.bg)
+        }.padding(.horizontal, LPSpace.inset)
+        .padding(.vertical, 20)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .foregroundStyle(LP.text)
+        .onDisappear { model.cancelCheck() }
         .onAppear { load(model.active ?? model.configuration.companies.first); if let focus = app.companyResourceFocus { expandedResources.insert(focus) } }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.json], allowsMultipleSelection: false) { result in
             do {

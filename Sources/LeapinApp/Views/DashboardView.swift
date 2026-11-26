@@ -604,7 +604,7 @@ private struct DashboardContent: View {
                                       ("连接服务器", { app.go(to: .ssh) })])
                     Divider().overlay(LP.stroke)
                     dashRow("HTTPS 调试通道", icon: "curlybraces.square", note: "mitmproxy 解密 · Mihomo 出站",
-                            actions: [("调试一个网站", { app.networkToolPage = 1; app.showNetworkTools = true })])
+                            actions: [("调试一个网站", { app.networkToolPage = 1; app.go(to: .tools) })])
                     Divider().overlay(LP.stroke)
                     dashRow("网站与网络体检", icon: "stethoscope", note: "检查目标、解释分流与连接异常",
                             actions: [("粘贴 URL 检查", { inspectClipboard() }),

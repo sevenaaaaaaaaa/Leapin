@@ -27,10 +27,10 @@ struct CommandPalette: View {
         let device = engine.profile.general.mixedPort
         let running = engine.state == .running
 
-        items.append(PaletteCommand(id: "company", title: "公司内网与团队资源", subtitle: "任意客户端、系统 VPN、浏览器登录与专用代理", icon: "building.2", group: "需求", shortcut: nil, run: { app.showCompany = true }))
-        items.append(PaletteCommand(id: "share-service", title: "限时分享本地服务", subtitle: "预览端口、访问范围与有效期 · cloudflared", icon: "link", group: "需求", shortcut: nil, run: { app.networkToolPage = 0; app.showNetworkTools = true }))
-        items.append(PaletteCommand(id: "debug-channel", title: "建立 HTTPS 调试通道", subtitle: "指定网站 · mitmproxy 解密 · Mihomo 出站", icon: "curlybraces.square", group: "需求", shortcut: nil, run: { app.networkToolPage = 1; app.showNetworkTools = true }))
-        items.append(PaletteCommand(id: "tool-credits", title: "工具与致谢", subtitle: "开源作者、依赖版本、原项目、文档与许可证", icon: "heart", group: "配置", shortcut: nil, run: { app.networkToolPage = 2; app.showNetworkTools = true }))
+        items.append(PaletteCommand(id: "company", title: "公司内网与团队资源", subtitle: "任意客户端、系统 VPN、浏览器登录与专用代理", icon: "building.2", group: "需求", shortcut: nil, run: { app.go(to: .company) }))
+        items.append(PaletteCommand(id: "share-service", title: "限时分享本地服务", subtitle: "预览端口、访问范围与有效期 · cloudflared", icon: "link", group: "需求", shortcut: nil, run: { app.networkToolPage = 0; app.go(to: .tools) }))
+        items.append(PaletteCommand(id: "debug-channel", title: "建立 HTTPS 调试通道", subtitle: "指定网站 · mitmproxy 解密 · Mihomo 出站", icon: "curlybraces.square", group: "需求", shortcut: nil, run: { app.networkToolPage = 1; app.go(to: .tools) }))
+        items.append(PaletteCommand(id: "tool-credits", title: "工具与致谢", subtitle: "开源作者、依赖版本、原项目、文档与许可证", icon: "heart", group: "配置", shortcut: nil, run: { app.networkToolPage = 2; app.go(to: .tools) }))
         items.append(PaletteCommand(
             id: "task-connect", title: "连接网络",
             subtitle: "自动启动服务并接入系统代理", icon: "network", group: "需求", shortcut: nil,
@@ -144,26 +144,19 @@ struct CommandPalette: View {
         return items
     }
 
-    /// 稳定 id：section 行用 rawValue，sheet / 导入各带前缀，不让中文标题当 id。
+    /// 稳定 id：section 行用 rawValue，导入用它自己的前缀，不让中文标题当 id。
     private func goID(_ row: WorkbenchSidebar.Row) -> String {
         switch row.destination {
         case .section(let raw): return "go-\(raw)"
-        case .sheet(let sheet): return "go-sheet-\(sheet.rawValue)"
         case .importCenter: return "go-import"
         }
     }
 
-    /// 副标题：section 行沿用页面自己的 subtitle；另外两种动作写清它是一张面板还是一个流程。
+    /// 副标题：section 行沿用页面自己的 subtitle；导入写清它是一个流程。
     private func goSubtitle(_ row: WorkbenchSidebar.Row) -> String {
         switch row.destination {
         case .section(let raw):
             return AppModel.Section(rawValue: raw)?.subtitle ?? row.title
-        case .sheet(.home):
-            return "检查并打开绑定的家庭资源"
-        case .sheet(.company):
-            return "任意客户端、系统 VPN、浏览器登录与专用代理"
-        case .sheet(.networkTools):
-            return "分享本地服务、HTTPS 调试与工具说明"
         case .importCenter:
             return "导入配置、订阅与浏览器书签"
         }

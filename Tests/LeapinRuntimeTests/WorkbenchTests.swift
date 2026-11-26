@@ -66,11 +66,11 @@ final class WorkbenchTests: XCTestCase {
         XCTAssertEqual(work.map(\.icon), WorkbenchVerb.allCases.map(\.icon))
     }
 
-    func testToolGroupMixesTwoSectionsAndThreeSheets() {
+    func testToolGroupIsFiveSections() {
         let tools = WorkbenchSidebar.groups[1].rows
         XCTAssertEqual(tools.map(\.title), ["SSH", "NAS", "回家", "公司内网", "分享与调试"])
         XCTAssertEqual(tools.map(\.destination),
-                       [.section("ssh"), .section("nas"), .sheet(.home), .sheet(.company), .sheet(.networkTools)])
+                       [.section("ssh"), .section("nas"), .section("home"), .section("company"), .section("tools")])
         XCTAssertTrue(tools.allSatisfy { $0.shortcut == nil }, "工具行不占 ⌘1..⌘4")
     }
 
@@ -81,23 +81,19 @@ final class WorkbenchTests: XCTestCase {
         XCTAssertTrue(storage.allSatisfy { $0.shortcut == nil })
     }
 
-    /// Every landing place appears exactly once, and the three kinds together add up to 11.
+    /// Every landing place appears exactly once, and the two kinds together add up to 11.
+    /// 工具行不再有 sheet：侧栏长得一样的入口，点了必须做同一件事（换页）。
     func testLandingPlacesAreCompleteAndUnique() {
         let rows = WorkbenchSidebar.rows
         let sections: [String] = rows.compactMap {
             guard case .section(let raw) = $0.destination else { return nil }
             return raw
         }
-        let sheets: [SidebarSheet] = rows.compactMap {
-            guard case .sheet(let sheet) = $0.destination else { return nil }
-            return sheet
-        }
-        XCTAssertEqual(sections, ["dashboard", "rules", "rewrite", "why", "ssh", "nas", "settings"])
-        XCTAssertEqual(sheets, [.home, .company, .networkTools])
+        XCTAssertEqual(sections, ["dashboard", "rules", "rewrite", "why", "ssh", "nas",
+                                  "home", "company", "tools", "settings"])
         XCTAssertEqual(rows.filter { $0.destination == .importCenter }.count, 1)
-        XCTAssertEqual(sections.count + sheets.count + 1, 11)
+        XCTAssertEqual(sections.count + 1, 11)
         XCTAssertEqual(Set(sections).count, sections.count, "没有两行落到同一个 Section")
-        XCTAssertEqual(Set(sheets).count, sheets.count, "没有两行落到同一个 sheet")
     }
 
     func testOnlyTheFourVerbsCarryAShortcut() {

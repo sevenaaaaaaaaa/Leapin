@@ -73,20 +73,11 @@ public enum WorkbenchVerb: String, CaseIterable, Sendable, Identifiable {
 
 // MARK: - Where a sidebar row lands
 
-/// The three tool sheets. They are not Sections: opening one presents a sheet over the
-/// current page, which is why a row has to say which of the two kinds it is.
-public enum SidebarSheet: String, CaseIterable, Sendable, Identifiable {
-    case home
-    case company
-    case networkTools
-
-    public var id: String { rawValue }
-}
-
-/// What pressing a sidebar row does: switch to a section, present a sheet, or open the import center.
+/// What pressing a sidebar row does: switch to a section, or open the import center.
+/// 工具行一律是 section：侧栏长得一样的入口，点了必须做同一件事——换页，
+/// 而不是有的换页、有的弹窗（弹窗盖住主窗口，也没法和主窗口并排看）。
 public enum WorkbenchDestination: Equatable, Hashable, Sendable {
     case section(String)
-    case sheet(SidebarSheet)
     /// Import center (`app.beginImport()`) — not the system file picker.
     case importCenter
 }
@@ -145,12 +136,11 @@ public enum WorkbenchSidebar {
                 destination: .section(WorkbenchVerb.why.sectionRaw)),
         ]),
         Group(name: "工具", rows: [
-            // Two of the five are real pages; the other three are sheets.
             Row(title: "SSH", icon: "terminal", destination: .section("ssh")),
             Row(title: "NAS", icon: "externaldrive.connected.to.line.below", destination: .section("nas")),
-            Row(title: "回家", icon: "house", destination: .sheet(.home)),
-            Row(title: "公司内网", icon: "building.2", destination: .sheet(.company)),
-            Row(title: "分享与调试", icon: "link", destination: .sheet(.networkTools)),
+            Row(title: "回家", icon: "house", destination: .section("home")),
+            Row(title: "公司内网", icon: "building.2", destination: .section("company")),
+            Row(title: "分享与调试", icon: "link", destination: .section("tools")),
         ]),
         Group(name: "收纳", rows: [
             Row(title: "导入", icon: "square.and.arrow.down", destination: .importCenter),
