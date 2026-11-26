@@ -24,6 +24,22 @@ enum LPShooting {
     }
 }
 
+/// 把 macOS 26 的玻璃页头背景藏进纸里：标题栏区域只留红黄绿三个按钮，
+/// 底下就是连续的纸面，不再有一条浅色带横在窗口顶上。
+private struct LPHeaderBlend: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            content.toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    func headerBlended() -> some View { modifier(LPHeaderBlend()) }
+}
+
 /// Keeps window size/position across launches without a storyboard.
 struct WindowAutosave: NSViewRepresentable {
     var name: String = "LeapinMain"
@@ -52,6 +68,9 @@ struct WindowAutosave: NSViewRepresentable {
             // 连字带底重新显示出来，全 App 因此不再设它（页头已经写着页面名）。
             // fullSizeContentView 本来就是开的，这里保留是防它将来被谁拿掉。
             window.styleMask.insert(.fullSizeContentView)
+            // macOS 26 的系统页头是玻璃材质：不显式隐藏背景的话，它会在纸面上方
+            // 压出一条突兀的浅色带。SwiftUI 侧再配合 toolbarBackgroundVisibility。
+            window.toolbar = nil
             window.titleVisibility = .hidden
             window.titlebarAppearsTransparent = true
             window.titlebarSeparatorStyle = .none

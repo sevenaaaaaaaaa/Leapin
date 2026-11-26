@@ -19,9 +19,11 @@ struct LeapinApp: App {
                 .environmentObject(app)
                 .onAppear { appDelegate.stopExternalTools = { app.sharing.stop(force: true); app.debugChannel.stop(force: true) } }
                 .frame(minWidth: 900, minHeight: 660)
+                .headerBlended()
         }
         .defaultSize(width: 1240, height: 820)
-        .windowToolbarStyle(.unified)
+        // 不声明工具栏样式：unified 会让 macOS 26 在纸面上方画一条玻璃页头带，
+        // 和下面的纸面形成一道突兀的分层（见 WindowAutosave 里的另外两步）。
         .commands {
             CommandGroup(after: .appInfo) {
                 Button("重新载入配置") { Task { await app.engine.reloadProfile() } }
