@@ -118,6 +118,10 @@ private struct DashboardContent: View {
                 askRow
                 verbIndex
                 sceneRail
+                // 书签与公司 / 回家不折叠：它们不依赖引擎状态，没接管时也用得上，
+                // 比一整片空白强。「随手可用」清单和内核页脚才收进「更多」。
+                bookmarksWidget
+                companyHomeRow
                 moreToggle
                 if showMore { moreContent }
             }
@@ -583,11 +587,10 @@ private struct DashboardContent: View {
         .accessibilityLabel(showMore ? "收起更多" : "展开更多")
     }
 
-    /// 折叠区。原来这里还有一排五个快捷按钮（分享 / 致谢 / 公司 / 导入 / 管理线路），
-    /// 五个在侧栏和页头 tab 里都有同一落点的入口，重复一遍只是多一行要读的字。
+    /// 折叠区只收两样：「随手可用」清单和内核页脚。书签与公司 / 回家不在这里——
+    /// 它们不依赖引擎状态，没接管时也用得上，压在「更多」里等于藏了半屏空白的解药。
     private var moreContent: some View {
         VStack(alignment: .leading, spacing: 22) {
-            bookmarksWidget
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text("随手可用").font(.system(size: 15, weight: .semibold))
@@ -617,16 +620,6 @@ private struct DashboardContent: View {
                 .lpSheet()
             }
 
-            if windowWidth >= 900 {
-                HStack(alignment: .top, spacing: 18) {
-                    CompanyWidget(model: app.company)
-                    HomeWidget(home: app.home)
-                }
-            } else {
-                CompanyWidget(model: app.company)
-                HomeWidget(home: app.home)
-            }
-
             HStack(spacing: 12) {
                 Image(systemName: "cpu").foregroundStyle(LP.textSecondary)
                 // 配置名已经在「当前配置」里，这里只留内核：同一屏不重复同一个事实。
@@ -638,6 +631,19 @@ private struct DashboardContent: View {
                 Button("设置") { app.go(to: .settings) }.buttonStyle(.plain)
                     .font(.system(size: 12)).foregroundStyle(LP.textSecondary)
             }.padding(.top, 4)
+        }
+    }
+
+    /// 公司内网与回家两块卡：宽窗口并排，窄窗口上下。
+    @ViewBuilder private var companyHomeRow: some View {
+        if windowWidth >= 900 {
+            HStack(alignment: .top, spacing: 18) {
+                CompanyWidget(model: app.company)
+                HomeWidget(home: app.home)
+            }
+        } else {
+            CompanyWidget(model: app.company)
+            HomeWidget(home: app.home)
         }
     }
 
