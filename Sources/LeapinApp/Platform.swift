@@ -40,12 +40,39 @@ extension View {
     func headerBlended() -> some View { modifier(LPHeaderBlend()) }
 }
 
+/// 把窗口标题栏彻底压平：SwiftUI 一改窗口标题（哪怕只是页面名）就会把
+/// `titleVisibility` 翻回 visible，顶上于是浮出一条带字的条——和侧栏的品牌名
+/// 叠成两个「Leapin」。这里监听标题变化，每次都把可见性按回 hidden。
+/// 红黄绿三个按钮照常，其余的标题栏区域是透明的纸/空间。
+private final class LPTitleFlattener: NSView {
+    private var observedWindow: NSWindow?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        guard let window, window !== observedWindow else { return }
+        observedWindow?.removeObserver(self, forKeyPath: "title")
+        observedWindow = window
+        window.titleVisibility = .hidden
+        window.addObserver(self, forKeyPath: "title", options: [.new], context: nil)
+        window.titleVisibility = .hidden
+    }
+
+    override func observeValue(forKeyPath keyPath: String?, of object: Any?,
+                               change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
+        if keyPath == "title", let window { window.titleVisibility = .hidden }
+    }
+
+    deinit {
+        observedWindow?.removeObserver(self, forKeyPath: "title")
+    }
+}
+
 /// Keeps window size/position across launches without a storyboard.
 struct WindowAutosave: NSViewRepresentable {
     var name: String = "LeapinMain"
 
     func makeNSView(context: Context) -> NSView {
-        let view = NSView()
+        let view = LPTitleFlattener()
         DispatchQueue.main.async {
             guard let window = view.window else { return }
             if LPShooting.isOn {
