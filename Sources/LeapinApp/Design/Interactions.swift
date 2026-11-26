@@ -291,6 +291,8 @@ struct LPTabBar: View {
     /// Distance from the text box's bottom edge to the header's bottom rule, so the
     /// underline lands on that rule however tall the header is.
     var underlineDrop: CGFloat = 0
+    /// 页头坐在墨色空间上：字换成墨上的白，悬停底色换成一层薄白。
+    var onInk = false
     var onSelect: (String) -> Void
 
     @State private var hovered: String?
@@ -306,6 +308,10 @@ struct LPTabBar: View {
     private func tab(_ item: LPTab) -> some View {
         let on = item.id == selected
         let hovering = hovered == item.id
+        let strong: Color = onInk ? LP.onInk : LP.text
+        let soft: Color = onInk ? LP.onInkSecondary : LP.textSecondary
+        let hoverFill: Color = onInk ? Color.white.opacity(0.08) : LP.hover
+        let underline: Color = onInk ? LP.accentOnInk : LP.accent
         return Button {
             onSelect(item.id)
         } label: {
@@ -314,19 +320,19 @@ struct LPTabBar: View {
             // is how two tabs once split the window in half between them.
             Text(item.title)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(on || hovering ? LP.text : LP.textSecondary)
+                .foregroundStyle(on || hovering ? strong : soft)
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, 9)
                 .frame(height: LPShell.titleLine)
                 .background(
                     RoundedRectangle(cornerRadius: LPRadius.control, style: .continuous)
-                        .fill(on || !hovering ? Color.clear : LP.hover)
+                        .fill(on || !hovering ? Color.clear : hoverFill)
                 )
                 .contentShape(Rectangle())
                 .overlay(alignment: .bottom) {
                     Capsule()
-                        .fill(LP.accent)
+                        .fill(underline)
                         .frame(height: 2)
                         .offset(y: underlineDrop)
                         .opacity(on ? 1 : 0)

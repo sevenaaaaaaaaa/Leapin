@@ -588,18 +588,22 @@ struct RootView: View {
     var body: some View {
         GeometryReader { geo in
             let compact = geo.size.width < 960
+            // 舞台：整片墨色空间，页头与那条活的路坐在上面；页面内容是一张浮在空间里的纸。
             ZStack {
                 LPBackground()
                 HStack(spacing: 0) {
                     SidebarView(compact: compact)
                         // 侧栏的上缘和页头标题的上缘在同一条线上（标题栏之下同样 12pt）；
-                        // 红黄绿三个按钮在它上方的纸面上。
+                        // 红黄绿三个按钮在它上方的空间里。
                         .padding(.leading, 10)
                         .padding(.top, LPShell.headerTop)
                         .padding(.bottom, 12)
                     VStack(spacing: 0) {
-                        PageHeaderBar(compact: compact)
+                        LPStage(compact: compact)
                         pageContent
+                            .lpPaperSheet()
+                            .padding(.horizontal, 14)
+                            .padding(.bottom, 14)
                     }
                 }
             }
@@ -986,14 +990,14 @@ private struct EngineLine: View {
 // MARK: - Page header
 
 @MainActor
-private struct PageHeaderBar: View {
+struct PageHeaderBar: View {
     @EnvironmentObject private var app: AppModel
     @ObservedObject private var engine = LeapinEngine.shared
     var compact: Bool = false
 
     private var section: AppModel.Section { app.section ?? .dashboard }
 
-    /// 页头：标题块 + 当前页的 tab + 全局主开关，一条底线。
+    /// 页头：标题块 + 当前页的 tab + 全局主开关，一条底线。它坐在墨色空间上，字全是墨上的白。
     ///
     /// tab 住在页头里而不是页头下面：四个动词页于是从同一行开始画内容，
     /// tab 也不可能再和筛选 chip 混成一种东西。
@@ -1005,7 +1009,8 @@ private struct PageHeaderBar: View {
             if let tabs = app.headerTabs {
                 LPTabBar(items: tabs.items,
                          selected: tabs.selected,
-                         underlineDrop: Self.underlineDrop) { id in tabs.onSelect(id) }
+                         underlineDrop: Self.underlineDrop,
+                         onInk: true) { id in tabs.onSelect(id) }
                     .padding(.leading, 24)
             }
             Spacer(minLength: 16)
@@ -1014,12 +1019,9 @@ private struct PageHeaderBar: View {
         .padding(.horizontal, LPSpace.inset)
         .padding(.top, LPShell.headerTop)
         .frame(height: LPShell.headerHeight, alignment: .top)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(LP.line).frame(height: 1)
-        }
     }
 
-    /// 文字框底边到页头底线的距离：下划线靠它正好落在那条线上。
+    /// 文字框底边到页头底边的距离：下划线靠它落在页头与天空的交界上。
     private static var underlineDrop: CGFloat {
         LPShell.headerHeight - 1 - LPShell.headerTop - LPShell.titleLine
     }
@@ -1029,12 +1031,12 @@ private struct PageHeaderBar: View {
             Text(section.headerTitle)
                 .font(LPType.title)
                 .tracking(-0.3)
-                .foregroundStyle(LP.text)
+                .foregroundStyle(LP.onInk)
                 .lineLimit(1)
                 .fixedSize()
             Text(section.headerSubtitle)
                 .font(.system(size: 12))
-                .foregroundStyle(LP.textSecondary)
+                .foregroundStyle(LP.onInkSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
@@ -1054,7 +1056,7 @@ private struct PageHeaderBar: View {
             if !compact {
                 Text(takeoverLabel)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(on ? LP.text : LP.textSecondary)
+                    .foregroundStyle(on ? LP.onInk : LP.onInkSecondary)
                     .lineLimit(1)
                     .fixedSize()
             }
@@ -1069,8 +1071,8 @@ private struct PageHeaderBar: View {
         .padding(.leading, 12)
         .padding(.trailing, compact ? 8 : 10)
         .frame(height: 32)
-        .background(Capsule(style: .continuous).fill(LP.sheet))
-        .overlay(Capsule(style: .continuous).strokeBorder(LP.line, lineWidth: 1))
+        .background(Capsule(style: .continuous).fill(Color.white.opacity(0.08)))
+        .overlay(Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
         .help(on ? "系统代理正指向 Leapin；关掉后恢复原设置"
                  : "把系统代理指向 Leapin（会先启动本地服务）")
         .accessibilityElement(children: .contain)
@@ -1087,7 +1089,7 @@ private struct PageHeaderBar: View {
     private var takeoverColor: Color {
         if app.networkBusy || engine.state == .starting { return LP.amber }
         if case .failed = engine.state { return LP.danger }
-        return engine.systemProxyActive ? LP.mint : LP.textTertiary
+        return engine.systemProxyActive ? LP.mint : LP.onInkTertiary
     }
 }
 

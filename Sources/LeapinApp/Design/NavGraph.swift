@@ -162,6 +162,8 @@ struct LPNavGraph: View {
             .opacity(node.isImport && !hoveredImport ? 0.85 : 1)
         }
         .buttonStyle(.plain)
+        // 根节点的标签挪到圆点右侧：连线都从它向下发散，标签压在正下方会被亮线穿过。
+        .offset(x: node.kind == .root ? 26 : 0, y: node.kind == .root ? -10 : 0)
         .onHover { entering in
             LPMotion.run(LPMotion.quick) {
                 if entering { hovering = node.id; if node.isImport { hoveredImport = true } }

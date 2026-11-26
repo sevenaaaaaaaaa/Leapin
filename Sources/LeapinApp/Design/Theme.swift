@@ -30,6 +30,9 @@ enum LP {
 
     /// The window: one sheet of paper.
     static let paper = dyn(hex(0xF4EFE6), hex(0x0F0F10))
+    /// The stage the route lives on: ink in light, a deeper black than the paper in dark,
+    /// so the page sheet and the sidebar visibly float on it.
+    static let space = dyn(hex(0x19191B), hex(0x060607))
     /// Content surface: cards, rows, inputs.
     static let sheet = dyn(hex(0xFDFBF7), hex(0x1A1A1E))
     /// Something sitting on a sheet: a menu row, the selected segment.
@@ -189,12 +192,11 @@ enum LPShell {
 
 // MARK: - Background
 
-/// Opaque paper. The window used to be a 40% wash over the blurred desktop, which
-/// meant legibility depended on the wallpaper: a dark one turned the "paper" murky
-/// and ate every hairline. One sheet of paper means one sheet of paper.
+/// The space the whole window sits in. The route is drawn across it and real
+/// traffic flies along it; the page sheet and the sidebar float on top.
 struct LPBackground: View {
     var body: some View {
-        LP.paper
+        LP.space
             .ignoresSafeArea()
     }
 }

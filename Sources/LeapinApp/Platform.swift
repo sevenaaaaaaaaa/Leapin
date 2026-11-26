@@ -49,9 +49,11 @@ struct WindowAutosave: NSViewRepresentable {
         DispatchQueue.main.async {
             guard let window = view.window else { return }
             if LPShooting.isOn {
-                // 尺寸照读上次保存的，但不挂自动保存：自动保存会把屏幕外的位置也记下来。
-                // 在屏幕上时窗口会被别的 App 的窗口挡住，而被挡住的窗口 AppKit 不画图层，
-                // `cacheDisplay` 拍到的就是一张全透明的图。
+                // 快照也挂自动保存（尺寸才会被 SwiftUI 采纳），随后把窗口挪到屏幕外。
+                // 屏幕外的位置会被记进 defaults，但 shoot.sh / live.sh 每次运行前都重写
+                // 这份尺寸，所以不影响下一次。
+                window.setFrameAutosaveName(name)
+                window.minSize = NSSize(width: 900, height: 640)
                 window.setFrame(from: name)
                 window.setFrameOrigin(NSPoint(x: -20000, y: -20000))
             } else {

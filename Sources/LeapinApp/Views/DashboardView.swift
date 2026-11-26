@@ -66,32 +66,20 @@ struct DashboardView: View {
     var body: some View { DashboardContent(scenes: app.scenes, bookmarks: app.bookmarks) }
 }
 
-/// 「走哪」·总览：一条路（焦点带）→ 问一句 + 最近决策 → 另外三个动词 → 场景导轨。
+/// 「走哪」·总览：一张浮在舞台上的纸。
 ///
-/// 这一屏只回答两个问题：**现在走哪条**（焦点带里的出口，是全屏唯一的大字）和
-/// **接下来去哪**（三个动词各带一句当前状态）。没接管时焦点带不装死：出口站
-/// 直接写「还没有出口」，旁边就是这一个主操作。
+/// 「现在走哪条」由舞台的天空回答（那条活的路、出口星、事实与主操作都在那里），
+/// 这张纸只回答**接下来去哪**：问一句、另外三个动词、场景导轨、书签、公司与回家。
 @MainActor
 private struct DashboardContent: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.lpWindowWidth) private var windowWidth
     @StateObject private var model = OverviewModel()
-    /// 首屏只留 ≤5 个一级块（DESIGN-v5 §12.1）：书签、随手可用、公司与回家、页脚都收在这里。
     @State private var showMore = false
-    /// v6：60 秒速率河。每秒一帧，只在本页可见时跑。
-    @State private var river: [LPRiverSample] = Array(repeating: .zero, count: 60)
-    @State private var frozen: Int?
-    /// 可拖的出口：只在真正能切的时候（运行中且候选 > 1）才替换静态的展示。
-    @State private var quickStops: [LPRouteScrubber.Stop] = []
-    @State private var quickGroup: String?
     /// 「问路」框里的字。回车才问，不边打边跳页。
     @State private var ask = ""
     @FocusState private var askFocused: Bool
-    /// 常驻事实的唯一数据源：与菜单栏面板、实时浮窗是同一个对象。
-    ///
-    /// 这里**只读** `status`，不采样、不持有定时器。store 的帧由三处低频驱动：
-    /// 面板打开时（1 Hz）、浮窗可见时、菜单栏图标（引擎状态 / 系统代理 / 错误 /
-    /// 配置变化各推一次）。速率差分因此仍然只发生一次，窗口与面板不会各算一套。
+    /// 只读：store 的帧由舞台驱动（它常驻），这里不采样、不持有定时器。
     @ObservedObject private var resident = ResidentStatusStore.shared
     @ObservedObject var scenes: NetworkScenes
     @ObservedObject var bookmarks: NetworkBookmarks
@@ -104,9 +92,8 @@ private struct DashboardContent: View {
         guard let active = scenes.active, scenes.profileID(for: active) == model.profile.id else { return nil }
         return active
     }
-    private var connected: Bool { running && model.systemProxyActive }
 
-    /// 另外三个动词。走哪自己不在里面：这一页就是它，首屏的焦点带已经把它的状态说完了。
+    /// 另外三个动词。走哪自己不在里面：这一页就是它，天空已经把它的状态说完了。
     private static let indexedVerbs: [WorkbenchVerb] = [.howJudged, .whatChanged, .why]
 
     // MARK: 首屏
@@ -114,7 +101,6 @@ private struct DashboardContent: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                hero
                 askRow
                 verbIndex
                 sceneRail
@@ -126,248 +112,11 @@ private struct DashboardContent: View {
                 if showMore { moreContent }
             }
             .padding(.horizontal, LPSpace.inset)
-            .padding(.top, 20)
-            .padding(.bottom, 28)
+            .padding(.vertical, 20)
         }
         .foregroundStyle(LP.text)
-        // 面板与浮窗都没开时，store 没人喂帧，首屏的事实就是死值（出口恒「—」、
-        // 速率恒 0、拦截数不涨）。所以首屏可见时像菜单栏面板那样自己驱动共享 store：
-        // 采样驱动在视图里，速率差分仍只在 `ResidentStatusStore` 发生一次；`.task`
-        // 在离开页面时自动取消，不留后台轮询，也没有全局定时器。
-        .task { await driveResidentFacts() }
-        .task { await riverLoop() }
-        .task(id: model.state) { await loadQuickStops() }
-        .onChange(of: model.state.label) { _, _ in Task { await refreshResidentExit() } }
-        .onChange(of: model.profile.id) { _, _ in Task { await refreshResidentExit() } }
         // 这一页没有列表可过滤：⌘F 落到「问路」框，而不是弹命令面板。
         .onChange(of: app.searchFocusRequest) { _, _ in askFocused = true }
-    }
-
-    // MARK: 喂帧（与菜单栏面板同一模式）
-
-    private var engine: LeapinEngine { app.engine }
-
-    /// 首帧先取一次快照（出口只在 `MenuBarSnapshot` 里），再进 1 Hz 循环。
-    /// 循环只调 `resident.update(from:)`：差分仍然只发生在 store 里一次，
-    /// 这里既没有第二个差分器，也没有自己的计时状态。
-    private func driveResidentFacts() async {
-        await refreshResidentExit()
-        while !Task.isCancelled {
-            try? await Task.sleep(for: .seconds(1))
-            if Task.isCancelled { return }
-            resident.update(from: engine)
-        }
-    }
-
-    /// 出口只有快照里有（`current` / `currentGroup`）：状态或配置一变就重取一次，
-    /// store 会记住它，之后 1 Hz 的帧继续沿用。没有新增任何全局定时器。
-    private func refreshResidentExit() async {
-        let latest = await engine.menuBarSnapshot()
-        resident.update(from: engine, snapshot: latest)
-    }
-
-    private func riverLoop() async {
-        while !Task.isCancelled {
-            let rates = status.rates
-            river.removeFirst()
-            river.append(LPRiverSample(down: normalize(rates.down), up: normalize(rates.up)))
-            try? await Task.sleep(for: .seconds(1))
-        }
-    }
-
-    /// 对数归一：1 KB/s 看得见，3 MB/s 封顶。
-    private func normalize(_ bytesPerSecond: Double) -> Double {
-        guard bytesPerSecond > 0 else { return 0 }
-        return min(1, log1p(bytesPerSecond) / log1p(3_000_000))
-    }
-
-    // MARK: 焦点带（每屏唯一的一个）
-
-    private var hero: some View {
-        FocusBand {
-            VStack(alignment: .leading, spacing: 18) {
-                if running {
-                    ViewThatFits(in: .horizontal) {
-                        HStack(alignment: .top, spacing: 24) {
-                            route
-                            Spacer(minLength: 16)
-                            liveRates()
-                        }
-                        VStack(alignment: .leading, spacing: 14) {
-                            route
-                            liveRates(alignment: .leading)
-                        }
-                    }
-                } else {
-                    // 没接管就没有「此刻的数字」：不摆一排 0 装作在跑。
-                    route
-                }
-                // 活的那一层：最近 60 秒的上下行。引擎没开就不画一条死线。
-                if running {
-                    LPRiver(samples: river, frozenIndex: frozen,
-                            enabled: true, onInk: true, height: 36) { index in
-                        frozen = index
-                    }
-                    HStack(spacing: 6) {
-                        Text(frozen.map { "−\(59 - $0)s · 回看中" } ?? "最近 60 秒")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(LP.onInkTertiary)
-                        Spacer(minLength: 0)
-                        Text("拖动回看")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(LP.onInkTertiary)
-                    }
-                }
-                if let message = app.networkMessage {
-                    Text(message)
-                        .font(.system(size: 13))
-                        .foregroundStyle(app.networkFailed ? Color(red: 1, green: 0.66, blue: 0.60) : LP.onInkSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                InkRule()
-                heroFooter
-            }
-        }
-    }
-
-    /// 同一条路，三种状态只换出口站上的字：出口名 / 「没有可切换的节点」/「还没有出口」。
-    private var route: some View {
-        LPRouteScrubber(
-            stops: routeStops,
-            selectedID: status.exit ?? routeStops.first?.id ?? "",
-            judge: judgeTitle,
-            judgeDetail: running ? "\(model.ruleCount) 条规则" : nil,
-            exitDetail: exitDetail,
-            emptyExitTitle: parkedTitle,
-            enabled: running,
-            size: .hero,
-            onInk: true
-        ) { member in
-            guard let group = quickGroup else { return }
-            Task {
-                try? await app.engine.menuBarSelect(group: group, member: member)
-                await loadQuickStops()
-            }
-        }
-    }
-
-    private var routeStops: [LPRouteScrubber.Stop] {
-        if quickStops.count > 1 { return quickStops }
-        // 只有一个候选、或者根本拖不动：仍然把当前出口画出来，只是不给拖。
-        if running, let exit = status.exit, !exit.isEmpty {
-            return [.init(id: exit, label: exit, detail: "")]
-        }
-        return []
-    }
-
-    private var judgeTitle: String {
-        if running { return activeScene?.title ?? "规则模式" }
-        if case .failed = model.state { return "没能启动" }
-        return "尚未接管"
-    }
-
-    private var parkedTitle: String {
-        if case .failed = model.state { return "没能连上" }
-        return running ? "没有可切换的节点" : "还没有出口"
-    }
-
-    /// 出口下面那一行：策略组 · 配置 · 延迟。没接管时它是一句人话，不是三个破折号。
-    private var exitDetail: String? {
-        if case .failed = model.state {
-            return status.issues.first?.text ?? app.engine.lastError ?? "启动失败，原因见下方。"
-        }
-        guard running else {
-            return "连上之后，这里显示每个请求走哪条路、有多快。"
-        }
-        var parts: [String] = []
-        if let group = status.exitGroup, !group.isEmpty { parts.append(group) }
-        if !status.profileName.isEmpty { parts.append(status.profileName) }
-        if let latency = quickStops.first(where: { $0.id == status.exit })?.detail, !latency.isEmpty {
-            parts.append(latency)
-        }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
-    }
-
-    /// 实时速率：焦点带里唯一会每秒变一次的数字。
-    private func liveRates(alignment: HorizontalAlignment = .trailing) -> some View {
-        VStack(alignment: alignment, spacing: 7) {
-            HStack(alignment: .firstTextBaseline, spacing: 16) {
-                rate("arrow.down", status.rates.downText)
-                rate("arrow.up", status.rates.upText)
-            }
-            Text("拦截 \(status.blocked) · \(status.connections) 个连接")
-                .font(.system(size: 12))
-                .monospacedDigit()
-                .foregroundStyle(LP.onInkSecondary)
-        }
-        .fixedSize()
-        .accessibilityElement(children: .combine)
-    }
-
-    private func rate(_ symbol: String, _ text: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(LP.accentOnInk)
-            Text(text)
-                .font(.system(size: 20, weight: .semibold, design: .monospaced))
-                .foregroundStyle(LP.onInk)
-                .contentTransition(.numericText())
-        }
-    }
-
-    /// §2.5 的一行事实 + 这一屏唯一的主操作。
-    private var heroFooter: some View {
-        HStack(spacing: 8) {
-            Image(systemName: status.coverage.isCoveringTraffic ? "checkmark.shield" : "exclamationmark.shield")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(status.coverage.isCoveringTraffic ? LP.mint : LP.accentOnInk)
-            Text(status.coverage.declaration)
-                .font(.system(size: 12))
-                .foregroundStyle(LP.onInkSecondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 12)
-            if !connected {
-                Button("导入配置") { app.beginImport() }
-                    .buttonStyle(LPOnInkButtonStyle())
-            }
-            connectButton
-        }
-        .help(status.coverage.declaration)
-    }
-
-    /// 接管是这一屏唯一的主按钮；已经接管时「暂停」退成墨上的次按钮，不抢朱红。
-    @ViewBuilder private var connectButton: some View {
-        if connected {
-            Button("暂停接管") { Task { await app.pauseNetwork() } }
-                .buttonStyle(LPOnInkButtonStyle())
-                .accessibilityLabel("暂停接管")
-        } else {
-            Button(app.networkBusy ? "准备中…" : "连接网络") { app.connectNetwork() }
-                .buttonStyle(LPPrimaryButtonStyle())
-                .disabled(app.networkBusy || app.engine.configurationBusy || model.state == .starting)
-                .accessibilityLabel("连接网络")
-        }
-    }
-
-    /// 菜单栏同一份快照：可切换的组与成员。失败就退回静态展示，不假装能拖。
-    private func loadQuickStops() async {
-        let snapshot = await app.engine.menuBarSnapshot()
-        let groups = snapshot.nodeMenuGroups
-        guard let group = groups.first(where: { $0.name == snapshot.currentGroup }) ?? groups.first else {
-            quickStops = []
-            quickGroup = nil
-            return
-        }
-        quickGroup = group.name
-        quickStops = group.members.map { node in
-            LPRouteScrubber.Stop(
-                id: node.name,
-                label: node.name,
-                detail: node.failed ? "失败" : (node.latencyMs.map { "\($0) ms" } ?? "")
-            )
-        }
     }
 
     // MARK: 问一句 + 最近决策
@@ -622,7 +371,7 @@ private struct DashboardContent: View {
 
             HStack(spacing: 12) {
                 Image(systemName: "cpu").foregroundStyle(LP.textSecondary)
-                // 配置名已经在「当前配置」里，这里只留内核：同一屏不重复同一个事实。
+                // 配置名已经在舞台的出口星下写着，这里只留内核：同一屏不重复同一个事实。
                 Text("内核：\(model.kernel.title)")
                     .font(.system(size: 12)).foregroundStyle(LP.textSecondary).lineLimit(1)
                 Spacer()
