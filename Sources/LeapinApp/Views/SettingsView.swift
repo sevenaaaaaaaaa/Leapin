@@ -43,8 +43,8 @@ struct SettingsView: View {
                     advancedSection
                     saveBar
                 }
-                .frame(maxWidth: 720, alignment: .leading)
-                // 左对齐到页头那条线，不居中：全 App 只有一条左缘，设置页不该自己另起一条。
+                // 通栏：卡片左缘对页头、右缘到窗口边距，和其它页面同一副骨架。
+                // 限宽居中会在窗口一宽时两边漏风——上一版就因此被圈了两条长空档。
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxWidth: .infinity)
