@@ -30,9 +30,9 @@ enum LP {
 
     /// The window: one sheet of paper.
     static let paper = dyn(hex(0xF4EFE6), hex(0x0F0F10))
-    /// The stage the route lives on: ink in light, a deeper black than the paper in dark,
-    /// so the page sheet and the sidebar visibly float on it.
-    static let space = dyn(hex(0x19191B), hex(0x060607))
+    /// The window: one continuous surface. 空间感来自拓扑、连线与运动的包，
+    /// 不靠一块突兀的深色底——那是上一版被否掉的「两座孤岛」。
+    static let space = paper
     /// Content surface: cards, rows, inputs.
     static let sheet = dyn(hex(0xFDFBF7), hex(0x1A1A1E))
     /// Something sitting on a sheet: a menu row, the selected segment.
@@ -192,8 +192,8 @@ enum LPShell {
 
 // MARK: - Background
 
-/// The space the whole window sits in. The route is drawn across it and real
-/// traffic flies along it; the page sheet and the sidebar float on top.
+/// The space the whole window sits in: one continuous paper. The route is drawn
+/// directly on it with ink lines and the vermilion star; cards float by hairlines.
 struct LPBackground: View {
     var body: some View {
         LP.space

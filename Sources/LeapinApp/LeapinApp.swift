@@ -601,9 +601,6 @@ struct RootView: View {
                     VStack(spacing: 0) {
                         LPStage(compact: compact)
                         pageContent
-                            .lpPaperSheet()
-                            .padding(.horizontal, 14)
-                            .padding(.bottom, 14)
                     }
                 }
             }
@@ -1009,8 +1006,7 @@ struct PageHeaderBar: View {
             if let tabs = app.headerTabs {
                 LPTabBar(items: tabs.items,
                          selected: tabs.selected,
-                         underlineDrop: Self.underlineDrop,
-                         onInk: true) { id in tabs.onSelect(id) }
+                         underlineDrop: Self.underlineDrop) { id in tabs.onSelect(id) }
                     .padding(.leading, 24)
             }
             Spacer(minLength: 16)
@@ -1031,12 +1027,12 @@ struct PageHeaderBar: View {
             Text(section.headerTitle)
                 .font(LPType.title)
                 .tracking(-0.3)
-                .foregroundStyle(LP.onInk)
+                .foregroundStyle(LP.text)
                 .lineLimit(1)
                 .fixedSize()
             Text(section.headerSubtitle)
                 .font(.system(size: 12))
-                .foregroundStyle(LP.onInkSecondary)
+                .foregroundStyle(LP.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
@@ -1056,7 +1052,7 @@ struct PageHeaderBar: View {
             if !compact {
                 Text(takeoverLabel)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(on ? LP.onInk : LP.onInkSecondary)
+                    .foregroundStyle(on ? LP.text : LP.textSecondary)
                     .lineLimit(1)
                     .fixedSize()
             }
@@ -1071,8 +1067,8 @@ struct PageHeaderBar: View {
         .padding(.leading, 12)
         .padding(.trailing, compact ? 8 : 10)
         .frame(height: 32)
-        .background(Capsule(style: .continuous).fill(Color.white.opacity(0.08)))
-        .overlay(Capsule(style: .continuous).strokeBorder(Color.white.opacity(0.14), lineWidth: 1))
+        .background(Capsule(style: .continuous).fill(LP.sheet))
+        .overlay(Capsule(style: .continuous).strokeBorder(LP.line, lineWidth: 1))
         .help(on ? "系统代理正指向 Leapin；关掉后恢复原设置"
                  : "把系统代理指向 Leapin（会先启动本地服务）")
         .accessibilityElement(children: .contain)
@@ -1089,7 +1085,7 @@ struct PageHeaderBar: View {
     private var takeoverColor: Color {
         if app.networkBusy || engine.state == .starting { return LP.amber }
         if case .failed = engine.state { return LP.danger }
-        return engine.systemProxyActive ? LP.mint : LP.onInkTertiary
+        return engine.systemProxyActive ? LP.mint : LP.textTertiary
     }
 }
 

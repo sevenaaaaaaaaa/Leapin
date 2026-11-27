@@ -245,10 +245,10 @@ struct LPRouteSky: View {
                     let y = (seed * 311.7).truncatingRemainder(dividingBy: max(height, 1))
                     let twinkle = 0.5 + 0.5 * sin(now * 0.9 + seed * 1.7)
                     let radius = index % 9 == 0 ? 1.4 : 0.9
-                    let alpha = 0.05 + 0.09 * twinkle
+                    let alpha = 0.04 + 0.10 * twinkle
                     context.fill(
                         Path(ellipseIn: CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)),
-                        with: .color(.white.opacity(alpha)))
+                        with: .color(LP.text.opacity(alpha)))
                 }
             }
         }
@@ -280,15 +280,16 @@ struct LPRouteSky: View {
     }
 
     private func drawRoute(_ context: GraphicsContext, geometry: LPStageGeometry, now: Date) {
-        let ink = Color.white.opacity(0.22 * dim)
-        let signal = LP.accentOnInk
+        // 路直接画在纸上：墨线、朱红星。没有「另一种材质」。
+        let ink = LP.text.opacity(0.42 * dim)
+        let signal = LP.accent
 
         // 你 → 判据
         var approach = Path()
         approach.move(to: geometry.you)
         approach.addLine(to: geometry.gate)
         if running {
-            context.stroke(approach, with: .color(station == .gate ? signal.opacity(0.85) : ink),
+            context.stroke(approach, with: .color(station == .gate ? signal.opacity(0.9) : ink),
                            style: StrokeStyle(lineWidth: station == .gate ? 2 : 1.5, lineCap: .round))
         } else {
             context.stroke(approach, with: .color(ink),
@@ -304,24 +305,24 @@ struct LPRouteSky: View {
             context.stroke(geometry.directPath(), with: .color(LP.mint.opacity(0.55 * dim)),
                            style: StrokeStyle(lineWidth: 1.3, lineCap: .round))
         } else {
-            context.stroke(geometry.exitPath(), with: .color(.white.opacity(0.16)),
+            context.stroke(geometry.exitPath(), with: .color(LP.text.opacity(0.30)),
                            style: StrokeStyle(lineWidth: 1.2, lineCap: .round, dash: [3, 6]))
         }
 
         // 你
-        context.fill(Path(ellipseIn: CGRect(center: geometry.you, radius: 4.5)), with: .color(.white.opacity(0.85)))
+        context.fill(Path(ellipseIn: CGRect(center: geometry.you, radius: 4.5)), with: .color(LP.text.opacity(0.85)))
 
         // 判据门：两根短竖线，像一道闸。
         let gateGlow = station == .gate
         if gateGlow {
             context.fill(
                 Path(ellipseIn: CGRect(center: geometry.gate, radius: 22)),
-                with: .radialGradient(Gradient(colors: [signal.opacity(0.35), .clear]),
+                with: .radialGradient(Gradient(colors: [signal.opacity(0.28), .clear]),
                                       center: geometry.gate, startRadius: 0, endRadius: 22))
         }
         for offset in [-5.0, 5.0] {
             let rect = CGRect(x: geometry.gate.x + offset - 1, y: geometry.gate.y - 8, width: 2, height: 16)
-            context.fill(Path(roundedRect: rect, cornerRadius: 1), with: .color(gateGlow ? signal : .white.opacity(0.75)))
+            context.fill(Path(roundedRect: rect, cornerRadius: 1), with: .color(gateGlow ? signal : LP.text.opacity(0.8)))
         }
 
         // 直连星
@@ -345,7 +346,7 @@ struct LPRouteSky: View {
                 with: .color(signal.opacity(0.55 * starDim)), lineWidth: 1)
         } else {
             context.stroke(Path(ellipseIn: CGRect(center: geometry.exit, radius: big ? 6 : 4.5)),
-                           with: .color(signal.opacity(0.9)), lineWidth: 1.5)
+                           with: .color(signal.opacity(0.9 * dim)), lineWidth: 1.5)
         }
     }
 
@@ -357,7 +358,7 @@ struct LPRouteSky: View {
             if progress > 1 { continue }
             let color: Color
             switch packet.kind {
-            case .proxy: color = LP.accentOnInk
+            case .proxy: color = LP.accent
             case .direct: color = LP.mint
             case .blocked: color = LP.danger.opacity(0.95)
             }
@@ -401,17 +402,17 @@ struct LPRouteSky: View {
     @ViewBuilder private func routeStationLabels(_ geometry: LPStageGeometry) -> some View {
         Text("这台 Mac")
             .font(.system(size: 11, weight: .medium))
-            .foregroundStyle(LP.onInkTertiary)
+            .foregroundStyle(LP.textTertiary)
             .fixedSize()
             .position(x: geometry.you.x + 16, y: geometry.you.y + 20)
 
         VStack(alignment: .leading, spacing: 2) {
             Text(judgeTitle)
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(LP.onInk)
+                .foregroundStyle(LP.text)
             Text("\(engine.ruleCount) 条规则")
                 .font(.system(size: 11))
-                .foregroundStyle(LP.onInkTertiary)
+                .foregroundStyle(LP.textTertiary)
         }
         .fixedSize()
         .position(x: geometry.gate.x + 8, y: geometry.gate.y - 26)
@@ -430,7 +431,7 @@ struct LPRouteSky: View {
         let focus = station == .gate ? "判据" : station == .bend ? "改路" : "出口"
         Text(focus)
             .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(LP.accentOnInk)
+            .foregroundStyle(LP.accent)
             .fixedSize()
             .position(x: station == .gate ? geometry.gate.x : geometry.exit.x + 14,
                       y: (station == .gate ? geometry.gate.y : geometry.exit.y) - 18)
@@ -455,17 +456,17 @@ struct LPRouteSky: View {
                 Text(shown)
                     .font(.system(size: shown.count <= 14 ? 28 : 20, weight: .semibold))
                     .tracking(-0.4)
-                    .foregroundStyle(running && selectedStop != nil ? LP.onInk : LP.onInkSecondary)
+                    .foregroundStyle(running && selectedStop != nil ? LP.text : LP.textSecondary)
                     .lineLimit(1)
                 if canScrub {
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(LP.onInkTertiary)
+                        .foregroundStyle(LP.textTertiary)
                 }
             }
             Text(detail ?? "")
                 .font(.system(size: 12))
-                .foregroundStyle(LP.onInkSecondary)
+                .foregroundStyle(LP.textSecondary)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -518,27 +519,27 @@ struct LPRouteSky: View {
             ForEach(Array(stops.enumerated()), id: \.element.id) { offset, stop in
                 HStack(spacing: 8) {
                     Rectangle()
-                        .fill(offset == scrubIndex ? LP.accentOnInk : Color.white.opacity(0.35))
+                        .fill(offset == scrubIndex ? LP.accent : LP.text.opacity(0.30))
                         .frame(width: offset == scrubIndex ? 12 : 5, height: 1)
                     Text(stop.label)
                         .font(.system(size: 12, weight: offset == scrubIndex ? .semibold : .regular))
-                        .foregroundStyle(offset == scrubIndex ? LP.onInk : LP.onInkSecondary)
+                        .foregroundStyle(offset == scrubIndex ? LP.text : LP.textSecondary)
                         .lineLimit(1)
                     Spacer(minLength: 6)
                     if !stop.detail.isEmpty {
                         Text(stop.detail)
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(LP.onInkTertiary)
+                            .foregroundStyle(LP.textTertiary)
                     }
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
-                .background(offset == scrubIndex ? Color.white.opacity(0.10) : Color.clear)
+                .background(offset == scrubIndex ? LP.text.opacity(0.05) : Color.clear)
             }
         }
         .padding(4)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white.opacity(0.08)))
-        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.white.opacity(0.14)))
+        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(LP.text.opacity(0.05)))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(LP.stroke))
     }
 
     private var scrubGesture: some Gesture {
@@ -576,7 +577,7 @@ struct LPRouteSky: View {
             if let message = app.networkMessage {
                 Text(message)
                     .font(.system(size: 12))
-                    .foregroundStyle(app.networkFailed ? Color(red: 1, green: 0.70, blue: 0.64) : LP.onInkSecondary)
+                    .foregroundStyle(app.networkFailed ? Color(red: 1, green: 0.70, blue: 0.64) : LP.textSecondary)
                     .lineLimit(1)
             }
             HStack(spacing: 10) {
@@ -588,14 +589,14 @@ struct LPRouteSky: View {
                     Text("拦截 \(status.blocked) · \(status.connections) 个连接")
                         .font(.system(size: 11))
                         .monospacedDigit()
-                        .foregroundStyle(LP.onInkTertiary)
+                        .foregroundStyle(LP.textTertiary)
                 }
                 Image(systemName: status.coverage.isCoveringTraffic ? "checkmark.shield" : "exclamationmark.shield")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(status.coverage.isCoveringTraffic ? LP.mint : LP.accentOnInk)
+                    .foregroundStyle(status.coverage.isCoveringTraffic ? LP.mint : LP.accent)
                 Text(status.coverage.declaration)
                     .font(.system(size: 11))
-                    .foregroundStyle(LP.onInkTertiary)
+                    .foregroundStyle(LP.textTertiary)
                     .lineLimit(1)
                 Spacer(minLength: 10)
                 if !connected {
@@ -621,10 +622,10 @@ struct LPRouteSky: View {
         HStack(spacing: 4) {
             Image(systemName: symbol)
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(LP.accentOnInk)
+                .foregroundStyle(LP.accent)
             Text(text)
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                .foregroundStyle(LP.onInk)
+                .foregroundStyle(LP.text)
                 .monospacedDigit()
         }
     }
