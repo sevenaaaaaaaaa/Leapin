@@ -119,6 +119,8 @@ private enum LPMapMath {
         CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
     }
 
+    static func easeOut(_ t: Double) -> Double { 1 - pow(1 - t, 3) }
+
     static func quad(_ a: CGPoint, _ c: CGPoint, _ b: CGPoint, _ t: Double) -> CGPoint {
         let mt = 1 - t
         return CGPoint(x: mt * mt * a.x + 2 * mt * t * c.x + t * t * b.x,
@@ -144,6 +146,12 @@ private struct LPPacket: Identifiable {
     let kind: Kind
     let start: Date
     let duration: Double
+}
+
+/// 画布上一帧的落点。引用类型：每帧写它不触发重绘，重排时从这里取「世界原来的样子」。
+private final class LPMapCache {
+    var points: [String: CGPoint] = [:]
+    var star: CGPoint = .zero
 }
 
 /// 问路的探针：输入一个域名时，图上实时画出它的去向。
@@ -174,6 +182,21 @@ struct LPNetworkMap: View {
     @State private var lastBlocked = 0
     /// 星「跃」的那一刻：换路生效时弦亮一闪。
     @State private var leapAt: Date?
+    /// 星跃的起点。「One leap」——换出口时星从旧位跃到新位，不是原地闪一下。
+    @State private var leapFrom: CGPoint?
+    /// 接通 / 断开 / 世界重排（换场景、换配置）各自的时刻。整张图的编排由它们推：
+    /// 接通是从中心一路充能到星，重排是所有出口从旧位流到新位。
+    @State private var igniteAt: Date?
+    @State private var dimAt: Date?
+    @State private var morphAt: Date?
+    /// 每台局域网设备现身的那一刻：到点荡一圈涟漪。
+    @State private var lanFoundAt: [String: Date] = [:]
+    /// 画布上一帧的落点。引用类型：每帧写它不触发重绘，重排时从这里取「世界原来的样子」。
+    @State private var cache = LPMapCache()
+    /// 动效结束后的收尾信号：时间线要停下来，不能空转。
+    @State private var effectEpoch = 0
+    @State private var effectSettled = false
+    @Namespace private var sceneNS
     @State private var firstStop: String?
     /// 出口名 → 能手动切到它的策略组。只有这些星点得动。
     @State private var selectable: [String: String] = [:]
@@ -266,16 +289,87 @@ struct LPNetworkMap: View {
             try? await Task.sleep(for: .milliseconds(1100))
             settled = true
         }
-        .onChange(of: engine.profile.id) { _, _ in Task { await refreshExit() } }
-        .onChange(of: status.exit) { _, _ in leapAt = Date() }
+        // 动效都有确定的截止时刻：到点补一次重算，时间线才能停。
+        .task(id: effectEpoch) {
+            guard effectEpoch > 0 else { return }
+            try? await Task.sleep(for: .milliseconds(1500))
+            effectSettled = true
+        }
+        .onChange(of: engine.profile.id) { _, _ in
+            // 世界重排：先记下现在各站在哪，再让它们流到新配置的位置。
+            morphAt = Date()
+            bumpEffect()
+            Task { await refreshExit() }
+        }
+        .onChange(of: status.exit) { _, _ in
+            leapFrom = cache.star
+            leapAt = Date()
+            bumpEffect()
+        }
+        .onChange(of: engine.state) { old, new in
+            if new == .running && old != .running { ignite() }
+            if old == .running && new != .running { dim() }
+        }
         .onChange(of: ask) { _, text in probe = resolveProbe(text) }
         // 这一页没有列表可过滤：⌘F 落到「问路」框，而不是弹命令面板。
         .onChange(of: app.searchFocusRequest) { _, _ in askFocused = true }
         .onDisappear { discovery.stop() }
     }
 
+    /// 快照辅助：把接通编排钉在半空（时刻恒为 0.45s 前），静帧也拍得到动的中间态。
+    private static let freezeIgnite = ProcessInfo.processInfo.environment["LEAPIN_SHOT_FREEZE_IGNITE"] != nil
+
+    /// 接通编排的参考时刻。正常就是 igniteAt；快照钉住时永远是「0.45 秒前」。
+    private var igniteRef: Date? {
+        Self.freezeIgnite ? Date().addingTimeInterval(-0.45) : igniteAt
+    }
+
+    /// 有动效在飞（或该动的东西在动）就保持时间线，否则停下来。
     private var animating: Bool {
-        !reduceMotion && (running || probe != nil || !settled || (leapAt.map { Date().timeIntervalSince($0) < 0.7 } ?? false))
+        if reduceMotion { return false }
+        if running || lanScanning || probe != nil || !settled { return true }
+        if homeTunnelLive { return true }
+        let now = Date()
+        for (moment, span) in [(leapAt, 0.8), (morphAt, 0.8), (igniteAt, 1.3), (dimAt, 1.1)] {
+            if let at = moment, now.timeIntervalSince(at) < span { return true }
+        }
+        if lanFoundAt.values.contains(where: { now.timeIntervalSince($0) < 0.9 }) { return true }
+        return !effectSettled
+    }
+
+    /// 回家的隧道是活的路：绑定过且 Tailnet 在线时，虚线一直在流。
+    private var homeTunnelLive: Bool {
+        app.home.saved != nil && app.home.snapshot?.state == "Running"
+    }
+
+    private func bumpEffect() {
+        effectSettled = false
+        effectEpoch += 1
+    }
+
+    /// 接通：整张图从中心充能——环先亮、闸张开、路长出来、星点着，然后路上立刻有包。
+    private func ignite() {
+        igniteAt = Date()
+        dimAt = nil
+        bumpEffect()
+        let recent = status.recent
+        let directCount = recent.filter { $0.kind == .direct }.count
+        let proxyCount = recent.filter { $0.kind == .proxy }.count
+        let directShare = (directCount + proxyCount) > 0
+            ? Double(directCount) / Double(directCount + proxyCount) : 0.32
+        for index in 0..<12 {
+            let kind: LPPacket.Kind = Double.random(in: 0...1) < directShare ? .direct : .proxy
+            packets.append(LPPacket(kind: kind,
+                                    start: Date().addingTimeInterval(0.35 + Double(index) * 0.07 + .random(in: 0...0.04)),
+                                    duration: .random(in: 1.1...1.5)))
+        }
+    }
+
+    /// 断开：路上的包散掉，光从星一路收回中心。
+    private func dim() {
+        dimAt = Date()
+        igniteAt = nil
+        bumpEffect()
     }
 
     private func canvas(_ g: LPMapGeometry) -> some View {
@@ -317,6 +411,13 @@ struct LPNetworkMap: View {
         let gateTop = g.gateTop
         let clock = now.timeIntervalSinceReferenceDate
 
+        // 编排进度：接通充能 0→1，断开收光 0→1，重排让站从旧位流到新位，星跃让星飞过去。
+        let igniteP = igniteRef.map { LPMapMath.easeOut(min(1, now.timeIntervalSince($0) / 0.9)) } ?? 1.0
+        let dimQ = dimAt.map { LPMapMath.easeOut(min(1, max(0, now.timeIntervalSince($0) / 0.8))) } ?? 0.0
+        let morphT = morphAt.map { LPMapMath.easeOut(min(1, max(0, now.timeIntervalSince($0) / 0.6))) } ?? 1.0
+        let leapT = leapAt.map { LPMapMath.easeOut(min(1, max(0, now.timeIntervalSince($0) / 0.45))) } ?? 1.0
+        let leapHome = leapFrom.map { LPMapMath.lerp($0, starPoint, leapT) } ?? starPoint
+
         // 星尘：很淡的一层参考点，带一点呼吸。和舞台的天空是同一层——空间的深度靠它，不靠装饰。
         for index in 0..<90 {
             let seed = Double(index)
@@ -350,14 +451,17 @@ struct LPNetworkMap: View {
                  size: 10, weight: .semibold, color: LP.textTertiary.opacity(enter), tracking: 1.2)
         }
 
-        // 判据环：虚线圆 + 两道闸。
+        // 判据环：虚线圆 + 两道闸。接通的那一刻虚线先转起来。
         var ring = Path()
         ring.addArc(center: g.center, radius: g.shell, startAngle: .degrees(0), endAngle: .degrees(360), clockwise: false)
-        context.stroke(ring, with: .color(ink.opacity(0.34)), style: StrokeStyle(lineWidth: 1, dash: [3, 5]))
+        context.stroke(ring, with: .color(ink.opacity(0.34)),
+                       style: StrokeStyle(lineWidth: 1, dash: [3, 5],
+                                          dashPhase: reduceMotion ? 0 : -CGFloat(igniteP * 26)))
         for angle in [90.0, 270.0] {
+            let half = 7 * (0.45 + 0.55 * igniteP)
             var tick = Path()
-            tick.move(to: g.point(angle, (g.shell - 7) / g.radius))
-            tick.addLine(to: g.point(angle, (g.shell + 7) / g.radius))
+            tick.move(to: g.point(angle, (g.shell - half) / g.radius))
+            tick.addLine(to: g.point(angle, (g.shell + half) / g.radius))
             context.stroke(tick, with: .color(running ? LP.accent : ink.opacity(0.6)),
                            style: StrokeStyle(lineWidth: 2, lineCap: .round))
         }
@@ -374,14 +478,15 @@ struct LPNetworkMap: View {
             context.stroke(quadPath(gateTop, g.point(node), bow: 0.12, pivot: g.center),
                            with: .color(ink.opacity(0.06 * enter)), style: StrokeStyle(lineWidth: 1, lineCap: .round))
         }
-        // 主路：上闸 → 星。没在跑时是虚线，连上才亮。出口就是 DIRECT 时不画——没有这条路。
+        // 主路：上闸 → 星。接通时路从闸里长出来；没在跑时是虚线；出口就是 DIRECT 时不画——没有这条路。
         let main = quadPath(gateTop, starPoint, bow: 0.12, pivot: g.center)
+        let grown = main.trimmedPath(from: 0, to: igniteP)
         if running {
             if exitIsDirect {
-                context.stroke(main, with: .color(ink.opacity(0.12)),
+                context.stroke(grown, with: .color(ink.opacity(0.12)),
                                style: StrokeStyle(lineWidth: 1, lineCap: .round, dash: [2, 7]))
             } else {
-                context.stroke(main, with: .color(LP.accent.opacity(0.85)), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+                context.stroke(grown, with: .color(LP.accent.opacity(0.85)), style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
             }
         } else {
             context.stroke(main, with: .color(ink.opacity(0.30)),
@@ -398,24 +503,59 @@ struct LPNetworkMap: View {
                            style: running ? StrokeStyle(lineWidth: 1.4, lineCap: .round)
                                           : StrokeStyle(lineWidth: 1.2, lineCap: .round, dash: [3, 6]))
         }
-        // 回家的隧道：绑定过就有路，Tailnet 在线时亮。
+        // 回家的隧道：绑定过就有路，Tailnet 在线时虚线一直在流——回家的路上一直有东西在走。
         if app.home.saved != nil {
             var tunnel = Path()
             tunnel.move(to: g.point(.home))
             tunnel.addLine(to: g.point(LPPlace.home.angle, g.shell / g.radius))
             let online = app.home.snapshot?.state == "Running"
             context.stroke(tunnel, with: .color(online ? LP.mint.opacity(0.7) : ink.opacity(0.25)),
-                           style: StrokeStyle(lineWidth: online ? 1.4 : 1.2, lineCap: .round, dash: [2, 5]))
+                           style: StrokeStyle(lineWidth: online ? 1.4 : 1.2, lineCap: .round, dash: [2, 5],
+                                              dashPhase: online && !reduceMotion
+                                                  ? -CGFloat(clock * 12).truncatingRemainder(dividingBy: 7) : 0))
+            if online {
+                let homePoint = g.point(.home)
+                context.fill(circle(homePoint, 14), with: .radialGradient(
+                    Gradient(colors: [LP.mint.opacity(0.22), .clear]), center: homePoint, startRadius: 0, endRadius: 14))
+            }
         }
 
-        // 「跃」：换路生效的那一下，主路亮起再暗下去，星上荡开一圈。
+        // 接通的那一下：一圈波从判据环推出去，扫过整张图。
+        if let igniteRef, !reduceMotion {
+            let age = now.timeIntervalSince(igniteRef)
+            if age >= 0, age < 0.9 {
+                let t = age / 0.9
+                context.stroke(circle(g.center, g.shell + (g.radius * 1.5 - g.shell) * t),
+                               with: .color(LP.accent.opacity(0.5 * (1 - t))), lineWidth: 1.5)
+            }
+        }
+        // 断开的那一下：一圈波从外圈收回来，光跟着回到中心。
+        if let dimAt, !reduceMotion {
+            let age = now.timeIntervalSince(dimAt)
+            if age >= 0, age < 0.8 {
+                let t = age / 0.8
+                context.stroke(circle(g.center, g.shell + (g.radius - g.shell) * (1 - t)),
+                               with: .color(ink.opacity(0.5 * (1 - t))), lineWidth: 1.5)
+            }
+        }
+
+        // 悬停预览：停在一颗星上，从闸到它的路先亮起来——点下去就是走这条路。
+        if let hovered = hoveredNode, running, let node = nodes.first(where: { $0.id == hovered }),
+           !node.current, selectable[node.id] != nil {
+            context.stroke(quadPath(gateTop, g.point(node), bow: 0.12, pivot: g.center),
+                           with: .color(LP.accent.opacity(0.5)),
+                           style: StrokeStyle(lineWidth: 1.6, lineCap: .round, dash: [6, 5],
+                                              dashPhase: -CGFloat(clock * 20).truncatingRemainder(dividingBy: 11)))
+        }
+
+        // 「跃」：换路生效的那一下，星从旧位飞向新位，弦亮起再暗下去，落地荡开一圈。
         if let leapAt, star != nil {
             let age = now.timeIntervalSince(leapAt)
             if age >= 0, age < 0.7 {
                 let fade = 1 - age / 0.7
                 context.stroke(main, with: .color(LP.accent.opacity(0.9 * fade)),
                                style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                context.stroke(circle(starPoint, 10 + 34 * (1 - fade)), with: .color(LP.accent.opacity(0.8 * fade)), lineWidth: 1.5)
+                context.stroke(circle(leapHome, 10 + 34 * (1 - fade)), with: .color(LP.accent.opacity(0.8 * fade)), lineWidth: 1.5)
             }
         }
 
@@ -430,24 +570,47 @@ struct LPNetworkMap: View {
         // 直连星。
         context.fill(circle(g.direct, 3.4), with: .color(running ? LP.mint : LP.mint.opacity(0.7)))
 
-        // 出口：地区簇里的点；当前出口是星。密的地方名字隔几个写一个，其余悬停才出名字。
+        // 局域网雷达：扫描时一圈波在这一站旁边转；扫到的设备到点荡一圈涟漪再安顿下来。
+        let lanPoint = g.point(.lan)
+        if lanScanning, !reduceMotion {
+            let sweep = (clock / 1.2).truncatingRemainder(dividingBy: 1) * 360
+            for (back, alpha) in [(0.0, 0.55), (15.0, 0.30), (30.0, 0.14)] {
+                var wedge = Path()
+                wedge.addArc(center: lanPoint, radius: 30,
+                             startAngle: .degrees(sweep - back), endAngle: .degrees(sweep - back - 18), clockwise: true)
+                context.stroke(wedge, with: .color(LP.mint.opacity(alpha)), lineWidth: 2)
+            }
+        }
+        for device in lanDevices {
+            guard let found = lanFoundAt[device.id], !reduceMotion else { continue }
+            let age = now.timeIntervalSince(found)
+            if age >= 0, age < 0.7 {
+                let t = age / 0.7
+                context.stroke(circle(lanPoint, 10 + 26 * t), with: .color(LP.mint.opacity(0.6 * (1 - t))), lineWidth: 1.4)
+            }
+        }
+
+        // 出口：地区簇里的点；当前出口是星。换场景时所有站从旧位流到新位。
         var seen: [LPRegion: Int] = [:]
         let counts = Dictionary(grouping: nodes, by: \.region).mapValues(\.count)
         for (index, node) in nodes.enumerated() {
-            let point = g.point(node)
+            var point = g.point(node)
+            if morphT < 1, let previous = cache.points[node.id] {
+                point = LPMapMath.lerp(previous, point, morphT)
+            }
             let fade: Double = reduceMotion || settled ? 1 : min(1, max(0, (life - 0.2 - Double(index % 14) * 0.035) / 0.45))
             let twinkle: Double = reduceMotion || !running ? 0 : 0.14 * sin(clock * 1.3 + Double(index) * 1.9)
             if node.current {
                 let pulse: Double = reduceMotion ? 1 : 1 + 0.10 * sin(clock * 2.4)
                 if running {
-                    let glow = 34 * pulse
-                    context.fill(circle(point, glow), with: .radialGradient(
-                        Gradient(colors: [LP.accent.opacity(0.45), .clear]), center: point, startRadius: 0, endRadius: glow))
-                    context.fill(circle(point, 6), with: .color(LP.accent))
-                    context.stroke(circle(point, 12 * pulse), with: .color(LP.accent.opacity(0.55)), lineWidth: 1)
+                    let glow = (18 + 16 * igniteP) * pulse
+                    context.fill(circle(leapHome, glow), with: .radialGradient(
+                        Gradient(colors: [LP.accent.opacity(0.45), .clear]), center: leapHome, startRadius: 0, endRadius: glow))
+                    context.fill(circle(leapHome, 6), with: .color(LP.accent))
+                    context.stroke(circle(leapHome, 12 * pulse), with: .color(LP.accent.opacity(0.55)), lineWidth: 1)
                 } else {
-                    context.stroke(circle(point, 6), with: .color(LP.accent.opacity(0.9)), lineWidth: 1.5)
-                    context.fill(circle(point, 2.4), with: .color(LP.accent))
+                    context.stroke(circle(leapHome, 6), with: .color(LP.accent.opacity(0.9)), lineWidth: 1.5)
+                    context.fill(circle(leapHome, 2.4), with: .color(LP.accent))
                 }
                 continue
             }
@@ -476,10 +639,11 @@ struct LPNetworkMap: View {
                  color: (highlighted ? LP.text : LP.textSecondary).opacity(fade))
         }
 
-        // 包。
+        // 包。断开的那一瞬它们不消失，是散着淡出去的。
+        let packetFade = 1 - dimQ
         for packet in packets {
             let progress = now.timeIntervalSince(packet.start) / packet.duration
-            if progress < 0 || progress > 1 { continue }
+            if progress < 0 || progress > 1 || packetFade <= 0 { continue }
             let color: Color
             switch packet.kind {
             case .proxy: color = LP.accent
@@ -489,7 +653,7 @@ struct LPNetworkMap: View {
             if packet.kind == .blocked, progress > 0.62 {
                 // 撞在上闸：一枚扩散后消散的红环。
                 let burst = (progress - 0.62) / 0.38
-                context.stroke(circle(gateTop, 4 + burst * 15), with: .color(color.opacity(1 - burst)), lineWidth: 1.6)
+                context.stroke(circle(gateTop, 4 + burst * 15), with: .color(color.opacity((1 - burst) * packetFade)), lineWidth: 1.6)
                 continue
             }
             let point = position(packet, progress: progress, geometry: g, star: starPoint)
@@ -497,10 +661,10 @@ struct LPNetworkMap: View {
                 let tail = progress - Double(step) * 0.022
                 if tail > 0 {
                     context.fill(circle(position(packet, progress: tail, geometry: g, star: starPoint), 3.0 - Double(step) * 0.5),
-                                 with: .color(color.opacity(0.20 - Double(step) * 0.035)))
+                                 with: .color(color.opacity((0.20 - Double(step) * 0.035) * packetFade)))
                 }
             }
-            context.fill(circle(point, packet.kind == .blocked ? 3.4 : 3.0), with: .color(color))
+            context.fill(circle(point, packet.kind == .blocked ? 3.4 : 3.0), with: .color(color.opacity(packetFade)))
         }
 
         // 探针：问路框里有一个域名时，它的路亮起来，一枚空心的环沿路跑过去。
@@ -540,6 +704,10 @@ struct LPNetworkMap: View {
                 context.stroke(circle(end, 10), with: .color(color.opacity(0.8)), lineWidth: 1.5)
             }
         }
+
+        // 记下这一帧的落点：换场景重排时，从这里取「世界原来的样子」。
+        cache.star = starPoint
+        cache.points = Dictionary(nodes.map { ($0.id, g.point($0)) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// 一个地区里隔几个点写一个名字：相邻两个名字之间至少隔 46pt。
@@ -599,6 +767,8 @@ struct LPNetworkMap: View {
     private func drive() async {
         await refreshExit()
         lastBlocked = status.blocked
+        // 启动时服务就在跑（自动启动）：把接通的编排也放一遍，地图是「亮起来」的。
+        if running, igniteAt == nil, !reduceMotion { igniteAt = appeared }
         while !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(200))
             if Task.isCancelled { return }
@@ -635,8 +805,10 @@ struct LPNetworkMap: View {
     /// 走出口与直连的比例取自最近的真实决策。没在跑或开了「减弱动态效果」就一个都不放。
     private func spawn() {
         packets.removeAll { Date().timeIntervalSince($0.start) > $0.duration + 0.4 }
+        let cooling = dimAt.map { Date().timeIntervalSince($0) < 0.8 } ?? false
         guard running, !reduceMotion else {
-            if !packets.isEmpty { packets.removeAll() }
+            // 断开的头一瞬间包还留在图上淡出，别急着清场。
+            if !packets.isEmpty, !cooling { packets.removeAll() }
             return
         }
         let rate = status.rates.down + status.rates.up
@@ -1095,6 +1267,8 @@ struct LPNetworkMap: View {
                     }
                 }
             }
+            // 切场景时，实心墨底从一段滑到另一段：模式不是换了张脸，是滑过去的。
+            .lpAnimation(LPMotion.spring, value: activeScene)
             .background(
                 RoundedRectangle(cornerRadius: LPRadius.control, style: .continuous)
                     .fill(LP.sheet)
@@ -1135,7 +1309,13 @@ struct LPNetworkMap: View {
             }
             .padding(.horizontal, 6)
             .frame(height: 36)
-            .background(active ? LP.ink : Color.clear)
+            .background {
+                if active {
+                    RoundedRectangle(cornerRadius: 4, style: .continuous)
+                        .fill(LP.ink)
+                        .matchedGeometryEffect(id: "scene-active", in: sceneNS)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
