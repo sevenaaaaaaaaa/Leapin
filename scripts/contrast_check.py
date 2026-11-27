@@ -39,6 +39,8 @@ TEXT_L, TEXT_S_L, TEXT_T_L = 0x16150F, 0x5F5C53, 0x6F6B60
 TEXT_D, TEXT_S_D, TEXT_T_D = 0xF3F1EA, 0xA6A39A, 0x87847B
 ACCENT_L, ACCENT_D = 0xC63A12, 0xFF7A4D
 ACCENT_FILL_L, ACCENT_FILL_D = 0xB83510, 0xC2410F
+# 薄荷绿：直连与「已绑定」这类状态小字写在纸上
+MINT_L, MINT_D = 0x0C7A55, 0x35D19B
 WHITE = 0xFFFFFF
 
 # onInk：白在两种墨上的三档合成色
@@ -59,6 +61,7 @@ PAIRS = [
     ("light 三级 on 纸", TEXT_T_L, PAPER_L),
     ("light 朱红 on 纸（计数）", ACCENT_L, PAPER_L),
     ("light 朱红 on 卡", ACCENT_L, SHEET_L),
+    ("light 薄荷绿 on 纸（直连）", MINT_L, PAPER_L),
     ("light 白字 on 朱红按钮", WHITE, ACCENT_FILL_L),
     # 深色：纸面与卡
     ("dark 正文 on 卡", TEXT_D, SHEET_D),
@@ -68,6 +71,7 @@ PAIRS = [
     ("dark 次级 on 纸", TEXT_S_D, PAPER_D),
     ("dark 三级 on 纸", TEXT_T_D, PAPER_D),
     ("dark 朱红 on 纸（计数）", ACCENT_D, PAPER_D),
+    ("dark 薄荷绿 on 纸（直连）", MINT_D, PAPER_D),
     ("dark 白字 on 朱红按钮", WHITE, ACCENT_FILL_D),
     # 墨带（两种模式同一段代码、不同的墨）
     ("light 墨带 正文", ON_INK_L, INK_L),

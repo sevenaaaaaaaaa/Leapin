@@ -7,14 +7,17 @@ import LeapinRuntime
 // （这台 Mac → 判据 → 出口）横贯整个宽度，真实流量变成沿路飞行的包。
 // 四个动词是同一张图上的四个机位——换页是移动视线，不是换一张纸。
 
-/// 机位：同一张图上的四个视线落点。工具与收纳页镜头拉远，只留一条安静的路。
+/// 机位：同一张图上的几个视线落点。
+///
+/// 走哪没有机位——首页整张就是星图（NetworkMap.swift），舞台只留页头；
+/// 另外三个动词把天空收窄，把地方让给纸上的内容；工具页只留一条细路。
+/// 高度随换页带弹簧过渡，于是「镜头」真的在动。
 enum LPStation: Equatable {
-    case route, gate, bend, trace, ambient
+    case map, route, gate, bend, trace, ambient
 
-    /// 走哪把路完整摊开（出口是主角）；另外三个动词把天空收窄，把地方让给纸上的内容；
-    /// 工具页只留一条细路。高度随换页带弹簧过渡，于是「镜头」真的在动。
     var skyHeight: CGFloat {
         switch self {
+        case .map: return 0
         case .route: return 154
         case .gate, .bend, .trace: return 98
         case .ambient: return 62
@@ -32,7 +35,8 @@ enum LPStation: Equatable {
 
     @MainActor static func of(_ section: AppModel.Section?) -> LPStation {
         switch section {
-        case .dashboard, .profiles, .none: return .route
+        case .dashboard: return .map
+        case .profiles, .none: return .route
         case .rules: return .gate
         case .rewrite, .adblock: return .bend
         case .why, .capture, .activity, .diagnostics: return .trace
@@ -273,7 +277,7 @@ struct LPRouteSky: View {
 
     private var dim: Double {
         switch station {
-        case .route: return 1
+        case .map, .route: return 1
         case .ambient: return 0.55
         default: return 0.85
         }
@@ -445,7 +449,11 @@ struct LPRouteSky: View {
 
     /// 出口站：大字 + 拖动换路。按住上下拖，候选在下方浮出，松手才提交。
     @ViewBuilder private func exitControl(_ geometry: LPStageGeometry) -> some View {
+        // 和首页星图同一条规则：没有生效的出口、也没有可切的候选时，退到配置里的第一个节点。
+        // 否则首页亮着一颗星，切到这里却写「还没有出口」。
         let selectedStop = quickStops.first { $0.id == status.exit } ?? quickStops.first
+            ?? engine.profile.outbounds.first { $0.type != .direct && $0.type != .reject }
+                .map { LPRouteScrubber.Stop(id: $0.name, label: $0.name, detail: "") }
         let shown = scrubbing ? (quickStops[safe: scrubIndex]?.label ?? "—")
                                : (selectedStop?.label ?? (running ? "没有可切换的节点" : "还没有出口"))
         let detail = scrubbing
@@ -640,8 +648,10 @@ struct LPStage: View {
         let station = LPStation.of(app.section)
         VStack(spacing: 0) {
             PageHeaderBar(compact: compact)
-            LPRouteSky(station: station, scenes: app.scenes)
-                .frame(height: station.skyHeight)
+            if station.skyHeight > 0 {
+                LPRouteSky(station: station, scenes: app.scenes)
+                    .frame(height: station.skyHeight)
+            }
         }
         .frame(height: LPShell.headerHeight + station.skyHeight)
         .lpAnimation(LPMotion.emphasized, value: station)

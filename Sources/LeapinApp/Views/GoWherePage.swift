@@ -1,9 +1,9 @@
 import SwiftUI
 import LeapinRuntime
 
-/// 「走哪」动词页：总览 / 配置与订阅 两个 tab。
+/// 「走哪」动词页：星图 / 配置与订阅 两个 tab。
 ///
-/// tab 住在页头里（`lpHeaderTabs`）：这一页只剩内容——总览是 `DashboardView`，
+/// tab 住在页头里（`lpHeaderTabs`）：这一页只剩内容——星图是 `LPNetworkMap`，
 /// 配置 tab 是 `ProfilesView`。选中的是哪一个仍然是这里的状态，页头只负责画。
 @MainActor
 struct GoWherePage: View {
@@ -30,6 +30,7 @@ struct GoWherePage: View {
 
     let initialTab: Tab
 
+    @EnvironmentObject private var app: AppModel
     @State private var tab: Tab
 
     init(initialTab: Tab = .overview) {
@@ -43,7 +44,8 @@ struct GoWherePage: View {
     var body: some View {
         Group {
             switch tab {
-            case .overview: DashboardView()
+            case .overview:
+                LPNetworkMap(scenes: app.scenes, bookmarks: app.bookmarks)
             // 作为 tab 时不画 ProfilesView 自己的页面大标题：页头已经写了「走哪」，
             // tab 也写了「配置与订阅」，第三遍就是重复。业务与动作全部保留。
             case .profiles: ProfilesView(showsPageHeader: false)
